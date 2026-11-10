@@ -2,6 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, unlockAudio } from './game/audio.js';
+import { matchRules, LARGE_MATCH } from '@shared/constants.js';
 
 const $ = (id) => document.getElementById(id);
 const net = new Net();
@@ -166,6 +167,10 @@ function renderLobby() {
   const isHost = room.hostId === myId;
   $('lobby-code').textContent = room.code;
   $('lobby-count').textContent = `${room.players.length} / ${room.maxPlayers}명`;
+  const rules = matchRules(room.players.length);
+  const large = room.players.length >= LARGE_MATCH.PLAYERS;
+  $('lobby-rules').textContent = `이번 판: 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸${large ? ' (5인 규칙)' : ''}`;
+  $('lobby-rules').classList.toggle('large', large);
   const list = $('lobby-players');
   list.innerHTML = '';
   for (const p of room.players) {

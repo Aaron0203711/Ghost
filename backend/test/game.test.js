@@ -261,3 +261,57 @@ test('맵: 모든 발전기와 생존자 시작점은 장애물과 겹치지 않
     }
   }
 });
+
+test('5인 규칙: 5명이면 발전기 5개, 4명이면 3개', () => {
+  assert.equal(makeGame(5, 11).game.gens.length, 5);
+  assert.equal(makeGame(4, 11).game.gens.length, 3);
+  assert.equal(makeGame(2, 11).game.gens.length, 3);
+  const { game } = makeGame(5, 11);
+  assert.deepEqual(game.startPayload('p2').rules, { generators: 5, hitsToCatch: 2 });
+  assert.equal(game.startPayload('p2').generators.length, 5);
+});
+
+test('5인 규칙: 생존자는 2번 맞으면 잡힘 (4명 이하는 3번)', () => {
+  {
+    const { game, hunter, s1 } = makeGame(5, 11);
+    faceOff(game, hunter, s1);
+    game.handleAttack('p1');
+    assert.equal(s1.status, STATUS.ALIVE);
+    run(game, 2.05);
+    game.handleAttack('p1');
+    assert.equal(s1.hits, 2);
+    assert.equal(s1.status, STATUS.CAUGHT);
+  }
+  {
+    const { game, hunter, s1 } = makeGame(4, 11);
+    faceOff(game, hunter, s1);
+    game.handleAttack('p1');
+    run(game, 2.05);
+    game.handleAttack('p1');
+    assert.equal(s1.status, STATUS.ALIVE, '4명이면 2번으로는 안 잡힘');
+  }
+});
+
+test('5인 규칙: 발전기 5개를 모두 켜야 탈출구가 열림', () => {
+  const { game, hunter, s1 } = makeGame(5, 11);
+  hunter.x = hunter.z = 900;
+  s1.interact = true;
+  for (const [i, g] of game.gens.entries()) {
+    g.progress = 1 - 1e-6;
+    s1.x = g.x + 1;
+    s1.z = g.z;
+    game.tick(DT);
+    assert.ok(g.done);
+    if (i < 4) assert.equal(game.exit, null, `${i + 1}개만 켰을 때는 닫혀 있음`);
+  }
+  assert.ok(game.exit, '5개 모두 켜면 열림');
+});
+
+test('5인 규칙: 발전기 5개도 장애물과 겹치지 않고 서로 떨어져 있음', () => {
+  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const { game } = makeGame(5, seed);
+    for (const g of game.gens) {
+      for (const o of game.gens) if (o !== g) assert.ok(Math.hypot(o.x - g.x, o.z - g.z) > 10, `seed ${seed}`);
+    }
+  }
+});

@@ -1310,3 +1310,15 @@ body.touch #pc-hint {
     padding: 4px 6px 4px 12px;
   }
 }
+
+.rules {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.rules.large {
+  color: #ff9c8a;
+}

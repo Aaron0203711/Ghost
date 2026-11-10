@@ -27,11 +27,11 @@ export const RULES = Object.freeze({
   ATTACK_COOLDOWN: 1,
   ATTACK_RANGE: 2.0,
   ATTACK_HALF_ANGLE: (55 * Math.PI) / 180,
-  HITS_TO_CATCH: 3,
+  HITS_TO_CATCH: 3, // 4명 이하일 때 (5명 이상이면 matchRules 참고)
   HIT_INVULNERABLE: 2,
 
   // 발전기 / 탈출
-  GENERATOR_COUNT: 3,
+  GENERATOR_COUNT: 3, // 4명 이하일 때 (5명 이상이면 matchRules 참고)
   GENERATOR_REPAIR_TIME: 10, // 혼자서 10초. 여럿이면 합산되어 빨라짐
   GENERATOR_INTERACT_RANGE: 1.9,
   EXIT_RADIUS: 2.4,
@@ -73,4 +73,16 @@ export function stepStamina(s, wantsRun, moving, dt) {
 export function speedFor(role, running) {
   if (role === ROLE.HUNTER) return RULES.HUNTER_SPEED;
   return running ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
+}
+
+/** 5명 이상(술래 포함)이면 발전기 5개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
+export const LARGE_MATCH = Object.freeze({ PLAYERS: 5, GENERATORS: 5, HITS_TO_CATCH: 2 });
+
+/** 인원 수에 따라 달라지는 한 판의 규칙 */
+export function matchRules(playerCount) {
+  const large = playerCount >= LARGE_MATCH.PLAYERS;
+  return {
+    generators: large ? LARGE_MATCH.GENERATORS : RULES.GENERATOR_COUNT,
+    hitsToCatch: large ? LARGE_MATCH.HITS_TO_CATCH : RULES.HITS_TO_CATCH,
+  };
 }

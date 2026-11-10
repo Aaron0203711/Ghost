@@ -25,6 +25,8 @@ export class GameSession {
     const me = this.info.get(this.myId);
     this.role = me.role;
     this.isHunter = this.role === ROLE.HUNTER;
+    // 이번 판 규칙 (5명이면 발전기 5개, 체력 2칸)
+    this.hitsToCatch = start.rules?.hitsToCatch ?? RULES.HITS_TO_CATCH;
 
     // 내 상태 (클라이언트 예측)
     this.pos = { x: me.x, z: me.z };
@@ -135,7 +137,10 @@ export class GameSession {
     $('hud-gens').innerHTML = [...this.gens.keys()].map((id) => `<i class="lamp" data-gen="${id}"></i>`).join('');
     this.updateGenHud();
     this.renderPlayerList();
-    this.centerMsg(this.isHunter ? '생존자를 모두 잡으세요!' : '발전기 3개를 켜고 탈출하세요!', 3);
+    this.centerMsg(
+      this.isHunter ? '생존자를 모두 잡으세요!' : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`,
+      3,
+    );
   }
 
   setupControls(onOpenSettings) {
@@ -285,12 +290,12 @@ export class GameSession {
           sfx.hit();
           this.flash('hit');
           this.shake = 0.35;
-          this.centerMsg(`맞았다! (${e.hits}/${RULES.HITS_TO_CATCH})`, 1.5);
+          this.centerMsg(`맞았다! (${e.hits}/${this.hitsToCatch})`, 1.5);
         } else if (e.by === this.myId) {
           sfx.hit();
           this.hitMarker();
-          this.feed(`${name(e.id)} 명중 (${e.hits}/${RULES.HITS_TO_CATCH})`);
-        } else this.feed(`${name(e.id)}이(가) 맞았다 (${e.hits}/${RULES.HITS_TO_CATCH})`);
+          this.feed(`${name(e.id)} 명중 (${e.hits}/${this.hitsToCatch})`);
+        } else this.feed(`${name(e.id)}이(가) 맞았다 (${e.hits}/${this.hitsToCatch})`);
         break;
       case 'caught':
         sfx.caught();
@@ -311,7 +316,7 @@ export class GameSession {
         break;
       case 'genDone':
         sfx.genDone();
-        this.feed(`💡 발전기 가동 (${e.done}/${RULES.GENERATOR_COUNT})`, 'good');
+        this.feed(`💡 발전기 가동 (${e.done}/${this.gens.size})`, 'good');
         break;
       case 'exitOpen':
         sfx.exitOpen();
@@ -497,7 +502,7 @@ export class GameSession {
       const st = this.stam.stamina / RULES.STAMINA_MAX;
       $('stamina-fill').style.transform = `scaleX(${st})`;
       $('stamina').classList.toggle('low', st < 0.25);
-      $('hearts').innerHTML = '<b>♥</b>'.repeat(Math.max(0, RULES.HITS_TO_CATCH - this.hits)) + '<s>♥</s>'.repeat(Math.min(RULES.HITS_TO_CATCH, this.hits));
+      $('hearts').innerHTML = '<b>♥</b>'.repeat(Math.max(0, this.hitsToCatch - this.hits)) + '<s>♥</s>'.repeat(Math.min(this.hitsToCatch, this.hits));
       const gen = this.nearestGen();
       $('btn-main').classList.toggle('ready', !!gen);
       const repairing = gen && this.interact;
@@ -575,7 +580,7 @@ export class GameSession {
       else if (st === STATUS.CAUGHT) tag = '💀';
       else if (st === STATUS.ESCAPED) tag = '🏁';
       else if (st === 'left') tag = '🚪';
-      else tag = '♥'.repeat(Math.max(0, RULES.HITS_TO_CATCH - (p.hits || 0)));
+      else tag = '♥'.repeat(Math.max(0, this.hitsToCatch - (p.hits || 0)));
       const meCls = p.id === this.myId ? ' me' : '';
       return `<li class="${st}${meCls}"><span class="n">${escapeHtml(p.name)}</span><span class="t">${tag}</span></li>`;
     });

@@ -3,7 +3,7 @@
 // 공격, 덫, 발전기, 탈출, 승패 판정은 모두 서버가 결정한다.
 
 import { CollisionWorld } from '../../shared/collision.js';
-import { RULES, ROLE, STATUS, stepStamina, speedFor } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, stepStamina, speedFor, matchRules } from '../../shared/constants.js';
 import { generateMap, planMatch, generatorBox } from './mapgen.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -22,7 +22,8 @@ export class Game {
 
     const hunterId = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
     const survivors = roster.filter((p) => p.id !== hunterId);
-    const plan = planMatch(this.map, survivors.length, this.rand);
+    this.rules = matchRules(roster.length);
+    const plan = planMatch(this.map, survivors.length, this.rand, this.rules.generators);
 
     this.world = new CollisionWorld(this.map.boxes);
     this.gens = plan.generators.map((g) => ({ ...g, progress: 0, done: false, repairers: 0 }));
@@ -75,6 +76,7 @@ export class Game {
     return {
       t: 'start',
       you: forId,
+      rules: this.rules,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
       players: [...this.players.values()].map((p) => ({
@@ -166,13 +168,13 @@ export class Game {
 
     best.hits++;
     best.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
-    if (best.hits >= RULES.HITS_TO_CATCH) {
+    if (best.hits >= this.rules.hitsToCatch) {
       best.status = STATUS.CAUGHT;
       best.repairing = false;
       this.emit(null, { t: 'event', kind: 'caught', id: best.id, by: id, name: best.name });
       this.checkEnd();
     } else {
-      this.emit(null, { t: 'event', kind: 'hit', id: best.id, by: id, hits: best.hits });
+      this.emit(null, { t: 'event', kind: 'hit', id: best.id, by: id, hits: best.hits, max: this.rules.hitsToCatch });
     }
   }
 
@@ -259,7 +261,7 @@ export class Game {
         g.done = true;
         const doneCount = this.gens.filter((x) => x.done).length;
         this.emit(null, { t: 'event', kind: 'genDone', genId: g.id, done: doneCount });
-        if (doneCount >= RULES.GENERATOR_COUNT) this.openExit();
+        if (doneCount >= this.gens.length) this.openExit();
       }
     }
 

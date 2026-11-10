@@ -381,7 +381,7 @@ export function reachableCells(world, startX, startZ) {
 /**
  * 한 판에 필요한 배치를 정한다: 술래/생존자 시작 위치, 발전기 위치.
  */
-export function planMatch(map, survivorCount, rand = Math.random) {
+export function planMatch(map, survivorCount, rand = Math.random, generatorCount = RULES.GENERATOR_COUNT) {
   const world = new CollisionWorld(map.boxes);
   // 술래는 가운데 근처 교차로에서 시작
   const hj = [2, 3];
@@ -400,7 +400,7 @@ export function planMatch(map, survivorCount, rand = Math.random) {
   };
 
   const generators = [];
-  for (let g = 0; g < RULES.GENERATOR_COUNT; g++) {
+  for (let g = 0; g < generatorCount; g++) {
     let minGap = 38;
     let pos = null;
     while (!pos && minGap > 5) {

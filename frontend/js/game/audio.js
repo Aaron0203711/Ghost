@@ -63,6 +63,11 @@ export const sfx = {
     tone({ freq: 900, to: 200, dur: 0.12, type: 'sawtooth', vol: 0.15 });
   },
   trapPlace: () => tone({ freq: 300, to: 180, dur: 0.1, type: 'triangle', vol: 0.15 }),
+  invisOn: () => {
+    tone({ freq: 900, to: 220, dur: 0.45, type: 'sine', vol: 0.12 });
+    noiseBurst(0.3, 0.08, 4000);
+  },
+  invisOff: () => tone({ freq: 220, to: 700, dur: 0.25, type: 'triangle', vol: 0.12 }),
   genDone: () => {
     tone({ freq: 523, dur: 0.18, vol: 0.18 });
     tone({ freq: 659, dur: 0.18, vol: 0.18, delay: 0.12 });

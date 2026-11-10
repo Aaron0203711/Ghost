@@ -77,6 +77,9 @@ export class RoomManager {
       case 'trap':
         if (client.room?.game) client.room.game.handleTrap(client.id);
         break;
+      case 'skill':
+        if (client.room?.game) client.room.game.handleSkill(client.id);
+        break;
       case 'ping':
         client.send({ t: 'pong', at: msg.at });
         break;

@@ -583,3 +583,104 @@ test('폐광산 맵으로 게임 시작: 시작 위치와 발전기가 장애물
     for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9), `seed ${seed}`);
   }
 });
+
+// ───────────── 암살자 ─────────────
+
+test('암살자: 쿠나이 1칸, 쿨타임 1.5초, 사거리 2m', () => {
+  const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
+  faceOff(game, hunter, s1, 1.8);
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 1);
+  run(game, 2.05); // 무적 끝
+  hunter.attackReadyAt = game.time + 0.2;
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 1, '쿨타임 중');
+  run(game, 0.25);
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 2);
+  assert.ok(Math.abs(hunter.attackReadyAt - game.time - 1.5) < 1e-9, '쿨타임 1.5초');
+  run(game, 2.05);
+  faceOff(game, hunter, s1, 2.6);
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 2, '사거리 밖');
+  game.handleTrap('p1');
+  assert.equal(game.traps.length, 0, '덫 없음');
+});
+
+test('암살자: 투명화 15초, 끝난 뒤 8초 쿨타임', () => {
+  const { game, hunter, events } = makeGame(3, 7, 'assassin');
+  game.handleSkill('p1');
+  assert.ok(game.isInvisible(hunter));
+  run(game, 14.9);
+  assert.ok(game.isInvisible(hunter));
+  run(game, 0.15);
+  assert.ok(!game.isInvisible(hunter), '15초 뒤 풀림');
+  assert.ok(events.some((e) => e.msg.kind === 'invis' && e.msg.on === false && e.msg.reason === 'timeout'));
+  game.handleSkill('p1');
+  assert.ok(!game.isInvisible(hunter), '쿨타임 중');
+  run(game, 7.9);
+  game.handleSkill('p1');
+  assert.ok(!game.isInvisible(hunter), '8초 전');
+  run(game, 0.15);
+  game.handleSkill('p1');
+  assert.ok(game.isInvisible(hunter), '8초 뒤 다시 사용');
+});
+
+test('암살자: 투명화 중 생존자를 맞히면 바로 풀리고, 그때부터 8초 쿨타임', () => {
+  const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
+  game.handleSkill('p1');
+  run(game, 3);
+  faceOff(game, hunter, s1, 1.5);
+  game.handleAttack('p1', { yaw: 0, pitch: 0 }); // 정면의 생존자를 맞힘
+  assert.equal(s1.hits, 1);
+  assert.ok(!game.isInvisible(hunter));
+  assert.ok(Math.abs(hunter.skillReadyAt - (game.time + 8)) < 1e-9);
+});
+
+test('암살자: 헛치면 투명화 유지', () => {
+  const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
+  game.handleSkill('p1');
+  faceOff(game, hunter, s1, 1.5);
+  hunter.yaw = Math.PI; // 반대 방향
+  game.handleAttack('p1', { yaw: Math.PI, pitch: 0 });
+  assert.equal(s1.hits, 0);
+  assert.ok(game.isInvisible(hunter));
+});
+
+test('암살자: 투명화 중 생존자에게는 위치가 전혀 전달되지 않음 (동료 술래·관전자는 봄)', () => {
+  const roster = Array.from({ length: 6 }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const events = [];
+  const game = new Game(roster, {
+    seed: 3,
+    rand: mulberry32(3),
+    hunters: [
+      { id: 'p1', cls: 'assassin' },
+      { id: 'p2', cls: 'maniac' },
+    ],
+    emit: (to, msg) => events.push({ to, msg }),
+  });
+  game.handleSkill('p1');
+  const forSurvivor = game.snapshotFor('p3').players.find((p) => p.id === 'p1');
+  assert.equal(forSurvivor.hidden, 1);
+  assert.equal(forSurvivor.x, undefined);
+  assert.equal(forSurvivor.z, undefined);
+  const forMate = game.snapshotFor('p2').players.find((p) => p.id === 'p1');
+  assert.equal(forMate.invis, 1);
+  assert.ok(Number.isFinite(forMate.x));
+  game.players.get('p4').status = STATUS.CAUGHT;
+  assert.ok(Number.isFinite(game.snapshotFor('p4').players.find((p) => p.id === 'p1').x), '관전자는 봄');
+  // 투명화 시작/휘두르기 이벤트도 생존자에게 가지 않는다
+  assert.ok(!events.some((e) => e.msg.kind === 'invis' && (e.to === 'p3' || e.to === null)));
+  events.length = 0;
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.ok(!events.some((e) => e.msg.kind === 'swing' && (e.to === 'p3' || e.to === null)));
+  assert.ok(events.some((e) => e.msg.kind === 'swing' && e.to === 'p2'));
+});
+
+test('미치광이·저격수는 투명화 스킬을 쓸 수 없음', () => {
+  for (const cls of ['maniac', 'sniper']) {
+    const { game, hunter } = makeGame(3, 7, cls);
+    game.handleSkill('p1');
+    assert.ok(!game.isInvisible(hunter));
+  }
+});

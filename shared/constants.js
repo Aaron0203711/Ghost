@@ -98,7 +98,7 @@ export function matchRules(playerCount) {
 
 // ───────────── 술래 직업 ─────────────
 
-export const HUNTER_CLASS = Object.freeze({ MANIAC: 'maniac', SNIPER: 'sniper' });
+export const HUNTER_CLASS = Object.freeze({ MANIAC: 'maniac', SNIPER: 'sniper', ASSASSIN: 'assassin' });
 
 /** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
 export const CLASS_PICK_TIME = 15;
@@ -116,8 +116,17 @@ export const SNIPER = Object.freeze({
   BODY_HEIGHT: 1.85,
 });
 
+/** 암살자: 쿠나이 근접 공격(1칸), 스킬로 15초 투명화. 생존자를 맞히면 바로 풀림 */
+export const ASSASSIN = Object.freeze({
+  ATTACK_COOLDOWN: 1.5,
+  ATTACK_RANGE: 2.0,
+  INVIS_TIME: 15,
+  SKILL_COOLDOWN: 8, // 투명화가 끝난 뒤부터 셈
+});
+
 export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
+  assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 근접 공격 (쿨타임 1.5초) · 15초 투명화 (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
 });
 

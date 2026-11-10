@@ -12,6 +12,7 @@ import {
   matchRules,
   HUNTER_CLASS,
   SNIPER,
+  ASSASSIN,
   aimDirection,
 } from '../../shared/constants.js';
 import { generateMap, planMatch, generatorBox } from './mapgen.js';
@@ -33,7 +34,7 @@ export class Game {
     this.map = generateMap(this.seed, opts.theme);
 
     this.rules = matchRules(roster.length);
-    const validCls = (c) => (c === HUNTER_CLASS.SNIPER ? HUNTER_CLASS.SNIPER : HUNTER_CLASS.MANIAC);
+    const validCls = (c) => (Object.values(HUNTER_CLASS).includes(c) ? c : HUNTER_CLASS.MANIAC);
     let hunters = opts.hunters;
     if (!hunters) {
       const id = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
@@ -78,6 +79,8 @@ export class Game {
         chargeTimer: 0,
         attackReadyAt: 0,
         aiming: false,
+        invisUntil: 0, // 암살자 투명화 끝나는 시각
+        skillReadyAt: 0,
         cls: role === ROLE.HUNTER ? hunterCls.get(p.id) : null,
       });
     };
@@ -175,8 +178,13 @@ export class Game {
       this.fire(p);
       return;
     }
-    p.attackReadyAt = this.time + RULES.ATTACK_COOLDOWN;
-    this.emit(null, { t: 'event', kind: 'swing', id });
+    // 근접 공격: 미치광이(방망이) / 암살자(쿠나이)
+    const assassin = p.cls === HUNTER_CLASS.ASSASSIN;
+    const range = assassin ? ASSASSIN.ATTACK_RANGE : RULES.ATTACK_RANGE;
+    p.attackReadyAt = this.time + (assassin ? ASSASSIN.ATTACK_COOLDOWN : RULES.ATTACK_COOLDOWN);
+    // 투명한 암살자의 휘두르기는 생존자에게 알리지 않는다
+    if (this.isInvisible(p)) this.emitToSeers({ t: 'event', kind: 'swing', id });
+    else this.emit(null, { t: 'event', kind: 'swing', id });
 
     const fx = -Math.sin(p.yaw);
     const fz = -Math.cos(p.yaw);
@@ -187,7 +195,7 @@ export class Game {
       const dx = s.x - p.x;
       const dz = s.z - p.z;
       const d = Math.hypot(dx, dz);
-      if (d > RULES.ATTACK_RANGE + RULES.PLAYER_RADIUS) continue;
+      if (d > range + RULES.PLAYER_RADIUS) continue;
       if (d > 0.4) {
         const cos = (dx * fx + dz * fz) / d;
         if (cos < Math.cos(RULES.ATTACK_HALF_ANGLE)) continue;
@@ -200,6 +208,34 @@ export class Game {
     }
     if (!best || this.time < best.invulnUntil) return;
     this.damage(best, id, 1);
+    // 투명화 중 생존자를 맞히면 바로 풀린다
+    if (this.isInvisible(p)) this.endInvis(p, 'hit');
+  }
+
+  isInvisible(p) {
+    return p.cls === HUNTER_CLASS.ASSASSIN && this.time < p.invisUntil;
+  }
+
+  /** 생존자가 아닌 사람(술래, 관전자)에게만 보낸다 */
+  emitToSeers(msg) {
+    for (const q of this.players.values()) {
+      if (q.role !== ROLE.SURVIVOR || q.status !== STATUS.ALIVE) this.emit(q.id, msg);
+    }
+  }
+
+  /** 스킬 키: 암살자 투명화 (15초, 끝난 뒤 쿨타임 8초) */
+  handleSkill(id) {
+    const p = this.players.get(id);
+    if (!p || this.ended || p.cls !== HUNTER_CLASS.ASSASSIN || p.status !== STATUS.ALIVE) return;
+    if (this.isInvisible(p) || this.time < p.skillReadyAt) return;
+    p.invisUntil = this.time + ASSASSIN.INVIS_TIME;
+    this.emitToSeers({ t: 'event', kind: 'invis', id, on: true });
+  }
+
+  endInvis(p, reason) {
+    p.invisUntil = 0;
+    p.skillReadyAt = this.time + ASSASSIN.SKILL_COOLDOWN;
+    this.emit(null, { t: 'event', kind: 'invis', id: p.id, on: false, reason });
   }
 
   /** 생존자에게 피해. 맞으면 2초 무적, 체력이 다 닳으면 잡힘 */
@@ -349,6 +385,11 @@ export class Game {
     this.stepBullets(dt);
     if (this.ended) return;
 
+    // 투명화 시간 종료
+    for (const p of this.players.values()) {
+      if (p.cls === HUNTER_CLASS.ASSASSIN && p.invisUntil > 0 && this.time >= p.invisUntil) this.endInvis(p, 'timeout');
+    }
+
     // 덫 밟기
     for (const s of this.players.values()) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
@@ -473,23 +514,30 @@ export class Game {
     const traps = this.traps
       .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE)
       .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z) }));
+    // 살아 있는 생존자에게는 투명한 암살자의 위치를 아예 보내지 않는다
+    const hideInvis = !spectator && me.role === ROLE.SURVIVOR;
     const snap = {
       t: 'state',
       time: r2(this.time),
-      players: [...this.players.values()].map((p) => ({
-        id: p.id,
-        x: r2(p.x),
-        z: r2(p.z),
-        yaw: r2(p.yaw),
-        pitch: r2(p.pitch),
-        st: p.status,
-        hits: p.hits,
-        stun: this.isStunned(p) ? r2(p.stunUntil - this.time) : 0,
-        inv: this.time < p.invulnUntil ? 1 : 0,
-        run: p.running ? 1 : 0,
-        rep: p.repairing ? 1 : 0,
-        aim: p.aiming ? 1 : 0,
-      })),
+      players: [...this.players.values()].map((p) => {
+        const invis = this.isInvisible(p);
+        if (invis && hideInvis) return { id: p.id, hidden: 1, st: p.status, hits: p.hits };
+        return {
+          id: p.id,
+          x: r2(p.x),
+          z: r2(p.z),
+          yaw: r2(p.yaw),
+          pitch: r2(p.pitch),
+          st: p.status,
+          hits: p.hits,
+          stun: this.isStunned(p) ? r2(p.stunUntil - this.time) : 0,
+          inv: this.time < p.invulnUntil ? 1 : 0,
+          run: p.running ? 1 : 0,
+          rep: p.repairing ? 1 : 0,
+          aim: p.aiming ? 1 : 0,
+          invis: invis ? 1 : 0,
+        };
+      }),
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),
       traps,
       exit: this.exit,
@@ -500,6 +548,8 @@ export class Game {
         charges: me.charges,
         chargeLeft: me.charges < RULES.TRAP_MAX_CHARGES ? r2(RULES.TRAP_COOLDOWN - me.chargeTimer) : 0,
         attackLeft: r2(Math.max(0, me.attackReadyAt - this.time)),
+        invisLeft: this.isInvisible(me) ? r2(me.invisUntil - this.time) : 0,
+        skillLeft: r2(Math.max(0, me.skillReadyAt - this.time)),
       };
     }
     return snap;

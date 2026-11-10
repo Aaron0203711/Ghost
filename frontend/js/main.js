@@ -544,7 +544,7 @@ net.on('notice', (m) => {
 net.on('start', (m) => {
   clearInterval(selectTimer);
   if (m.autoPicked && m.players.find((p) => p.id === myId)?.role === 'hunter') {
-    toast(`시간이 지나 직업이 무작위로 정해졌어요: ${m.hunterClass === 'sniper' ? '저격수' : '미치광이'}`);
+    toast(`시간이 지나 직업이 무작위로 정해졌어요: ${(CLASS_INFO[m.hunterClass] || CLASS_INFO.maniac).name}`);
   }
   done();
   startSession(m);

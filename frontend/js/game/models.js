@@ -28,6 +28,30 @@ export function makeBat() {
   return g;
 }
 
+/** 쿠나이: 손잡이 끝(고리)이 원점, 날이 +y 방향 */
+export function makeKunai() {
+  const g = new THREE.Group();
+  const steel = mat('#b9c0c8');
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 14), steel);
+  ring.position.y = -0.03;
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.12, 8), mat('#2b1f1a'));
+  grip.position.y = 0.06;
+  // 손잡이에 감은 끈
+  for (let i = 0; i < 4; i++) {
+    const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.004, 4, 10), mat('#8a1f1f'));
+    wrap.rotation.x = Math.PI / 2;
+    wrap.position.y = 0.02 + i * 0.028;
+    g.add(wrap);
+  }
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), steel);
+  guard.position.y = 0.125;
+  const blade = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), mat('#d7dde3', { emissive: '#101418' }));
+  blade.scale.set(0.034, 0.12, 0.01);
+  blade.position.y = 0.24;
+  g.add(ring, grip, guard, blade);
+  return g;
+}
+
 /** 저격총: 개머리판이 원점, 총구가 -z 방향 */
 export function makeRifle() {
   const g = new THREE.Group();
@@ -63,14 +87,15 @@ export class Avatar {
     this.group = new THREE.Group();
     const isHunter = role === 'hunter';
     const sniper = this.cls === 'sniper';
+    const assassin = this.cls === 'assassin';
     const scale = isHunter ? 1.12 : 1;
     const body = new THREE.Group();
     body.scale.setScalar(scale);
     this.group.add(body);
 
-    const shirt = sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
-    const pants = sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
-    const skin = sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
+    const shirt = assassin ? '#1c2230' : sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
+    const pants = assassin ? '#141822' : sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
+    const skin = assassin ? '#d9b38f' : sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.26), mat(shirt));
     torso.position.y = 1.15;
@@ -78,7 +103,20 @@ export class Avatar {
     head.position.y = 1.62;
     body.add(torso, head);
 
-    if (sniper) {
+    if (assassin) {
+      // 암살자: 두건 + 입을 가린 복면 + 빨간 머리띠
+      const hood = new THREE.Mesh(new THREE.SphereGeometry(0.182, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.9), mat('#1c2230'));
+      hood.position.y = 1.63;
+      const maskM = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.13, 0.2), mat('#1c2230'));
+      maskM.position.set(0, 1.55, -0.06);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.178, 0.018, 6, 20), mat('#b3262b'));
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 1.7;
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.02), mat('#b3262b'));
+      tail.position.set(0.04, 1.62, 0.19);
+      tail.rotation.z = 0.3;
+      body.add(hood, maskM, band, tail);
+    } else if (sniper) {
       // 저격수: 복면 + 모자, 빨간 고글
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), mat('#2c3326'));
       cap.position.y = 1.76;
@@ -123,7 +161,12 @@ export class Avatar {
     this.armR.position.set(0.3, 1.42, 0); // 오른손 (+x)
     body.add(this.legL, this.legR, this.armL, this.armR);
 
-    if (sniper) {
+    if (assassin) {
+      this.kunai = makeKunai();
+      this.kunai.position.set(0, -0.6, 0);
+      this.kunai.rotation.x = Math.PI; // 날이 팔 끝 방향 (아래로 들고 다님)
+      this.armR.add(this.kunai);
+    } else if (sniper) {
       this.rifle = makeRifle();
       this.rifle.position.set(0, -0.56, 0);
       this.rifle.rotation.x = -Math.PI / 2; // 총구가 팔 방향
@@ -173,6 +216,18 @@ export class Avatar {
     this.recoil = 1;
   }
 
+  /** 투명화된 암살자를 같은 편/관전자 화면에서 반투명하게 (1 = 보통) */
+  setGhost(alpha) {
+    if (this.ghost === alpha) return;
+    this.ghost = alpha;
+    for (const m of this.materials) {
+      m.transparent = alpha < 1;
+      m.opacity = alpha;
+      m.depthWrite = alpha >= 1;
+      m.needsUpdate = true;
+    }
+  }
+
   /** 저격총 총구의 월드 좌표 */
   muzzleWorld(out = new THREE.Vector3()) {
     if (!this.rifle) return out.set(this.pos.x, 1.5, this.pos.z);
@@ -209,6 +264,11 @@ export class Avatar {
       // 앞으로 팔을 뻗어 수리
       this.armL.rotation.x = 1.2 + Math.sin(performance.now() / 120) * 0.15;
       this.armR.rotation.x = 1.2 - Math.sin(performance.now() / 120) * 0.15;
+    } else if (this.cls === 'assassin' && this.swing > 0) {
+      // 앞으로 찌르기
+      this.swing = Math.max(0, this.swing - dt * 4);
+      const t = 1 - this.swing;
+      this.armR.rotation.x = t < 0.25 ? 0.4 + (t / 0.25) * 1.3 : 1.7 - Math.min(1, (t - 0.25) / 0.6) * 1.3;
     } else if (this.cls === 'sniper') {
       // 조준하면 총을 들어 앞을 겨눈다
       this.recoil = Math.max(0, this.recoil - dt * 4);
@@ -510,4 +570,64 @@ export function makeImpact(scene, p, color = '#fff2c0') {
     }
     return true;
   };
+}
+
+/** 1인칭 쿠나이 (오른손). 투명화 중에는 반투명하게 보인다 */
+export class KunaiViewModel {
+  constructor(camera) {
+    this.root = new THREE.Group();
+    this.hand = new THREE.Group();
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.4), mat('#1c2230'));
+    arm.position.set(0, -0.02, 0.2);
+    const fist = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.09), mat('#1c2230'));
+    this.kunai = makeKunai();
+    this.kunai.scale.setScalar(1.6);
+    this.kunai.rotation.x = -Math.PI / 2; // 날이 앞(-z)
+    this.kunai.position.set(0, 0, -0.02);
+    this.hand.add(arm, fist, this.kunai);
+    this.root.add(this.hand);
+    this.root.scale.setScalar(0.75);
+    camera.add(this.root);
+    this.swing = 0;
+    this.bob = 0;
+    this.materials = [];
+    this.root.traverse((o) => o.material && this.materials.push(o.material));
+    this.baseEmissive = this.materials.map((m) => m.emissive?.clone());
+    this.ghost = 1;
+  }
+
+  playSwing() {
+    this.swing = 1;
+  }
+
+  /** 투명화 중이면 무기가 반투명 */
+  setGhost(on) {
+    const a = on ? 0.32 : 1;
+    if (this.ghost === a) return;
+    this.ghost = a;
+    for (const m of this.materials) {
+      m.transparent = on;
+      m.opacity = a;
+      m.depthWrite = !on;
+      m.needsUpdate = true;
+    }
+    this.materials.forEach((m, i) => {
+      if (m.emissive) m.emissive.copy(on ? new THREE.Color('#2a4a66') : this.baseEmissive[i]);
+    });
+  }
+
+  update(dt, moving) {
+    this.bob += dt * (moving ? 9 : 2);
+    const by = Math.sin(this.bob) * (moving ? 0.014 : 0.004);
+    const bx = Math.cos(this.bob * 0.5) * (moving ? 0.01 : 0.002);
+    let thrust = 0;
+    if (this.swing > 0) {
+      this.swing = Math.max(0, this.swing - dt * 4.5);
+      const t = 1 - this.swing;
+      thrust = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+    }
+    // 평소에는 살짝 비스듬히, 공격하면 화면 가운데로 찌른다
+    this.hand.rotation.set(0.15 - thrust * 0.1, 0.25 - thrust * 0.3, -0.2);
+    this.root.position.set(0.28 + bx - thrust * 0.12, -0.27 + by + thrust * 0.05, -0.45 - thrust * 0.22);
+  }
 }

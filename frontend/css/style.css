@@ -1634,3 +1634,54 @@ body.touch #pc-hint {
   border-color: rgba(255, 220, 160, 0.5);
   color: #ffe9c4;
 }
+
+/* ───────────── 암살자 ───────────── */
+
+.class-list {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+#screen-select .menu-card.wide {
+  width: min(620px, calc(100vw - 32px));
+}
+
+@media (max-width: 520px) {
+  .class-list {
+    grid-template-columns: 1fr;
+  }
+  .class-card {
+    flex-direction: row;
+    text-align: left;
+    padding: 10px 12px;
+  }
+}
+
+.cls-assassin .m-only,
+#screen-game:not(.cls-assassin) .as-only,
+.cls-assassin .ctl-btn .count {
+  display: none;
+}
+
+.cls-assassin .ctl-btn .timer {
+  display: block;
+}
+
+/* 내가 투명화 중일 때: 푸른 일렁임 테두리 */
+#vignette-invis {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(70, 140, 230, 0.5));
+}
+
+#screen-game.invisible #vignette-invis {
+  opacity: 1;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+#screen-game.invisible .badge.hunter::after {
+  content: ' · 👻 투명';
+  color: #9fd7ff;
+}

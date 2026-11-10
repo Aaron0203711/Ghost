@@ -104,6 +104,11 @@
                 <strong>미치광이</strong>
                 <span class="cls-desc">방망이 근접 공격 · 쿨타임 1초<br />덫 3개 (30초마다 1개 충전)</span>
               </button>
+              <button class="class-card" data-cls="assassin">
+                <span class="cls-icon">🥷</span>
+                <strong>암살자</strong>
+                <span class="cls-desc">쿠나이 근접 공격 · 쿨타임 1.5초<br />15초 투명화 · 명중하면 풀림 (쿨타임 8초)</span>
+              </button>
               <button class="class-card" data-cls="sniper">
                 <span class="cls-icon">🎯</span>
                 <strong>저격수</strong>
@@ -118,7 +123,7 @@
             <h2 id="select-wait-title">술래가 정해졌어요</h2>
             <p class="wait-name"><b id="select-hunter-name"></b> 님이 직업을 고르는 중…</p>
             <div class="wait-dots"><i></i><i></i><i></i></div>
-            <p class="hint">술래 직업은 <b>미치광이</b>(방망이·덫) 또는 <b>저격수</b>(저격총) 중 하나예요.</p>
+            <p class="hint">술래 직업은 <b>미치광이</b>(방망이·덫), <b>암살자</b>(쿠나이·투명화), <b>저격수</b>(저격총) 중 하나예요.</p>
           </div>
         </div>
       </section>
@@ -154,10 +159,11 @@
           <div id="joy"><div id="joy-knob"></div></div>
           <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
           <div id="btn-action" class="ctl-btn action"><span class="ico"></span><span class="lbl"></span><span class="count"></span><span class="timer"></span></div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only m-only">클릭/Space 공격 · Q/우클릭 덫</span><span class="h-only sn-only">클릭/Space 발사 · 우클릭/Shift 꾹 조준</span> · Esc 커서 해제</p>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only m-only">클릭/Space 공격 · Q/우클릭 덫</span><span class="h-only sn-only">클릭/Space 발사 · 우클릭/Shift 꾹 조준</span><span class="h-only as-only">클릭/Space 공격 · Q/우클릭 투명화</span> · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>
+        <div id="vignette-invis"></div>
         <div id="scope"><i class="h"></i><i class="v"></i><i class="dot"></i></div>
       </section>
 

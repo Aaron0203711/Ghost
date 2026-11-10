@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as T from './textures.js';
 import { buildMineWorld, buildMineSky } from './mine.js';
+import { buildBackroomsWorld, buildBackroomsSky } from './backrooms.js';
 
 const tmpColor = new THREE.Color();
 
@@ -106,6 +107,7 @@ export const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: t
 
 export function buildWorld(scene, map) {
   if (map.theme === 'mine') return buildMineWorld(scene, map);
+  if (map.theme === 'backrooms') return buildBackroomsWorld(scene, map);
   const group = new THREE.Group();
   const size = map.size;
 
@@ -336,6 +338,7 @@ function buildMountains(size) {
 /** 해질녘 하늘 */
 export function buildSky(scene, theme = 'village') {
   if (theme === 'mine') return buildMineSky(scene);
+  if (theme === 'backrooms') return buildBackroomsSky(scene);
   const geo = new THREE.SphereGeometry(190, 24, 12);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,

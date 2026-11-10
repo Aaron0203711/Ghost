@@ -6,8 +6,9 @@ import { buildWorld, buildSky } from './world.js';
 import { Avatar, BatViewModel, RifleViewModel, KunaiViewModel, GeneratorModel, makeTrap, makeExit, Tracer, makeImpact } from './models.js';
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
+import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
 import { Gyro } from './gyro.js';
-import { sfx, unlockAudio } from './audio.js';
+import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const genBox = (g) => {
@@ -87,10 +88,12 @@ export class GameSession {
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
-    this.theme = start.map.theme === 'mine' ? 'mine' : 'village';
+    this.theme = ['mine', 'backrooms'].includes(start.map.theme) ? start.map.theme : 'village';
     this.isMine = this.theme === 'mine';
-    // 폐광산은 어둡고 시야가 약 60m (마을은 약 75m)
-    scene.fog = this.isMine ? new THREE.Fog(MINE_FOG.color, MINE_FOG.near, MINE_FOG.far) : new THREE.Fog('#4a3c4f', 14, 78);
+    this.isBackrooms = this.theme === 'backrooms';
+    // 시야: 마을 약 75m, 폐광산 약 60m(어두움), 백룸 약 75m(누런 안개)
+    const fog = this.isMine ? MINE_FOG : this.isBackrooms ? BACKROOMS_FOG : { color: '#4a3c4f', near: 14, far: 78 };
+    scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
     this.scene = scene;
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 220);
@@ -111,6 +114,10 @@ export class GameSession {
       camera.add(lamp, lamp.target);
       this.headlamp = lamp;
       this.dust = new Dust(scene);
+    } else if (this.isBackrooms) {
+      // 형광등 아래 밋밋하고 누런 빛
+      scene.add(new THREE.HemisphereLight('#fff4c8', '#8f7d42', 2.1));
+      scene.add(new THREE.AmbientLight('#e8dca8', 0.7));
     } else {
       scene.add(new THREE.HemisphereLight('#b9a3c9', '#3b3226', 1.6));
       const sun = new THREE.DirectionalLight('#ffb27a', 1.4);
@@ -183,9 +190,10 @@ export class GameSession {
     $('btn-action').querySelector('.lbl').textContent = labels.action[1];
     $('hud-feed').innerHTML = '';
     $('hud-exit').classList.add('hidden');
-    $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : '⛩ 탈출구';
+    $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : this.isBackrooms ? '🚪 EXIT' : '⛩ 탈출구';
     screen.classList.toggle('theme-mine', this.isMine);
-    this.feed(this.isMine ? '⛏️ 맵: 폐광산' : '🏘️ 맵: 시골 마을');
+    screen.classList.toggle('theme-backrooms', this.isBackrooms);
+    this.feed(this.isMine ? '⛏️ 맵: 폐광산' : this.isBackrooms ? '🟨 맵: 백룸' : '🏘️ 맵: 시골 마을');
     $('hud-repair').classList.add('hidden');
     $('hud-spectate').classList.add('hidden');
     $('hud-gens').innerHTML = [...this.gens.keys()].map((id) => `<i class="lamp" data-gen="${id}"></i>`).join('');
@@ -368,7 +376,7 @@ export class GameSession {
 
   showExit(exit) {
     this.exit = exit;
-    this.exitMesh = this.isMine ? makeMineExit(exit) : makeExit(exit);
+    this.exitMesh = this.isMine ? makeMineExit(exit) : this.isBackrooms ? makeBackroomsExit(exit) : makeExit(exit);
     this.scene.add(this.exitMesh);
     $('hud-exit').classList.remove('hidden');
   }
@@ -443,8 +451,15 @@ export class GameSession {
       case 'exitOpen':
         sfx.exitOpen();
         this.showExit(e.exit);
-        this.centerMsg(this.isMine ? '탈출구가 열렸다! 빛이 새어 나오는 갱구로 가세요' : '탈출구가 열렸다! 빛나는 도리이로 가세요', 3);
-        this.feed(`${this.isMine ? '🚪' : '⛩️'} 탈출구가 열렸다`, 'good');
+        this.centerMsg(
+          this.isMine
+            ? '탈출구가 열렸다! 빛이 새어 나오는 갱구로 가세요'
+            : this.isBackrooms
+              ? '탈출구가 열렸다! 초록 EXIT 문을 찾으세요'
+              : '탈출구가 열렸다! 빛나는 도리이로 가세요',
+          3,
+        );
+        this.feed(`${this.isMine || this.isBackrooms ? '🚪' : '⛩️'} 탈출구가 열렸다`, 'good');
         break;
       case 'escaped':
         this.feed(`🏁 ${name(e.id)} 탈출 성공`, 'good');
@@ -669,6 +684,8 @@ export class GameSession {
     }
     this.sky.position.copy(cam.position);
     this.dust?.update(dt, cam.position);
+    this.worldGroup.userData.update?.(dt);
+    if (this.isBackrooms) ensureHum(); // 형광등 웅웅거림
     this.viewBat?.update(dt, this.moving, this.aiming);
     $('screen-game').classList.toggle('scoped', this.aiming && cam.fov < 40);
   }
@@ -852,6 +869,7 @@ export class GameSession {
     cancelAnimationFrame(this.raf);
     this.controls.dispose();
     this.gyro.dispose();
+    stopHum();
     window.removeEventListener('resize', this.onResize);
     $('btn-game-settings').removeEventListener('click', this.onSettingsClick);
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);

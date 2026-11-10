@@ -1700,3 +1700,14 @@ body.touch #pc-hint {
   opacity: 0.4;
   pointer-events: none;
 }
+
+.theme-backrooms #hud-exit {
+  background: rgba(30, 70, 40, 0.75);
+  border-color: rgba(120, 255, 150, 0.5);
+  color: #c9ffd6;
+}
+
+.select-map.backrooms {
+  background: rgba(210, 195, 116, 0.25);
+  color: #f2e39a;
+}

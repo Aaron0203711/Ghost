@@ -298,15 +298,15 @@ test('6명 선택 중 생존자가 나가 5명이 되면 술래 수가 달라져
 test('맵은 직업 선택 단계에서 무작위로 정해지고 그 맵으로 게임이 시작됨', () => {
   const seen = new Set();
   const { mgr, members, room } = fullRoom(2);
-  for (let k = 0; k < 12; k++) {
+  for (let k = 0; k < 24; k++) {
     mgr.handle(members[0], { t: 'start' });
     const sel = members[1].last('classSelect');
-    assert.ok(['village', 'mine'].includes(sel.map.id));
+    assert.ok(['village', 'mine', 'backrooms'].includes(sel.map.id));
     assert.ok(sel.map.name);
     seen.add(sel.map.id);
     mgr.selectTimeout(room);
     assert.equal(members[1].last('start').map.theme, sel.map.id);
     mgr.endGame(room); // 다음 판
   }
-  assert.equal(seen.size, 2, '두 맵 모두 나올 수 있음');
+  assert.equal(seen.size, 3, '세 맵 모두 나올 수 있음');
 });

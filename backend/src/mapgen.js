@@ -38,10 +38,12 @@ export const roadCenter = (j) => roadStart(j) + ROAD / 2;
 export const MAP_THEMES = Object.freeze({
   village: { id: 'village', name: '시골 마을', icon: '🏘️' },
   mine: { id: 'mine', name: '폐광산', icon: '⛏️' },
+  backrooms: { id: 'backrooms', name: '백룸', icon: '🟨' },
 });
 
 export function generateMap(seed = Date.now(), theme = 'village') {
   if (!MAP_THEMES[theme]) theme = 'village';
+  if (theme === 'backrooms') return generateBackrooms(seed);
   const rand = mulberry32(seed);
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const range = (a, b) => a + rand() * (b - a);
@@ -431,7 +433,10 @@ export function planMatch(map, survivorCount, rand = Math.random, generatorCount
     const j = Math.floor(rand() * (i + 1));
     [corners[i], corners[j]] = [corners[j], corners[i]];
   }
-  const hunterSpawns = corners.slice(0, Math.max(1, hunterCount)).map(([a, b]) => ({ x: roadCenter(a), z: roadCenter(b) }));
+  // 맵이 술래 시작 후보를 직접 주면(백룸) 그중에서 고른다
+  const hunterSpawns = map.hunterSpawns
+    ? [...map.hunterSpawns].sort(() => rand() - 0.5).slice(0, Math.max(1, hunterCount))
+    : corners.slice(0, Math.max(1, hunterCount)).map(([a, b]) => ({ x: roadCenter(a), z: roadCenter(b) }));
   const hunterSpawn = hunterSpawns[0];
   const cells = reachableCells(world, hunterSpawn.x, hunterSpawn.z);
   const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -487,4 +492,194 @@ export function planMatch(map, survivorCount, rand = Math.random, generatorCount
 export function generatorBox(g) {
   const rotated = Math.abs(Math.sin(g.rot)) > 0.5;
   return { kind: 'generator', x: g.x, z: g.z, w: rotated ? 0.8 : 1.2, d: rotated ? 1.2 : 0.8, h: 1.1 };
+}
+
+// ───────────── 백룸 ─────────────
+
+export const BACKROOMS_CELL = 5; // 방 격자 한 칸 (m)
+export const BACKROOMS_CEILING = 3.6;
+
+/**
+ * 백룸: 끝없이 이어지는 노란 사무실 방 미로.
+ * 30×30칸 격자에서 미로(모든 칸 연결)를 판 뒤, 벽을 일부 허물어 고리와 넓은 홀을 만든다.
+ * 벽은 1.9m(칸막이 높이), 천장은 3.6m. 기둥은 천장까지.
+ */
+export function generateBackrooms(seed) {
+  const rand = mulberry32(seed);
+  const C = BACKROOMS_CELL;
+  const n = Math.round(MAP_SIZE / C); // 30
+  const T = 0.3;
+  const H = 1.9;
+  const DOOR = 1.7;
+  const boxes = [];
+  const decor = [];
+  const box = (kind, x, z, w, d, h) => boxes.push({ kind, x: round(x), z: round(z), w: round(w), d: round(d), h });
+  const coord = (i) => -HALF + i * C; // 격자선 좌표
+  const center = (i) => -HALF + (i + 0.5) * C; // 칸 중심
+
+  // 바깥 벽 (천장까지)
+  const B = 1;
+  box('boundary', 0, -HALF - B / 2, MAP_SIZE + 2 * B, B, BACKROOMS_CEILING);
+  box('boundary', 0, HALF + B / 2, MAP_SIZE + 2 * B, B, BACKROOMS_CEILING);
+  box('boundary', -HALF - B / 2, 0, B, MAP_SIZE, BACKROOMS_CEILING);
+  box('boundary', HALF + B / 2, 0, B, MAP_SIZE, BACKROOMS_CEILING);
+
+  // 벽 상태: 0 없음, 1 막힌 벽, 2 문(가운데 구멍)
+  // hw[z][x]: 칸 (x, z-1)과 (x, z) 사이 가로 벽 (z = 1..n-1)
+  // vw[z][x]: 칸 (x-1, z)와 (x, z) 사이 세로 벽 (x = 1..n-1)
+  const hw = Array.from({ length: n + 1 }, (_, z) => new Array(n).fill(z > 0 && z < n ? 1 : 0));
+  const vw = Array.from({ length: n }, () => Array.from({ length: n + 1 }, (_, x) => (x > 0 && x < n ? 1 : 0)));
+
+  // 1) 무작위 깊이 우선 미로: 모든 방이 반드시 이어진다
+  const seen = Array.from({ length: n }, () => new Array(n).fill(false));
+  const stack = [[Math.floor(n / 2), Math.floor(n / 2)]];
+  seen[stack[0][1]][stack[0][0]] = true;
+  while (stack.length) {
+    const [x, z] = stack[stack.length - 1];
+    const next = [
+      [x + 1, z],
+      [x - 1, z],
+      [x, z + 1],
+      [x, z - 1],
+    ].filter(([a, b]) => a >= 0 && b >= 0 && a < n && b < n && !seen[b][a]);
+    if (!next.length) {
+      stack.pop();
+      continue;
+    }
+    const [a, b] = next[Math.floor(rand() * next.length)];
+    if (a !== x) vw[z][Math.max(a, x)] = 2;
+    else hw[Math.max(b, z)][x] = 2;
+    seen[b][a] = true;
+    stack.push([a, b]);
+  }
+
+  // 2) 벽을 일부 허물어 고리와 큰 방을 만든다 (막다른 길만 있는 미로가 되지 않게)
+  for (let z = 1; z < n; z++) for (let x = 0; x < n; x++) hw[z][x] = loosen(hw[z][x]);
+  for (let z = 0; z < n; z++) for (let x = 1; x < n; x++) vw[z][x] = loosen(vw[z][x]);
+  function loosen(v) {
+    if (v === 1) return rand() < 0.42 ? 0 : rand() < 0.25 ? 2 : 1;
+    if (v === 2) return rand() < 0.35 ? 0 : 2;
+    return v;
+  }
+
+  // 3) 기둥이 늘어선 넓은 홀: 가운데(술래 시작) + 무작위 몇 곳
+  const pillars = new Set();
+  const halls = [{ x0: 12, z0: 12, x1: 18, z1: 18 }];
+  for (let k = 0; k < 7; k++) {
+    const w = 3 + Math.floor(rand() * 3);
+    const d = 3 + Math.floor(rand() * 3);
+    const x0 = 1 + Math.floor(rand() * (n - w - 2));
+    const z0 = 1 + Math.floor(rand() * (n - d - 2));
+    halls.push({ x0, z0, x1: x0 + w, z1: z0 + d });
+  }
+  for (const h of halls) {
+    for (let z = h.z0 + 1; z < h.z1; z++) for (let x = h.x0; x < h.x1; x++) hw[z][x] = 0;
+    for (let z = h.z0; z < h.z1; z++) for (let x = h.x0 + 1; x < h.x1; x++) vw[z][x] = 0;
+    // 홀 안쪽 격자점에 하나 건너 기둥
+    for (let z = h.z0 + 1; z < h.z1; z++) {
+      for (let x = h.x0 + 1; x < h.x1; x++) {
+        if ((x + z) % 2 === 0) pillars.add(`${x},${z}`);
+      }
+    }
+  }
+  // 가운데 홀의 정중앙 4칸 주변은 술래 시작 자리라 기둥을 비운다
+  for (const key of ['15,15', '14,15', '15,14', '16,15', '15,16', '14,14', '16,16', '14,16', '16,14']) pillars.delete(key);
+
+  // 4) 벽 상자 만들기: 연속된 막힌 벽은 하나로 합친다
+  const emitLine = (horizontal, fixed, states) => {
+    let run = null;
+    const flush = (end) => {
+      if (!run) return;
+      const a0 = coord(run) - T / 2;
+      const a1 = coord(end) + T / 2;
+      if (horizontal) box('wall', (a0 + a1) / 2, fixed, a1 - a0, T, H);
+      else box('wall', fixed, (a0 + a1) / 2, T, a1 - a0, H);
+      run = null;
+    };
+    for (let i = 0; i < n; i++) {
+      const v = states[i];
+      if (v === 1) {
+        if (run === null) run = i;
+        continue;
+      }
+      flush(i);
+      if (v === 2) {
+        // 문: 칸 한쪽에 치우친 출입구
+        const off = 0.5 + rand() * (C - DOOR - 1.0);
+        const s0 = coord(i) - T / 2;
+        const g0 = coord(i) + off;
+        const g1 = g0 + DOOR;
+        const s1 = coord(i + 1) + T / 2;
+        for (const [a0, a1] of [
+          [s0, g0],
+          [g1, s1],
+        ]) {
+          if (a1 - a0 < 0.2) continue;
+          if (horizontal) box('wall', (a0 + a1) / 2, fixed, a1 - a0, T, H);
+          else box('wall', fixed, (a0 + a1) / 2, T, a1 - a0, H);
+        }
+      }
+    }
+    flush(n);
+  };
+  for (let z = 1; z < n; z++) emitLine(true, coord(z), hw[z]);
+  for (let x = 1; x < n; x++) {
+    const col = [];
+    for (let z = 0; z < n; z++) col.push(vw[z][x]);
+    emitLine(false, coord(x), col);
+  }
+  for (const key of pillars) {
+    const [x, z] = key.split(',').map(Number);
+    box('pillar', coord(x), coord(z), 0.8, 0.8, BACKROOMS_CEILING);
+  }
+
+  // 카펫 얼룩 / 천장 형광등 (렌더링용)
+  for (let i = 0; i < 70; i++) {
+    decor.push({ kind: 'stain', x: (rand() - 0.5) * (MAP_SIZE - 6), z: (rand() - 0.5) * (MAP_SIZE - 6), r: 0.8 + rand() * 2.2 });
+  }
+  const lights = [];
+  for (let z = 0; z < n; z++) {
+    for (let x = 0; x < n; x++) {
+      const r = rand();
+      if (r < 0.06) continue; // 꺼진 칸
+      lights.push({ x: center(x), z: center(z), flicker: r > 0.94 ? 1 : 0 });
+    }
+  }
+
+  // 탈출구 후보: 바깥 벽 안쪽, 막히지 않은 곳
+  const world = new CollisionWorld(boxes);
+  const exits = [];
+  for (let i = 2; i < n - 2; i += 3) {
+    const c = center(i);
+    for (const e of [
+      { x: c, z: -HALF + 1.6, rot: 0 },
+      { x: c, z: HALF - 1.6, rot: Math.PI },
+      { x: -HALF + 1.6, z: c, rot: Math.PI / 2 },
+      { x: HALF - 1.6, z: c, rot: -Math.PI / 2 },
+    ]) {
+      if (world.isFree(e.x, e.z, 1.2)) exits.push(e);
+    }
+  }
+
+  const hunterSpawns = [
+    { x: center(14), z: center(14) },
+    { x: center(15), z: center(14) },
+    { x: center(14), z: center(15) },
+    { x: center(15), z: center(15) },
+  ];
+
+  return {
+    seed,
+    theme: 'backrooms',
+    size: MAP_SIZE,
+    ceiling: BACKROOMS_CEILING,
+    boxes,
+    decor,
+    roads: [],
+    poles: [],
+    arches: [],
+    exits,
+    lights,
+    hunterSpawns,
+  };
 }

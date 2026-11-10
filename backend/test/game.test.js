@@ -734,3 +734,45 @@ test('암살자: 시간이 다 돼서 풀리면 감속 없음', () => {
   run(game, 1);
   assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.6) < 0.01);
 });
+
+// ───────────── 백룸 ─────────────
+
+test('백룸 맵: 같은 크기, 모든 공간이 이어져 있고 시작 위치·발전기·탈출구가 막히지 않음', async () => {
+  const { generateMap, reachableCells, MAP_SIZE } = await import('../src/mapgen.js');
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    const map = generateMap(seed, 'backrooms');
+    assert.equal(map.theme, 'backrooms');
+    assert.equal(map.size, MAP_SIZE);
+    const world = new CollisionWorld(map.boxes);
+    const start = map.hunterSpawns[0];
+    const reach = reachableCells(world, start.x, start.z);
+    // 0.5m 격자에서 비어 있는 칸 수와 비교: 거의 전부 도달 가능해야 함
+    let free = 0;
+    for (let x = -74.75; x < 75; x += 0.5) for (let z = -74.75; z < 75; z += 0.5) if (world.isFree(x, z, RULES.PLAYER_RADIUS + 0.02)) free++;
+    assert.ok(reach.length / free > 0.995, `seed ${seed}: ${reach.length}/${free}`);
+    for (const e of map.exits) assert.ok(world.isFree(e.x, e.z, 1.0));
+    assert.ok(map.exits.length >= 8);
+    assert.ok(map.boxes.every((b) => b.kind !== 'wall' || b.h === 1.9), '벽 높이 1.9m');
+  }
+});
+
+test('백룸 맵으로 8인 게임: 모든 시작 위치와 발전기가 비어 있음', () => {
+  for (const seed of [1, 2, 3]) {
+    const roster = Array.from({ length: 8 }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+    const game = new Game(roster, {
+      seed,
+      theme: 'backrooms',
+      rand: mulberry32(seed),
+      hunters: [
+        { id: 'p1', cls: 'assassin' },
+        { id: 'p2', cls: 'sniper' },
+      ],
+      emit: () => {},
+    });
+    assert.equal(game.map.theme, 'backrooms');
+    for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9), `seed ${seed} ${p.id}`);
+    for (const g of game.gens) {
+      for (const o of game.gens) if (o !== g) assert.ok(Math.hypot(o.x - g.x, o.z - g.z) > 10);
+    }
+  }
+});

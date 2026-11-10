@@ -4,6 +4,45 @@ let enabled = true;
 
 export function setSoundEnabled(v) {
   enabled = v;
+  if (!v) stopHum();
+}
+
+// 백룸 형광등 소리: 낮게 웅웅거리는 소리를 계속 낸다
+let hum = null;
+export function ensureHum() {
+  if (hum || !enabled || !ctx || ctx.state !== 'running') return;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.028;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 900;
+  const oscs = [
+    [120, 'sawtooth', 0.6],
+    [240, 'square', 0.12],
+    [60, 'sine', 1],
+  ].map(([f, type, v]) => {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.value = v;
+    o.connect(g).connect(filter);
+    o.start();
+    return o;
+  });
+  filter.connect(gain).connect(ctx.destination);
+  hum = { oscs, gain };
+}
+
+export function stopHum() {
+  if (!hum) return;
+  try {
+    hum.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+    for (const o of hum.oscs) o.stop(ctx.currentTime + 0.5);
+  } catch {
+    /* 이미 멈춤 */
+  }
+  hum = null;
 }
 
 export function unlockAudio() {

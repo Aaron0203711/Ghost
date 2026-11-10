@@ -501,6 +501,7 @@ function showClassSelect(m) {
   // 이번 판 맵 (술래가 고르는 동안 무작위로 정해짐)
   $('select-map').textContent = m.map ? `이번 맵: ${m.map.icon} ${m.map.name}` : '';
   $('select-map').classList.toggle('mine', m.map?.id === 'mine');
+  $('select-map').classList.toggle('backrooms', m.map?.id === 'backrooms');
   document.querySelectorAll('.class-card').forEach((c) => {
     c.disabled = false;
     c.classList.remove('picked');

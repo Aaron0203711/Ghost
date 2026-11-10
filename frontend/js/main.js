@@ -3,6 +3,7 @@ import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, unlockAudio } from './game/audio.js';
 import { matchRules, LARGE_MATCH } from '@shared/constants.js';
+import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
 const $ = (id) => document.getElementById(id);
 const net = new Net();
@@ -71,6 +72,8 @@ function tap(el, fn) {
     e.preventDefault();
     if (el.disabled) return;
     unlockAudio();
+    // iPad/iPhone은 버튼을 누른 순간에만 자이로 권한을 물을 수 있다
+    if (settings.gyro) requestGyroPermission().then(syncGyroUi);
     fn(e);
   });
 }
@@ -252,11 +255,39 @@ function syncSettingsUi() {
   $('sens-value').textContent = Number(settings.sensitivity).toFixed(1);
   $('input-sound').checked = settings.sound;
   setSoundEnabled(settings.sound);
+  syncGyroUi();
+}
+
+function syncGyroUi() {
+  const box = $('gyro-settings');
+  if (!isGyroDevice()) {
+    box.classList.add('hidden'); // 노트북/PC에서는 자이로 설정을 숨긴다
+    return;
+  }
+  box.classList.remove('hidden');
+  $('input-gyro').checked = settings.gyro;
+  $('input-gyro-sens').value = String(settings.gyroSensitivity);
+  $('gyro-sens-value').textContent = Number(settings.gyroSensitivity).toFixed(1);
+  $('gyro-sens-field').classList.toggle('disabled', !settings.gyro);
+  let status = '';
+  if (gyroBlockedByInsecure()) status = '⚠ 자이로는 https:// 주소로 접속했을 때만 동작해요.';
+  else if (gyroPermission() === 'denied') status = '⚠ 동작 및 방향 접근이 거부됐어요. 브라우저 설정에서 허용해 주세요.';
+  else if (settings.gyro) status = '기기를 좌우·위아래로 돌리면 시점이 따라 움직여요.';
+  $('gyro-status').textContent = status;
 }
 syncSettingsUi();
 sens.addEventListener('input', () => {
   saveSettings({ sensitivity: Number(sens.value) });
   $('sens-value').textContent = Number(sens.value).toFixed(1);
+});
+$('input-gyro').addEventListener('change', (e) => {
+  saveSettings({ gyro: e.target.checked });
+  if (settings.gyro) requestGyroPermission().then(syncGyroUi);
+  syncGyroUi();
+});
+$('input-gyro-sens').addEventListener('input', (e) => {
+  saveSettings({ gyroSensitivity: Number(e.target.value) });
+  $('gyro-sens-value').textContent = Number(e.target.value).toFixed(1);
 });
 $('input-sound').addEventListener('change', (e) => {
   saveSettings({ sound: e.target.checked });

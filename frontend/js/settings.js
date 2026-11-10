@@ -1,6 +1,7 @@
 // 사용자 설정 (화면 감도 등). 브라우저에 저장된다.
 const KEY = 'ghost.settings.v1';
-const DEFAULTS = { sensitivity: 1.0, sound: true, name: '' };
+// gyro: 자이로스코프 조준(패드/휴대폰에서만 동작), gyroSensitivity: 1.0 = 기기를 돌린 만큼 화면도 회전
+const DEFAULTS = { sensitivity: 1.0, sound: true, name: '', gyro: true, gyroSensitivity: 1.0 };
 
 function load() {
   try {

@@ -5,6 +5,7 @@ import { RULES, ROLE, STATUS, stepStamina, speedFor } from '@shared/constants.js
 import { buildWorld, buildSky } from './world.js';
 import { Avatar, BatViewModel, GeneratorModel, makeTrap, makeExit } from './models.js';
 import { Controls } from './input.js';
+import { Gyro } from './gyro.js';
 import { sfx, unlockAudio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -154,6 +155,7 @@ export class GameSession {
       },
       () => this.settings.sensitivity,
     );
+    this.gyro = new Gyro(() => ({ enabled: this.settings.gyro, sensitivity: this.settings.gyroSensitivity }));
     this.controls.onPress('main', () => {
       unlockAudio();
       if (this.isHunter) this.tryAttack();
@@ -388,9 +390,16 @@ export class GameSession {
 
     // 시점
     const look = c.consumeLook();
+    const gyro = this.gyro.consume();
+    // 설정 창이 열려 있을 때는 자이로 회전을 버린다
+    const settingsOpen = !$('modal-settings').classList.contains('hidden');
     if (alive) {
       this.yaw -= look.dx;
       this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - look.dy));
+      if (!settingsOpen) {
+        this.yaw += gyro.yaw;
+        this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch + gyro.pitch));
+      }
     }
 
     // 이동 (덫에 걸리면 3초 이동 불가)
@@ -628,6 +637,7 @@ export class GameSession {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.controls.dispose();
+    this.gyro.dispose();
     window.removeEventListener('resize', this.onResize);
     $('btn-game-settings').removeEventListener('click', this.onSettingsClick);
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);

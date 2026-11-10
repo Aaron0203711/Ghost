@@ -1322,3 +1322,26 @@ body.touch #pc-hint {
 .rules.large {
   color: #ff9c8a;
 }
+
+#gyro-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#gyro-sens-field.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.gyro-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* 설정 창이 화면보다 길면 내용이 눌리지 않고 스크롤되게 */
+.modal-card > * {
+  flex-shrink: 0;
+}

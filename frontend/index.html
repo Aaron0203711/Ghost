@@ -194,6 +194,10 @@
             <span>자이로 감도 <b id="gyro-sens-value">1.0</b></span>
             <input id="input-gyro-sens" type="range" min="0.2" max="3" step="0.1" />
           </label>
+          <div class="row gyro-invert" id="gyro-invert">
+            <label class="toggle"><input id="input-gyro-inv-x" type="checkbox" /> <span>좌우 반전</span></label>
+            <label class="toggle"><input id="input-gyro-inv-y" type="checkbox" /> <span>상하 반전</span></label>
+          </div>
           <p class="gyro-status" id="gyro-status"></p>
         </div>
         <label class="toggle"><input id="input-sound" type="checkbox" /> <span>효과음</span></label>

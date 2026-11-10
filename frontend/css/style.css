@@ -1691,3 +1691,12 @@ body.touch #pc-hint {
   content: ' · 🐢 감속';
   color: #ffb27a;
 }
+
+.gyro-invert .toggle {
+  font-size: 14px;
+}
+
+.gyro-invert.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}

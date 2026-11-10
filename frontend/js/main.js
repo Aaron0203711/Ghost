@@ -270,6 +270,9 @@ function syncGyroUi() {
   $('input-gyro-sens').value = String(settings.gyroSensitivity);
   $('gyro-sens-value').textContent = Number(settings.gyroSensitivity).toFixed(1);
   $('gyro-sens-field').classList.toggle('disabled', !settings.gyro);
+  $('input-gyro-inv-x').checked = !!settings.gyroInvertX;
+  $('input-gyro-inv-y').checked = !!settings.gyroInvertY;
+  $('gyro-invert').classList.toggle('disabled', !settings.gyro);
   let status = '';
   if (gyroBlockedByInsecure()) status = '⚠ 자이로는 https:// 주소로 접속했을 때만 동작해요.';
   else if (gyroPermission() === 'denied') status = '⚠ 동작 및 방향 접근이 거부됐어요. 브라우저 설정에서 허용해 주세요.';
@@ -290,6 +293,8 @@ $('input-gyro-sens').addEventListener('input', (e) => {
   saveSettings({ gyroSensitivity: Number(e.target.value) });
   $('gyro-sens-value').textContent = Number(e.target.value).toFixed(1);
 });
+$('input-gyro-inv-x').addEventListener('change', (e) => saveSettings({ gyroInvertX: e.target.checked }));
+$('input-gyro-inv-y').addEventListener('change', (e) => saveSettings({ gyroInvertY: e.target.checked }));
 $('input-sound').addEventListener('change', (e) => {
   saveSettings({ sound: e.target.checked });
   setSoundEnabled(settings.sound);

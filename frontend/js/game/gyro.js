@@ -4,6 +4,7 @@
 
 const DEG = Math.PI / 180;
 const DEADZONE = 0.6; // 초당 각도: 손떨림 수준의 작은 흔들림은 무시
+const BASE_SIGN = -1; // 기본 반전
 
 /** 자이로를 쓸 기기인가: 터치가 주 입력인 기기(패드, 휴대폰)만. 노트북은 제외 */
 export function isGyroDevice() {
@@ -67,7 +68,7 @@ function screenAngle() {
 }
 
 export class Gyro {
-  /** @param {()=>{enabled:boolean, sensitivity:number}} getSettings */
+  /** @param {()=>{enabled:boolean, sensitivity:number, invertX?:boolean, invertY?:boolean}} getSettings */
   constructor(getSettings) {
     this.getSettings = getSettings;
     this.yaw = 0;
@@ -90,8 +91,12 @@ export class Gyro {
     if (!s.enabled || this.paused || dt === 0) return;
     const r = screenRates(rate, screenAngle());
     const dz = (v) => (Math.abs(v) < DEADZONE ? 0 : v);
-    this.yaw += dz(r.yaw) * DEG * dt * s.sensitivity;
-    this.pitch += dz(r.pitch) * DEG * dt * s.sensitivity;
+    // 기본 방향: 좌우·상하 모두 반전 (실제 기기에서 반대로 돈다는 피드백 반영)
+    // 설정의 좌우/상하 반전을 켜면 그 축을 한 번 더 뒤집는다
+    const sx = BASE_SIGN * (s.invertX ? -1 : 1);
+    const sy = BASE_SIGN * (s.invertY ? -1 : 1);
+    this.yaw += sx * dz(r.yaw) * DEG * dt * s.sensitivity;
+    this.pitch += sy * dz(r.pitch) * DEG * dt * s.sensitivity;
   }
 
   /** 마지막으로 꺼낸 뒤 쌓인 회전량 (라디안). 좌우: +면 왼쪽으로, 상하: +면 위로 */

@@ -1,7 +1,16 @@
 // 사용자 설정 (화면 감도 등). 브라우저에 저장된다.
 const KEY = 'ghost.settings.v1';
 // gyro: 자이로스코프 조준(패드/휴대폰에서만 동작), gyroSensitivity: 1.0 = 기기를 돌린 만큼 화면도 회전
-const DEFAULTS = { sensitivity: 1.0, sound: true, name: '', gyro: true, gyroSensitivity: 1.0 };
+// gyroInvertX / gyroInvertY: 자이로 좌우 / 상하 반전 (기본 방향에서 한 번 더 뒤집기)
+const DEFAULTS = {
+  sensitivity: 1.0,
+  sound: true,
+  name: '',
+  gyro: true,
+  gyroSensitivity: 1.0,
+  gyroInvertX: false,
+  gyroInvertY: false,
+};
 
 function load() {
   try {

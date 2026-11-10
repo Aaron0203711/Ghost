@@ -216,7 +216,12 @@ export class GameSession {
       },
       () => this.settings.sensitivity,
     );
-    this.gyro = new Gyro(() => ({ enabled: this.settings.gyro, sensitivity: this.settings.gyroSensitivity }));
+    this.gyro = new Gyro(() => ({
+      enabled: this.settings.gyro,
+      sensitivity: this.settings.gyroSensitivity,
+      invertX: this.settings.gyroInvertX,
+      invertY: this.settings.gyroInvertY,
+    }));
     this.controls.onPress('main', () => {
       unlockAudio();
       if (this.isHunter) this.tryAttack();

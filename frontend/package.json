@@ -1,0 +1,9 @@
+{
+  "name": "ghost-frontend",
+  "private": true,
+  "type": "module",
+  "description": "브라우저 클라이언트 (빌드 단계 없음). 백엔드가 정적 파일로 제공하거나 아무 정적 호스팅에 올려도 된다.",
+  "dependencies": {
+    "three": "0.170.0"
+  }
+}

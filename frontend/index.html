@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1622" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>GHOST · 시골 마을 술래잡기</title>
+    <link rel="stylesheet" href="./css/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/build/three.module.js",
+          "three/addons/": "./vendor/three/examples/jsm/",
+          "@shared/": "./shared/"
+        }
+      }
+    </script>
+    <script src="./js/config.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 메인 화면 -->
+      <section id="screen-main" class="screen active">
+        <div class="menu-bg"></div>
+        <div class="menu-card">
+          <h1 class="logo">GHOST<small>시골 마을 술래잡기</small></h1>
+          <label class="field">
+            <span>닉네임</span>
+            <input id="input-name" maxlength="12" autocomplete="off" enterkeyhint="done" placeholder="이름을 입력하세요" />
+          </label>
+          <button id="btn-start" class="btn primary big">시작하기</button>
+          <button id="btn-settings-main" class="btn">⚙ 설정</button>
+          <p class="conn"><i id="conn-dot"></i><span id="conn-text">서버 연결 중…</span></p>
+        </div>
+      </section>
+
+      <!-- 시작하기: 방 만들기 / 방 참가 -->
+      <section id="screen-play" class="screen">
+        <div class="menu-bg"></div>
+        <div class="menu-card">
+          <h2>게임 시작</h2>
+          <button id="btn-create" class="btn primary big">🏠 방 만들기</button>
+          <button id="btn-join-open" class="btn big">🔑 방 참가</button>
+          <button class="btn ghost" data-back="screen-main">← 뒤로</button>
+        </div>
+      </section>
+
+      <!-- 방 참가: 4자리 코드 입력 -->
+      <section id="screen-join" class="screen">
+        <div class="menu-bg"></div>
+        <div class="menu-card">
+          <h2>방 참가</h2>
+          <p class="hint">방장에게 받은 4자리 참가 코드를 입력하세요</p>
+          <div class="code-input" id="code-boxes">
+            <input id="input-code" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="참가 코드" />
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <div class="keypad" id="keypad">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k="clear" class="fn">지움</button><button data-k="0">0</button><button data-k="back" class="fn">⌫</button>
+          </div>
+          <button id="btn-join" class="btn primary big" disabled>참가하기</button>
+          <button class="btn ghost" data-back="screen-play">← 뒤로</button>
+        </div>
+      </section>
+
+      <!-- 대기실 -->
+      <section id="screen-lobby" class="screen">
+        <div class="menu-bg"></div>
+        <div class="menu-card wide">
+          <h2>대기실</h2>
+          <div class="room-code">
+            <span>참가 코드</span>
+            <strong id="lobby-code">----</strong>
+            <button id="btn-copy-code" class="btn small">복사</button>
+          </div>
+          <p class="hint" id="lobby-count">0 / 5명</p>
+          <ul id="lobby-players" class="player-list"></ul>
+          <p class="hint" id="lobby-hint"></p>
+          <button id="btn-lobby-start" class="btn primary big">게임 시작</button>
+          <div class="row">
+            <button id="btn-settings-lobby" class="btn">⚙ 설정</button>
+            <button id="btn-leave" class="btn danger">나가기</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 게임 -->
+      <section id="screen-game" class="screen">
+        <div id="game-canvas-wrap"></div>
+        <div id="touch-layer">
+          <div class="hud-top">
+            <span id="hud-role" class="badge"></span>
+            <div class="gens"><span>발전기</span><span id="hud-gens"></span><b id="hud-gen-count">0/3</b></div>
+            <button id="btn-game-settings" class="icon-btn" data-ui aria-label="설정">⚙</button>
+          </div>
+          <ul id="hud-players"></ul>
+          <div id="hud-feed"></div>
+          <div id="crosshair"></div>
+          <div id="hud-center"></div>
+          <div id="hud-stun" class="hidden"></div>
+          <div id="hud-exit" class="hidden"><i id="exit-arrow">▲</i><span>⛩ 탈출구 <b id="exit-dist"></b></span></div>
+          <div id="hud-repair" class="hidden">
+            <div class="bar"><i id="repair-fill"></i></div>
+            <span id="repair-text"></span>
+          </div>
+          <div id="hud-survivor">
+            <span id="hearts"></span>
+            <div id="stamina"><i id="stamina-fill"></i></div>
+          </div>
+          <div id="hud-spectate" class="hidden" data-ui>
+            <span>관전 중: <b id="spectate-name"></b></span>
+            <button id="btn-spectate-next" class="btn small" data-ui>다음 ▶</button>
+          </div>
+
+          <div id="joy"><div id="joy-knob"></div></div>
+          <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
+          <div id="btn-action" class="ctl-btn action"><span class="ico"></span><span class="lbl"></span><span class="count"></span><span class="timer"></span></div>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only">클릭/Space 공격 · Q/우클릭 덫</span> · Esc 커서 해제</p>
+        </div>
+        <div id="vignette-hit" class="vignette"></div>
+        <div id="vignette-stun" class="vignette"></div>
+      </section>
+
+      <!-- 결과 -->
+      <section id="screen-result" class="screen">
+        <div class="menu-bg"></div>
+        <div class="menu-card wide">
+          <h2 id="result-title">결과</h2>
+          <p id="result-sub" class="hint"></p>
+          <ul id="result-list" class="player-list"></ul>
+          <button id="btn-result-lobby" class="btn primary big">대기실로</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 설정 (메인 화면, 대기실, 게임 중 모두 사용) -->
+    <div id="modal-settings" class="modal hidden" data-ui>
+      <div class="modal-card">
+        <h2>설정</h2>
+        <label class="field">
+          <span>화면 감도 <b id="sens-value">1.0</b></span>
+          <input id="input-sens" type="range" min="0.2" max="3" step="0.1" />
+        </label>
+        <div class="sens-test" id="sens-test"><span>여기를 드래그해서 감도를 시험해 보세요</span><i id="sens-dot"></i></div>
+        <label class="toggle"><input id="input-sound" type="checkbox" /> <span>효과음</span></label>
+        <div class="row">
+          <button id="btn-settings-close" class="btn primary">닫기</button>
+        </div>
+        <button id="btn-quit-game" class="btn danger ghost hidden">게임 나가기</button>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="rotate-hint" class="hidden">📱 가로로 돌리면 더 편하게 플레이할 수 있어요 <button class="btn small" id="btn-rotate-ok">확인</button></div>
+
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>

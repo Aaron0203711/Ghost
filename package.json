@@ -1,0 +1,11 @@
+{
+  "name": "ghost",
+  "private": true,
+  "description": "일본 시골 마을 배경의 1인칭 온라인 술래잡기 (술래 1명 vs 생존자)",
+  "scripts": {
+    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "start": "npm start --prefix backend",
+    "dev": "npm run dev --prefix backend",
+    "test": "npm test --prefix backend"
+  }
+}

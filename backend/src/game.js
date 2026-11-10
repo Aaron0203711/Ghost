@@ -21,7 +21,8 @@ const r2 = (v) => Math.round(v * 100) / 100;
 export class Game {
   /**
    * @param {{id:string,name:string}[]} roster
-   * @param {{hunterId?:string, hunterClass?:string, seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
+   * @param {{hunterId?:string, hunterClass?:string, hunters?:{id:string,cls:string}[], seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
+   *   hunters: 술래 목록과 각자의 직업 (6명 이상이면 2명). 없으면 hunterId/hunterClass 하나
    *   emit(null, msg)는 전체 방송, emit(id, msg)는 한 명에게 전송
    */
   constructor(roster, opts) {
@@ -30,11 +31,19 @@ export class Game {
     this.seed = opts.seed ?? Math.floor(this.rand() * 2 ** 31);
     this.map = generateMap(this.seed);
 
-    const hunterId = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
-    const survivors = roster.filter((p) => p.id !== hunterId);
     this.rules = matchRules(roster.length);
-    this.hunterClass = opts.hunterClass === HUNTER_CLASS.SNIPER ? HUNTER_CLASS.SNIPER : HUNTER_CLASS.MANIAC;
-    const plan = planMatch(this.map, survivors.length, this.rand, this.rules.generators);
+    const validCls = (c) => (c === HUNTER_CLASS.SNIPER ? HUNTER_CLASS.SNIPER : HUNTER_CLASS.MANIAC);
+    let hunters = opts.hunters;
+    if (!hunters) {
+      const id = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
+      hunters = [{ id, cls: opts.hunterClass }];
+    }
+    hunters = hunters.filter((h) => roster.some((p) => p.id === h.id)).map((h) => ({ id: h.id, cls: validCls(h.cls) }));
+    const hunterCls = new Map(hunters.map((h) => [h.id, h.cls]));
+    this.hunterIds = hunters.map((h) => h.id);
+    this.hunterClass = hunters[0].cls; // 첫 번째 술래의 직업 (호환용)
+    const survivors = roster.filter((p) => !hunterCls.has(p.id));
+    const plan = planMatch(this.map, survivors.length, this.rand, this.rules.generators, hunters.length);
 
     this.world = new CollisionWorld(this.map.boxes);
     this.gens = plan.generators.map((g) => ({ ...g, progress: 0, done: false, repairers: 0 }));
@@ -68,14 +77,13 @@ export class Game {
         chargeTimer: 0,
         attackReadyAt: 0,
         aiming: false,
-        cls: role === ROLE.HUNTER ? this.hunterClass : null,
+        cls: role === ROLE.HUNTER ? hunterCls.get(p.id) : null,
       });
     };
-    const hunter = roster.find((p) => p.id === hunterId);
-    make(hunter, ROLE.HUNTER, plan.hunterSpawn);
+    hunters.forEach((h, i) => make(roster.find((p) => p.id === h.id), ROLE.HUNTER, plan.hunterSpawns[i]));
     survivors.forEach((p, i) => make(p, ROLE.SURVIVOR, plan.survivorSpawns[i]));
 
-    this.hunterId = hunterId;
+    this.hunterId = this.hunterIds[0];
     this.traps = [];
     this.trapSeq = 0;
     this.bullets = [];
@@ -92,7 +100,7 @@ export class Game {
       t: 'start',
       you: forId,
       rules: this.rules,
-      hunterClass: this.hunterClass,
+      hunterClass: this.players.get(forId)?.cls ?? this.hunterClass,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
       players: [...this.players.values()].map((p) => ({
@@ -300,7 +308,9 @@ export class Game {
     if (!p) return;
     this.players.delete(id);
     if (this.ended) return;
-    if (p.role === ROLE.HUNTER) {
+    const huntersLeft = [...this.players.values()].some((q) => q.role === ROLE.HUNTER);
+    if (p.role === ROLE.HUNTER && !huntersLeft) {
+      // 술래가 모두 나가면 생존자 승리
       this.finish('survivors', 'hunterLeft');
     } else {
       this.emit(null, { t: 'event', kind: 'left', id, name: p.name });
@@ -441,6 +451,7 @@ export class Game {
       winner,
       reason,
       hunterClass: this.hunterClass,
+      hunterClasses: [...this.players.values()].filter((p) => p.role === ROLE.HUNTER).map((p) => p.cls),
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,

@@ -43,21 +43,20 @@ test('방 참가: 올바른 코드로 참가, 틀린 코드는 오류', () => {
   assert.equal(a.last('room').players.length, 2);
 });
 
-test('최대 5명, 게임 중에는 참가 불가', () => {
+test('최대 8명, 게임 중에는 참가 불가', () => {
   const { mgr, mk } = setup();
   const host = mk('H');
   mgr.handle(host, { t: 'create' });
   const code = host.last('room').code;
-  const others = [1, 2, 3, 4, 5].map((i) => mk(`P${i}`));
+  const others = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => mk(`P${i}`));
   others.forEach((c) => mgr.handle(c, { t: 'join', code }));
-  assert.equal(others[4].last('error').code, 'full');
+  assert.equal(host.last('room').players.length, 8);
+  assert.equal(host.last('room').maxPlayers, 8);
+  assert.equal(others[7].last('error').code, 'full');
   mgr.handle(host, { t: 'start' });
-  const late = mk('late');
-  mgr.handle(others[4], { t: 'join', code });
-  assert.equal(others[4].last('error').code, 'inGame');
-  void late;
+  mgr.handle(others[7], { t: 'join', code });
+  assert.equal(others[7].last('error').code, 'inGame');
 });
-
 test('강퇴: 방장만 가능, 강퇴된 사람은 kicked 메시지', () => {
   const { mgr, mk } = setup();
   const a = mk('A');
@@ -92,17 +91,17 @@ test('시작: 방장만, 2명 이상, 무작위 1명이 술래', () => {
   // 술래가 정해지고 직업 선택 단계
   const sel = a.last('classSelect');
   assert.ok(sel, '직업 선택 메시지');
-  assert.equal(b.last('classSelect').hunterId, sel.hunterId);
+  assert.equal(b.last('classSelect').hunterIds[0], sel.hunterIds[0]);
   assert.equal(a.room.state, 'selecting');
   assert.equal(a.last('start'), undefined, '직업을 고르기 전에는 시작하지 않음');
-  const hunter = [a, b, c].find((x) => x.id === sel.hunterId);
-  const other = [a, b, c].find((x) => x.id !== sel.hunterId);
+  const hunter = [a, b, c].find((x) => x.id === sel.hunterIds[0]);
+  const other = [a, b, c].find((x) => x.id !== sel.hunterIds[0]);
   mgr.handle(other, { t: 'pickClass', cls: 'sniper' });
   assert.equal(a.last('start'), undefined, '술래가 아닌 사람은 고를 수 없음');
   mgr.handle(hunter, { t: 'pickClass', cls: 'sniper' });
   const start = a.last('start');
   assert.equal(start.hunterClass, 'sniper');
-  assert.equal(start.players.find((p) => p.role === 'hunter').id, sel.hunterId);
+  assert.equal(start.players.find((p) => p.role === 'hunter').id, sel.hunterIds[0]);
   assert.ok(start);
   const hunters = start.players.filter((p) => p.role === 'hunter');
   assert.equal(hunters.length, 1);
@@ -175,7 +174,7 @@ test('실제 WebSocket 서버: 방 만들기 → 참가 → 시작 → 상태 �
     const sel = await waitFor(b, (m) => m.t === 'classSelect');
     // 술래 쪽 소켓으로 직업 선택
     const ids = await Promise.all([waitFor(a, (m) => m.t === 'welcome'), waitFor(b, (m) => m.t === 'welcome')]);
-    (ids[0].id === sel.hunterId ? a : b).send(JSON.stringify({ t: 'pickClass', cls: 'maniac' }));
+    (ids[0].id === sel.hunterIds[0] ? a : b).send(JSON.stringify({ t: 'pickClass', cls: 'maniac' }));
     const start = await waitFor(b, (m) => m.t === 'start');
     assert.ok(start.map.boxes.length > 100);
     const st = await waitFor(b, (m) => m.t === 'state');
@@ -204,7 +203,7 @@ test('직업 선택 중 술래가 나가면 대기실로 돌아감', () => {
   mgr.handle(b, { t: 'join', code: room.code });
   mgr.handle(c, { t: 'join', code: room.code });
   mgr.handle(a, { t: 'start' });
-  const hunter = [a, b, c].find((x) => x.id === room.select.hunterId);
+  const hunter = [a, b, c].find((x) => x.id === room.select.hunterIds[0]);
   const rest = [a, b, c].filter((x) => x !== hunter);
   mgr.handle(hunter, { t: 'leave' });
   assert.equal(room.state, 'lobby');
@@ -226,4 +225,72 @@ test('직업 선택 중에는 참가할 수 없음', () => {
   const late = mk('late');
   mgr.handle(late, { t: 'join', code: a.room.code });
   assert.equal(late.last('error').code, 'inGame');
+});
+
+function fullRoom(n) {
+  const { mgr, mk } = setup();
+  const members = Array.from({ length: n }, (_, i) => mk(`P${i + 1}`));
+  mgr.handle(members[0], { t: 'create' });
+  const room = members[0].room;
+  for (const m of members.slice(1)) mgr.handle(m, { t: 'join', code: room.code });
+  return { mgr, mk, members, room };
+}
+
+test('6명 이상: 술래 2명이 각자 직업을 고르고, 둘 다 고르면 시작 (같은 직업 가능)', () => {
+  for (const n of [6, 7, 8]) {
+    const { mgr, members, room } = fullRoom(n);
+    mgr.handle(members[0], { t: 'start' });
+    const sel = members[0].last('classSelect');
+    assert.equal(sel.hunterIds.length, 2, `${n}명`);
+    assert.equal(new Set(sel.hunterIds).size, 2);
+    const [h1, h2] = sel.hunterIds.map((id) => members.find((m) => m.id === id));
+    mgr.handle(h1, { t: 'pickClass', cls: 'sniper' });
+    assert.equal(room.state, 'selecting', '한 명만 고르면 아직 대기');
+    assert.equal(h2.last('classPicked').cls, 'sniper', '동료 술래에게 알림');
+    mgr.handle(h2, { t: 'pickClass', cls: 'sniper' });
+    assert.equal(room.state, 'playing');
+    const start = members[0].last('start');
+    const hunters = start.players.filter((p) => p.role === 'hunter');
+    assert.equal(hunters.length, 2);
+    assert.deepEqual(hunters.map((h) => h.cls), ['sniper', 'sniper']);
+    assert.deepEqual(start.rules, { hunters: 2, generators: 3, hitsToCatch: 3 });
+    assert.equal(start.generators.length, 3);
+  }
+});
+
+test('5명 이하는 술래 1명', () => {
+  for (const n of [2, 4, 5]) {
+    const { mgr, members } = fullRoom(n);
+    mgr.handle(members[0], { t: 'start' });
+    assert.equal(members[0].last('classSelect').hunterIds.length, 1, `${n}명`);
+  }
+});
+
+test('술래 2명 중 1명만 고르고 시간이 지나면 나머지는 무작위', () => {
+  const { mgr, members, room } = fullRoom(6);
+  mgr.handle(members[0], { t: 'start' });
+  const [id1, id2] = room.select.hunterIds;
+  const h1 = members.find((m) => m.id === id1);
+  const h2 = members.find((m) => m.id === id2);
+  mgr.handle(h1, { t: 'pickClass', cls: 'maniac' });
+  mgr.selectTimeout(room);
+  assert.equal(room.state, 'playing');
+  assert.equal(room.game.players.get(id1).cls, 'maniac');
+  assert.ok(['maniac', 'sniper'].includes(room.game.players.get(id2).cls));
+  assert.equal(h1.last('start').autoPicked, false);
+  assert.equal(h2.last('start').autoPicked, true);
+});
+
+test('6명 선택 중 생존자가 나가 5명이 되면 술래 수가 달라져 대기실로', () => {
+  const { mgr, members, room } = fullRoom(6);
+  mgr.handle(members[0], { t: 'start' });
+  const survivor = members.find((m) => !room.select.hunterIds.includes(m.id));
+  mgr.handle(survivor, { t: 'leave' });
+  assert.equal(room.state, 'lobby');
+  // 7명 → 6명은 술래 수가 그대로라 계속
+  const r2 = fullRoom(7);
+  r2.mgr.handle(r2.members[0], { t: 'start' });
+  const s2 = r2.members.find((m) => !r2.room.select.hunterIds.includes(m.id));
+  r2.mgr.handle(s2, { t: 'leave' });
+  assert.equal(r2.room.state, 'selecting');
 });

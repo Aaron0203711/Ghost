@@ -111,7 +111,8 @@ export class GameSession {
     for (const p of this.info.values()) {
       if (p.id === this.myId) continue;
       // 이름표는 같은 생존자끼리만 보인다
-      const showLabel = !this.isHunter && p.role === ROLE.SURVIVOR;
+      // 같은 편끼리만 이름표가 보인다 (생존자끼리, 술래끼리)
+      const showLabel = this.isHunter ? p.role === ROLE.HUNTER : p.role === ROLE.SURVIVOR;
       const a = new Avatar(p.role, p.index, p.name, showLabel, p.cls ?? this.hunterClass);
       a.setTarget(p.x, p.z, p.yaw, true);
       scene.add(a.group);
@@ -136,7 +137,12 @@ export class GameSession {
     screen.classList.toggle('cls-sniper', this.isSniper);
     screen.classList.remove('spectating', 'scoped');
     const info = CLASS_INFO[this.hunterClass];
-    $('hud-role').textContent = this.isHunter ? `${info.icon} 술래 · ${info.name}` : `🏃 생존자 · 술래는 ${info.name}`;
+    const hunterNames = [...this.info.values()]
+      .filter((p) => p.role === ROLE.HUNTER)
+      .map((p) => CLASS_INFO[p.cls ?? HUNTER_CLASS.MANIAC].name);
+    $('hud-role').textContent = this.isHunter
+      ? `${info.icon} 술래 · ${info.name}`
+      : `🏃 생존자 · 술래: ${hunterNames.join(', ')}`;
     $('hud-role').className = `badge ${this.isHunter ? 'hunter' : 'survivor'}`;
     const labels = this.isSniper
       ? { main: ['🎯', '발사'], action: ['🔭', '조준'] }
@@ -154,12 +160,14 @@ export class GameSession {
     $('hud-gens').innerHTML = [...this.gens.keys()].map((id) => `<i class="lamp" data-gen="${id}"></i>`).join('');
     this.updateGenHud();
     this.renderPlayerList();
+    const mates = [...this.info.values()].filter((p) => p.role === ROLE.HUNTER && p.id !== this.myId).map((p) => p.name);
+    const mateText = this.isHunter && mates.length ? ` · 동료 술래: ${mates.join(', ')}` : '';
     this.centerMsg(
-      this.isSniper
+      (this.isSniper
         ? '저격수: 조준해서 멀리서 맞히면 2칸!'
         : this.isHunter
           ? '생존자를 모두 잡으세요!'
-          : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`,
+          : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`) + mateText,
       3,
     );
   }
@@ -433,7 +441,7 @@ export class GameSession {
     const a = this.avatars.get(next.id);
     if (a) a.group.visible = false;
     $('hud-spectate').classList.remove('hidden');
-    $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? `${CLASS_INFO[this.hunterClass].icon} ` : ''}${next.name}`;
+    $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? `${CLASS_INFO[next.cls ?? HUNTER_CLASS.MANIAC].icon} ` : ''}${next.name}`;
   }
 
   distTo(id) {
@@ -618,8 +626,11 @@ export class GameSession {
         if (repairing && Math.random() < dt * 6) sfx.repairTick();
       }
       // 심장 박동: 술래가 가까울수록 빠르고 크게
-      const hunterId = [...this.info.values()].find((p) => p.role === ROLE.HUNTER)?.id;
-      const d = hunterId ? this.distTo(hunterId) : 999;
+      // 가장 가까운 술래 기준 (술래가 2명일 수 있음)
+      let d = 999;
+      for (const p of this.info.values()) {
+        if (p.role === ROLE.HUNTER && (p.status ?? STATUS.ALIVE) !== 'left') d = Math.min(d, this.distTo(p.id));
+      }
       if (d < 24) {
         this.heartbeatT -= dt;
         if (this.heartbeatT <= 0) {
@@ -683,7 +694,7 @@ export class GameSession {
     const rows = [...this.info.values()].map((p) => {
       const st = p.status ?? STATUS.ALIVE;
       let tag;
-      if (p.role === ROLE.HUNTER) tag = CLASS_INFO[this.hunterClass].icon;
+      if (p.role === ROLE.HUNTER) tag = CLASS_INFO[p.cls ?? HUNTER_CLASS.MANIAC].icon;
       else if (st === STATUS.CAUGHT) tag = '💀';
       else if (st === STATUS.ESCAPED) tag = '🏁';
       else if (st === 'left') tag = '🚪';
@@ -694,6 +705,7 @@ export class GameSession {
     const html = rows.join('');
     if (html !== this.lastListHtml) {
       $('hud-players').innerHTML = html;
+      $('hud-players').classList.toggle('many', this.info.size > 5);
       this.lastListHtml = html;
     }
   }

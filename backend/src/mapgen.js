@@ -381,14 +381,21 @@ export function reachableCells(world, startX, startZ) {
 /**
  * 한 판에 필요한 배치를 정한다: 술래/생존자 시작 위치, 발전기 위치.
  */
-export function planMatch(map, survivorCount, rand = Math.random, generatorCount = RULES.GENERATOR_COUNT) {
+export function planMatch(map, survivorCount, rand = Math.random, generatorCount = RULES.GENERATOR_COUNT, hunterCount = 1) {
   const world = new CollisionWorld(map.boxes);
-  // 술래는 가운데 근처 교차로에서 시작
-  const hj = [2, 3];
-  const hunterSpawn = {
-    x: roadCenter(hj[Math.floor(rand() * 2)]),
-    z: roadCenter(hj[Math.floor(rand() * 2)]),
-  };
+  // 술래는 가운데 근처 교차로(4곳 중 서로 다른 곳)에서 시작
+  const corners = [
+    [2, 2],
+    [2, 3],
+    [3, 2],
+    [3, 3],
+  ];
+  for (let i = corners.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [corners[i], corners[j]] = [corners[j], corners[i]];
+  }
+  const hunterSpawns = corners.slice(0, Math.max(1, hunterCount)).map(([a, b]) => ({ x: roadCenter(a), z: roadCenter(b) }));
+  const hunterSpawn = hunterSpawns[0];
   const cells = reachableCells(world, hunterSpawn.x, hunterSpawn.z);
   const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
   const sample = (filter, tries = 4000) => {
@@ -407,7 +414,7 @@ export function planMatch(map, survivorCount, rand = Math.random, generatorCount
       pos = sample(
         (c) =>
           world.isFree(c.x, c.z, 1.7) &&
-          dist(c, hunterSpawn) > 14 &&
+          hunterSpawns.every((h) => dist(c, h) > 14) &&
           Math.abs(c.x) < HALF - 4 &&
           Math.abs(c.z) < HALF - 4 &&
           generators.every((o) => dist(o, c) > minGap),
@@ -429,7 +436,7 @@ export function planMatch(map, survivorCount, rand = Math.random, generatorCount
       pos = sample(
         (c) =>
           world.isFree(c.x, c.z, RULES.PLAYER_RADIUS + 0.1) &&
-          dist(c, hunterSpawn) > minFromHunter &&
+          hunterSpawns.every((h) => dist(c, h) > minFromHunter) &&
           survivorSpawns.every((o) => dist(o, c) > 10),
       );
       minFromHunter -= 10;
@@ -437,7 +444,7 @@ export function planMatch(map, survivorCount, rand = Math.random, generatorCount
     survivorSpawns.push(pos || { ...hunterSpawn });
   }
 
-  return { hunterSpawn, survivorSpawns, generators };
+  return { hunterSpawn, hunterSpawns, survivorSpawns, generators };
 }
 
 export function generatorBox(g) {

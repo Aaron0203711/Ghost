@@ -1,6 +1,6 @@
 // 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 강퇴, 호스트 위임, 게임 시작/종료.
 
-import { RULES, HUNTER_CLASS, CLASS_PICK_TIME } from '../../shared/constants.js';
+import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules } from '../../shared/constants.js';
 import { Game } from './game.js';
 
 const randomCode = (rand) => String(1000 + Math.floor(rand() * 9000));
@@ -123,8 +123,11 @@ export class RoomManager {
     client.room = null;
     if (room.game) room.game.removePlayer(client.id);
     if (room.select) {
-      if (room.select.hunterId === client.id) this.cancelSelect(room, '술래가 나가서 대기실로 돌아왔어요.');
+      // 술래가 나가거나, 인원이 바뀌어 술래 수 규칙이 달라지면 대기실로
+      if (room.select.hunterIds.includes(client.id)) this.cancelSelect(room, '술래가 나가서 대기실로 돌아왔어요.');
       else if (room.members.length < RULES.MIN_PLAYERS) this.cancelSelect(room, '인원이 부족해서 대기실로 돌아왔어요.');
+      else if (matchRules(room.members.length).hunters !== room.select.hunterIds.length)
+        this.cancelSelect(room, '인원이 바뀌어 술래 수가 달라졌어요. 다시 시작해 주세요.');
     }
     if (room.members.length === 0) {
       this.closeRoom(room);
@@ -153,14 +156,17 @@ export class RoomManager {
     if (room.members.length < RULES.MIN_PLAYERS)
       return this.error(client, 'notEnough', `최소 ${RULES.MIN_PLAYERS}명이 있어야 시작할 수 있어요.`);
 
-    // 1) 무작위로 술래를 정하고, 술래가 직업을 고르는 동안 생존자는 대기
-    const hunter = room.members[Math.floor(this.rand() * room.members.length)];
+    // 1) 무작위로 술래를 정하고(6명 이상이면 2명), 술래가 직업을 고르는 동안 생존자는 대기
+    const count = matchRules(room.members.length).hunters;
+    const pool = [...room.members];
+    const hunters = [];
+    while (hunters.length < count) hunters.push(pool.splice(Math.floor(this.rand() * pool.length), 1)[0]);
     room.state = 'selecting';
-    room.select = { hunterId: hunter.id, deadline: Date.now() + CLASS_PICK_TIME * 1000, timer: null };
+    room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null };
     const msg = {
       t: 'classSelect',
-      hunterId: hunter.id,
-      hunterName: hunter.name,
+      hunterIds: hunters.map((h) => h.id),
+      hunterNames: hunters.map((h) => h.name),
       time: CLASS_PICK_TIME,
       classes: Object.values(HUNTER_CLASS),
     };
@@ -169,19 +175,32 @@ export class RoomManager {
     if (this.autoTick) room.select.timer = setTimeout(() => this.selectTimeout(room), CLASS_PICK_TIME * 1000);
   }
 
-  /** 술래가 직업을 골랐을 때 */
+  /** 술래가 직업을 골랐을 때. 술래가 모두 고르면 바로 시작 (같은 직업도 가능) */
   pickClass(client, cls) {
     const room = client.room;
-    if (!room?.select || room.select.hunterId !== client.id) return;
+    const sel = room?.select;
+    if (!sel || !sel.hunterIds.includes(client.id) || sel.picks[client.id]) return;
     if (!Object.values(HUNTER_CLASS).includes(cls)) return;
-    this.beginGame(room, cls);
+    sel.picks[client.id] = cls;
+    // 다른 술래에게 알려 준다
+    for (const id of sel.hunterIds) {
+      if (id !== client.id) room.members.find((m) => m.id === id)?.send({ t: 'classPicked', id: client.id, name: client.name, cls });
+    }
+    if (sel.hunterIds.every((id) => sel.picks[id])) this.beginGame(room);
   }
 
-  /** 15초 안에 고르지 않으면 무작위 직업 */
+  /** 15초 안에 고르지 않은 술래는 무작위 직업 */
   selectTimeout(room) {
-    if (!room.select) return;
+    const sel = room.select;
+    if (!sel) return;
     const list = Object.values(HUNTER_CLASS);
-    this.beginGame(room, list[Math.floor(this.rand() * list.length)], true);
+    const auto = [];
+    for (const id of sel.hunterIds) {
+      if (sel.picks[id]) continue;
+      sel.picks[id] = list[Math.floor(this.rand() * list.length)];
+      auto.push(id);
+    }
+    this.beginGame(room, auto);
   }
 
   cancelSelect(room, message) {
@@ -192,22 +211,22 @@ export class RoomManager {
   }
 
   /** 2) 직업이 정해지면 게임 시작 */
-  beginGame(room, hunterClass, auto = false) {
-    const hunterId = room.select.hunterId;
-    if (room.select.timer) clearTimeout(room.select.timer);
+  beginGame(room, autoPicked = []) {
+    const sel = room.select;
+    if (sel.timer) clearTimeout(sel.timer);
     room.select = null;
+    const hunters = sel.hunterIds.map((id) => ({ id, cls: sel.picks[id] }));
     const roster = room.members.map((m) => ({ id: m.id, name: m.name }));
     room.state = 'playing';
     room.game = new Game(roster, {
-      hunterId,
-      hunterClass,
+      hunters,
       rand: this.rand,
       emit: (toId, msg) => {
         if (toId === null) for (const m of room.members) m.send(msg);
         else room.members.find((m) => m.id === toId)?.send(msg);
       },
     });
-    for (const m of room.members) m.send({ ...room.game.startPayload(m.id), autoPicked: auto });
+    for (const m of room.members) m.send({ ...room.game.startPayload(m.id), autoPicked: autoPicked.includes(m.id) });
     this.broadcastRoom(room);
 
     if (this.autoTick) {

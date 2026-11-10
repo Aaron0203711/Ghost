@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { mulberry32 } from '../src/mapgen.js';
-import { RULES, STATUS } from '../../shared/constants.js';
+import { RULES, STATUS, matchRules } from '../../shared/constants.js';
 import { CollisionWorld } from '../../shared/collision.js';
 
 const DT = 1 / 20;
@@ -268,7 +268,7 @@ test('5인 규칙: 5명이면 발전기 5개, 4명이면 3개', () => {
   assert.equal(makeGame(4, 11).game.gens.length, 3);
   assert.equal(makeGame(2, 11).game.gens.length, 3);
   const { game } = makeGame(5, 11);
-  assert.deepEqual(game.startPayload('p2').rules, { generators: 5, hitsToCatch: 2 });
+  assert.deepEqual(game.startPayload('p2').rules, { hunters: 1, generators: 5, hitsToCatch: 2 });
   assert.equal(game.startPayload('p2').generators.length, 5);
 });
 
@@ -453,4 +453,92 @@ test('미치광이는 조준할 수 없음', () => {
   const { game, hunter } = makeGame(3, 7, 'maniac');
   game.handleInput('p1', { x: hunter.x, z: hunter.z, aim: true, corr: hunter.corr });
   assert.equal(hunter.aiming, false);
+});
+
+// ───────────── 6명 이상: 술래 2명 ─────────────
+
+function duoGame(n = 6, classes = ['maniac', 'sniper'], seed = 5) {
+  const events = [];
+  const roster = Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const game = new Game(roster, {
+    seed,
+    rand: mulberry32(seed),
+    hunters: [
+      { id: 'p1', cls: classes[0] },
+      { id: 'p2', cls: classes[1] },
+    ],
+    emit: (to, msg) => events.push({ to, msg }),
+  });
+  return { game, events };
+}
+
+test('6명 이상 규칙: 술래 2명, 발전기 3개, 체력 3칸', () => {
+  for (const n of [6, 8]) {
+    const { game } = duoGame(n);
+    assert.equal([...game.players.values()].filter((p) => p.role === 'hunter').length, 2);
+    assert.equal(game.gens.length, 3);
+    assert.equal(game.rules.hitsToCatch, 3);
+    const [h1, h2] = [game.players.get('p1'), game.players.get('p2')];
+    assert.ok(Math.hypot(h1.x - h2.x, h1.z - h2.z) > 5, '두 술래는 다른 곳에서 시작');
+    for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9));
+  }
+  assert.deepEqual(matchRules(5), { hunters: 1, generators: 5, hitsToCatch: 2 });
+  assert.deepEqual(matchRules(4), { hunters: 1, generators: 3, hitsToCatch: 3 });
+});
+
+test('술래 2명: 술래 1명이 나가면 계속, 둘 다 나가면 생존자 승리', () => {
+  const { game } = duoGame(6);
+  game.removePlayer('p1');
+  assert.ok(!game.ended);
+  game.removePlayer('p2');
+  assert.equal(game.result.winner, 'survivors');
+  assert.equal(game.result.reason, 'hunterLeft');
+});
+
+test('술래 2명: 두 술래 모두 공격할 수 있고, 생존자를 모두 잡으면 술래 승리', () => {
+  const { game } = duoGame(6, ['maniac', 'maniac']);
+  const survivors = [...game.players.values()].filter((p) => p.role === 'survivor');
+  for (const [i, s] of survivors.entries()) {
+    const h = game.players.get(i % 2 === 0 ? 'p1' : 'p2');
+    s.hits = 2;
+    s.x = h.x;
+    s.z = h.z - 1.2;
+    h.yaw = 0;
+    for (const o of survivors) if (o !== s && o.status === 'alive') o.x = o.z = 900 + survivors.indexOf(o);
+    game.time += 2;
+    game.handleAttack(h.id, { yaw: 0, pitch: 0 });
+    assert.equal(s.status, STATUS.CAUGHT, `${h.id}가 잡음`);
+  }
+  assert.equal(game.result.winner, 'hunter');
+});
+
+test('저격수 총알은 동료 술래를 통과해 뒤의 생존자를 맞힌다', () => {
+  const { game } = duoGame(6, ['sniper', 'maniac']);
+  game.world = new CollisionWorld([]);
+  const sniper = game.players.get('p1');
+  const mate = game.players.get('p2');
+  const survivors = [...game.players.values()].filter((p) => p.role === 'survivor');
+  for (const s of survivors) s.x = s.z = 900;
+  sniper.x = 0;
+  sniper.z = 0;
+  mate.x = 0;
+  mate.z = -5; // 사이에 동료 술래
+  survivors[0].x = 0;
+  survivors[0].z = -12;
+  game.handleAttack('p1', { yaw: 0, pitch: -0.01 });
+  run(game, 0.3);
+  assert.equal(survivors[0].hits, 1);
+  assert.equal(mate.status, STATUS.ALIVE);
+});
+
+test('술래는 동료 술래의 덫을 밟지 않는다', () => {
+  const { game } = duoGame(6, ['maniac', 'maniac']);
+  const h1 = game.players.get('p1');
+  const h2 = game.players.get('p2');
+  game.handleTrap('p1');
+  h2.x = h1.x;
+  h2.z = h1.z;
+  run(game, 0.5);
+  assert.equal(game.traps.length, 1);
+  assert.ok(!game.isStunned(h2));
 });

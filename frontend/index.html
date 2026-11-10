@@ -78,7 +78,7 @@
             <strong id="lobby-code">----</strong>
             <button id="btn-copy-code" class="btn small">복사</button>
           </div>
-          <p class="hint" id="lobby-count">0 / 5명</p>
+          <p class="hint" id="lobby-count">0 / 8명</p>
           <p class="rules" id="lobby-rules"></p>
           <ul id="lobby-players" class="player-list"></ul>
           <p class="hint" id="lobby-hint"></p>
@@ -109,10 +109,12 @@
                 <span class="cls-desc">저격총 원거리 공격 · 쿨타임 3초<br />조준 확대 · 30m 밖 명중 시 2칸</span>
               </button>
             </div>
-            <p class="hint">시간 안에 고르지 않으면 무작위로 정해져요.</p>
+            <p class="mate" id="select-mate"></p>
+            <p class="hint" id="select-status"></p>
+            <p class="hint">시간 안에 고르지 않으면 무작위로 정해져요. 두 술래가 같은 직업을 골라도 돼요.</p>
           </div>
           <div id="select-wait">
-            <h2>술래가 정해졌어요</h2>
+            <h2 id="select-wait-title">술래가 정해졌어요</h2>
             <p class="wait-name"><b id="select-hunter-name"></b> 님이 직업을 고르는 중…</p>
             <div class="wait-dots"><i></i><i></i><i></i></div>
             <p class="hint">술래 직업은 <b>미치광이</b>(방망이·덫) 또는 <b>저격수</b>(저격총) 중 하나예요.</p>

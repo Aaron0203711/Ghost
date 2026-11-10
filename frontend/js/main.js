@@ -2,7 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, unlockAudio } from './game/audio.js';
-import { matchRules, LARGE_MATCH, CLASS_INFO } from '@shared/constants.js';
+import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO } from '@shared/constants.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
 const $ = (id) => document.getElementById(id);
@@ -171,9 +171,10 @@ function renderLobby() {
   $('lobby-code').textContent = room.code;
   $('lobby-count').textContent = `${room.players.length} / ${room.maxPlayers}명`;
   const rules = matchRules(room.players.length);
-  const large = room.players.length >= LARGE_MATCH.PLAYERS;
-  $('lobby-rules').textContent = `이번 판: 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸${large ? ' (5인 규칙)' : ''}`;
-  $('lobby-rules').classList.toggle('large', large);
+  const n = room.players.length;
+  const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : '';
+  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸${tag}`;
+  $('lobby-rules').classList.toggle('large', !!tag);
   const list = $('lobby-players');
   list.innerHTML = '';
   for (const p of room.players) {
@@ -218,7 +219,7 @@ function renderLobby() {
   startBtn.disabled = !enough;
   $('lobby-hint').textContent = isHost
     ? enough
-      ? '모두 모이면 게임 시작을 누르세요. 술래는 무작위로 1명 정해져요.'
+      ? `모두 모이면 게임 시작을 누르세요. 술래는 무작위로 ${rules.hunters}명 정해져요.`
       : `최소 ${room.minPlayers}명이 필요해요. 친구에게 참가 코드를 알려주세요.`
     : '방장이 게임을 시작할 때까지 기다려 주세요.';
 }
@@ -384,8 +385,11 @@ tap($('btn-rotate-ok'), () => $('rotate-hint').classList.add('hidden'));
 function showResult(msg) {
   const meEntry = msg.players.find((p) => p.id === myId);
   const iWon = meEntry ? (msg.winner === 'hunter') === (meEntry.role === 'hunter') : false;
-  const hc = CLASS_INFO[msg.hunterClass] || CLASS_INFO.maniac;
-  const title = msg.winner === 'hunter' ? `${hc.icon} 술래(${hc.name}) 승리` : '🏁 생존자 승리';
+  const classes = (msg.hunterClasses?.length ? msg.hunterClasses : [msg.hunterClass]).map((c) => CLASS_INFO[c] || CLASS_INFO.maniac);
+  const title =
+    msg.winner === 'hunter'
+      ? `${classes.map((c) => c.icon).join('')} 술래(${classes.map((c) => c.name).join('·')}) 승리`
+      : '🏁 생존자 승리';
   const reasons = {
     escaped: '생존자가 탈출에 성공했습니다',
     allCaught: '생존자가 모두 잡혔습니다',
@@ -478,10 +482,17 @@ net.on('left', () => {
 
 let selectTimer = null;
 function showClassSelect(m) {
-  const isHunter = m.hunterId === myId;
+  const isHunter = m.hunterIds.includes(myId);
+  const duo = m.hunterIds.length > 1;
   $('select-hunter').classList.toggle('hidden', !isHunter);
   $('select-wait').classList.toggle('hidden', isHunter);
-  $('select-hunter-name').textContent = m.hunterName;
+  $('select-hunter-name').textContent = m.hunterNames.join(', ');
+  $('select-wait-title').textContent = duo ? `술래 ${m.hunterIds.length}명이 정해졌어요` : '술래가 정해졌어요';
+  // 술래가 2명이면 동료 이름과 동료가 고른 직업을 보여 준다
+  const mate = m.hunterNames.filter((_, i) => m.hunterIds[i] !== myId);
+  $('select-mate').classList.toggle('hidden', !duo || !isHunter);
+  $('select-mate').textContent = mate.length ? `동료 술래: ${mate.join(', ')} · 고르는 중…` : '';
+  $('select-status').textContent = '';
   document.querySelectorAll('.class-card').forEach((c) => {
     c.disabled = false;
     c.classList.remove('picked');
@@ -508,8 +519,14 @@ document.querySelectorAll('.class-card').forEach((card) =>
       c.classList.toggle('picked', c === card);
     });
     net.send({ t: 'pickClass', cls: card.dataset.cls });
+    $('select-status').textContent = $('select-mate').classList.contains('hidden') ? '' : '다른 술래가 고르기를 기다리는 중…';
   }),
 );
+
+net.on('classPicked', (m) => {
+  const c = CLASS_INFO[m.cls];
+  $('select-mate').textContent = `동료 술래: ${m.name} · ${c.icon} ${c.name} 선택`;
+});
 
 net.on('classSelect', (m) => {
   done();

@@ -1595,3 +1595,16 @@ body.touch #pc-hint {
 #screen-game:not(.cls-sniper) .sn-only {
   display: none;
 }
+
+.select-card .mate {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+/* 인원이 많을 때 HUD 플레이어 목록을 작게 */
+#hud-players.many li {
+  padding: 2px 8px;
+  font-size: 11px;
+}

@@ -41,7 +41,7 @@ export const RULES = Object.freeze({
 
   // 방
   MIN_PLAYERS: 2,
-  MAX_PLAYERS: 5,
+  MAX_PLAYERS: 8,
 
   // 네트워크
   TICK_RATE: 20,
@@ -79,16 +79,21 @@ export function speedFor(role, running, aiming = false) {
   return running ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
 }
 
-/** 5명 이상(술래 포함)이면 발전기 5개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
+/** 딱 5명(술래 포함)이면 발전기 5개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
 export const LARGE_MATCH = Object.freeze({ PLAYERS: 5, GENERATORS: 5, HITS_TO_CATCH: 2 });
+
+/** 6명 이상이면 술래 2명, 발전기 3개, 생존자 체력 3칸 */
+export const DUO_MATCH = Object.freeze({ PLAYERS: 6, HUNTERS: 2, GENERATORS: 3, HITS_TO_CATCH: 3 });
 
 /** 인원 수에 따라 달라지는 한 판의 규칙 */
 export function matchRules(playerCount) {
-  const large = playerCount >= LARGE_MATCH.PLAYERS;
-  return {
-    generators: large ? LARGE_MATCH.GENERATORS : RULES.GENERATOR_COUNT,
-    hitsToCatch: large ? LARGE_MATCH.HITS_TO_CATCH : RULES.HITS_TO_CATCH,
-  };
+  if (playerCount >= DUO_MATCH.PLAYERS) {
+    return { hunters: DUO_MATCH.HUNTERS, generators: DUO_MATCH.GENERATORS, hitsToCatch: DUO_MATCH.HITS_TO_CATCH };
+  }
+  if (playerCount === LARGE_MATCH.PLAYERS) {
+    return { hunters: 1, generators: LARGE_MATCH.GENERATORS, hitsToCatch: LARGE_MATCH.HITS_TO_CATCH };
+  }
+  return { hunters: 1, generators: RULES.GENERATOR_COUNT, hitsToCatch: RULES.HITS_TO_CATCH };
 }
 
 // ───────────── 술래 직업 ─────────────

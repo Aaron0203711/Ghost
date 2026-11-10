@@ -395,15 +395,15 @@ test('저격수: 5인 규칙(체력 2칸)에서 원거리 명중은 바로 잡�
   assert.equal(s1.status, STATUS.CAUGHT);
 });
 
-test('저격수: 쿨타임 3초, 덫 없음', () => {
+test('저격수: 쿨타임 2초, 덫 없음', () => {
   const { game, hunter } = makeGame(3, 7, 'sniper');
   openField(game);
   game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
   game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
   assert.equal(game.bulletSeq, 1);
-  run(game, 2.9);
+  run(game, 1.9);
   game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
-  assert.equal(game.bulletSeq, 1, '3초 전');
+  assert.equal(game.bulletSeq, 1, '2초 전');
   run(game, 0.15);
   game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
   assert.equal(game.bulletSeq, 2);

@@ -105,7 +105,7 @@ export const CLASS_PICK_TIME = 15;
 
 /** 저격수: 저격총(거리 무제한, 날아가는 시간 있음), 조준 키(확대), 덫 없음 */
 export const SNIPER = Object.freeze({
-  SHOT_COOLDOWN: 3,
+  SHOT_COOLDOWN: 2,
   BULLET_SPEED: 150, // m/s
   FAR_DISTANCE: 30, // 이 거리(m) 밖에서 맞히면 2칸
   NEAR_DAMAGE: 1,
@@ -118,7 +118,7 @@ export const SNIPER = Object.freeze({
 
 export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
-  sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 3초) · 조준 확대 · 30m 밖 명중 시 2칸' },
+  sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
 });
 
 /** 총알 방향 (yaw=0, pitch=0이면 -z) */

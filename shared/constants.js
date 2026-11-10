@@ -73,10 +73,14 @@ export function stepStamina(s, wantsRun, moving, dt) {
   return running;
 }
 
-/** aiming: 저격수 조준 중이면 절반 속도, invisible: 암살자 투명화 중이면 1.5배 */
-export function speedFor(role, running, aiming = false, invisible = false) {
+/**
+ * aiming: 저격수 조준 중이면 절반 속도, invisible: 암살자 투명화 중이면 1.5배,
+ * slowed: 암살자가 기습으로 투명화가 풀린 직후면 절반 속도
+ */
+export function speedFor(role, running, aiming = false, invisible = false, slowed = false) {
   if (role === ROLE.HUNTER) {
     if (aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
+    if (slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
     if (invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
     return RULES.HUNTER_SPEED;
   }
@@ -127,6 +131,8 @@ export const ASSASSIN = Object.freeze({
   INVIS_TIME: 15,
   SKILL_COOLDOWN: 8, // 투명화가 끝난 뒤부터 셈
   INVIS_SPEED_FACTOR: 1.5, // 투명화 중 이동 속도 50% 증가 (20km/h → 30km/h)
+  SLOW_TIME: 3.5, // 생존자를 맞혀 투명화가 풀리면 3.5초간
+  SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (20km/h → 10km/h)
 });
 
 export const CLASS_INFO = Object.freeze({

@@ -1685,3 +1685,9 @@ body.touch #pc-hint {
   content: ' · 👻 투명';
   color: #9fd7ff;
 }
+
+/* 암살자 기습 후 감속 중 */
+#screen-game.slowed .badge.hunter::after {
+  content: ' · 🐢 감속';
+  color: #ffb27a;
+}

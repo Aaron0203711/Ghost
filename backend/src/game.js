@@ -81,6 +81,7 @@ export class Game {
         aiming: false,
         invisUntil: 0, // 암살자 투명화 끝나는 시각
         skillReadyAt: 0,
+        slowUntil: 0, // 기습 후 감속 끝나는 시각
         cls: role === ROLE.HUNTER ? hunterCls.get(p.id) : null,
       });
     };
@@ -235,6 +236,8 @@ export class Game {
   endInvis(p, reason) {
     p.invisUntil = 0;
     p.skillReadyAt = this.time + ASSASSIN.SKILL_COOLDOWN;
+    // 생존자를 맞혀서 풀렸을 때만 3.5초간 감속 (시간이 다 돼서 풀리면 감속 없음)
+    if (reason === 'hit') p.slowUntil = this.time + ASSASSIN.SLOW_TIME;
     this.emit(null, { t: 'event', kind: 'invis', id: p.id, on: false, reason });
   }
 
@@ -377,7 +380,13 @@ export class Game {
         if (p.charges >= RULES.TRAP_MAX_CHARGES) p.chargeTimer = 0;
       }
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
-      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), p.aiming, this.isInvisible(p));
+      const speed = speedFor(
+        p.role,
+        p.running || (p.wantsRun && p.stamina > 0),
+        p.aiming,
+        this.isInvisible(p),
+        this.time < p.slowUntil,
+      );
       if (stunned) p.budget = 0;
       else p.budget = Math.min(p.budget + speed * dt * 1.2, speed * 0.6);
     }
@@ -550,6 +559,7 @@ export class Game {
         attackLeft: r2(Math.max(0, me.attackReadyAt - this.time)),
         invisLeft: this.isInvisible(me) ? r2(me.invisUntil - this.time) : 0,
         skillLeft: r2(Math.max(0, me.skillReadyAt - this.time)),
+        slowLeft: r2(Math.max(0, me.slowUntil - this.time)),
       };
     }
     return snap;

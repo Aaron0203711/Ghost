@@ -34,6 +34,7 @@ export class GameSession {
     this.attackCooldown = this.isSniper ? SNIPER.SHOT_COOLDOWN : this.isAssassin ? ASSASSIN.ATTACK_COOLDOWN : RULES.ATTACK_COOLDOWN;
     this.invisLeft = 0; // 암살자 내 투명화 남은 시간
     this.skillLeft = 0; // 암살자 스킬 쿨타임
+    this.slowLeft = 0; // 암살자 기습 후 감속
     this.aiming = false;
     this.tracers = new Map(); // 서버 총알 id → 궤적 (끝 위치를 받기 전)
     this.liveTracers = []; // 화면에 그리는 중인 궤적
@@ -326,6 +327,7 @@ export class GameSession {
       if (this.isAssassin) {
         this.invisLeft = s.me.invisLeft ?? 0;
         this.skillLeft = s.me.skillLeft ?? 0;
+        this.slowLeft = s.me.slowLeft ?? 0;
       }
     }
     for (const g of s.gens) {
@@ -418,8 +420,9 @@ export class GameSession {
           if (!e.on) {
             this.invisLeft = 0;
             this.skillLeft = ASSASSIN.SKILL_COOLDOWN;
+            if (e.reason === 'hit') this.slowLeft = ASSASSIN.SLOW_TIME;
             sfx.invisOff();
-            this.centerMsg(e.reason === 'hit' ? '기습 성공! 투명화가 풀렸다' : '투명화가 풀렸다', 1.5);
+            this.centerMsg(e.reason === 'hit' ? `기습 성공! 투명화가 풀리고 ${ASSASSIN.SLOW_TIME}초간 느려진다` : '투명화가 풀렸다', 2);
           }
         } else if (!e.on && !this.isHunter && this.status === STATUS.ALIVE && e.reason === 'hit') {
           this.feed(`🥷 암살자가 모습을 드러냈다`, 'bad');
@@ -562,7 +565,13 @@ export class GameSession {
     this.interact = !this.isHunter && c.isHeld('main');
     if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned, this.moving, dt);
     if (alive && this.moving) {
-      const speed = speedFor(this.role, this.running, this.aiming, this.isAssassin && this.invisLeft > 0);
+      const speed = speedFor(
+        this.role,
+        this.running,
+        this.aiming,
+        this.isAssassin && this.invisLeft > 0,
+        this.isAssassin && this.slowLeft > 0,
+      );
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -577,6 +586,8 @@ export class GameSession {
     if (this.isAssassin) {
       if (this.invisLeft > 0) this.invisLeft = Math.max(0, this.invisLeft - dt);
       else this.skillLeft = Math.max(0, this.skillLeft - dt);
+      this.slowLeft = Math.max(0, this.slowLeft - dt);
+      $('screen-game').classList.toggle('slowed', this.slowLeft > 0 && this.status === STATUS.ALIVE);
       const invis = this.invisLeft > 0 && this.status === STATUS.ALIVE;
       $('screen-game').classList.toggle('invisible', invis);
       this.viewBat?.setGhost(invis);

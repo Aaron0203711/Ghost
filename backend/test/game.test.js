@@ -707,3 +707,30 @@ test('암살자: 투명화 중에는 이동 속도 50% 증가, 풀리면 원래�
   run(game, 1);
   assert.ok(Math.abs(hunter.budget - normal) < 0.01, '풀리면 다시 20km/h');
 });
+
+test('암살자: 맞혀서 투명화가 풀리면 3.5초간 이동 속도 50% 감소', () => {
+  const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
+  game.handleSkill('p1');
+  run(game, 1);
+  faceOff(game, hunter, s1, 1.5);
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 1);
+  assert.ok(!game.isInvisible(hunter));
+  run(game, 1);
+  const normal = RULES.HUNTER_SPEED * 0.6;
+  assert.ok(Math.abs(hunter.budget - normal * 0.5) < 0.01, `감속 중 10km/h (${hunter.budget})`);
+  assert.ok(Math.abs(game.snapshotFor('p1').me.slowLeft - 2.5) < 0.06);
+  run(game, 2.6); // 총 3.6초
+  run(game, 1);
+  assert.ok(Math.abs(hunter.budget - normal) < 0.01, '3.5초 뒤 원래 속도');
+});
+
+test('암살자: 시간이 다 돼서 풀리면 감속 없음', () => {
+  const { game, hunter } = makeGame(3, 7, 'assassin');
+  game.handleSkill('p1');
+  run(game, 15.1);
+  assert.ok(!game.isInvisible(hunter));
+  assert.equal(game.snapshotFor('p1').me.slowLeft, 0);
+  run(game, 1);
+  assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.6) < 0.01);
+});

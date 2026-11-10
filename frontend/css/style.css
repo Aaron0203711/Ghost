@@ -1362,3 +1362,236 @@ body.touch #pc-hint {
   color: var(--bad);
   animation: pulse 1s ease-in-out infinite;
 }
+
+/* ───────────── 술래 직업 선택 ───────────── */
+
+.select-card {
+  align-items: stretch;
+  text-align: center;
+}
+
+.select-timer {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 2px;
+}
+
+.select-timer svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.select-timer circle {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 3;
+}
+
+#select-ring {
+  stroke: var(--accent-2);
+  stroke-dasharray: 100.5;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s linear, stroke 0.2s ease;
+}
+
+#select-ring.urgent {
+  stroke: var(--bad);
+}
+
+.select-timer b {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.class-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+
+.class-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.2s ease;
+}
+
+.class-card:hover {
+  border-color: rgba(242, 166, 90, 0.6);
+}
+
+.class-card:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.class-card .cls-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.class-card strong {
+  font-size: 19px;
+}
+
+.class-card .cls-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.class-card:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.class-card.picked {
+  opacity: 1;
+  border-color: var(--accent);
+  background: rgba(224, 85, 58, 0.2);
+}
+
+.wait-name {
+  margin: 6px 0;
+  font-size: 16px;
+}
+
+.wait-name b {
+  color: var(--accent-2);
+}
+
+.wait-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.wait-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  animation: bounce 1s ease-in-out infinite;
+}
+
+.wait-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.wait-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bounce {
+  50% {
+    transform: translateY(-8px);
+    opacity: 0.5;
+  }
+}
+
+@media (max-height: 460px) {
+  .select-card h2 {
+    font-size: 18px;
+  }
+  .class-card {
+    padding: 10px 8px;
+  }
+  .class-card .cls-icon {
+    font-size: 30px;
+  }
+  .select-timer {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+/* ───────────── 저격수 ───────────── */
+
+#scope {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: radial-gradient(circle at center, transparent 0, transparent min(34vh, 34vw), rgba(0, 0, 0, 0.92) calc(min(34vh, 34vw) + 2px));
+}
+
+#scope i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+#scope .h {
+  width: min(68vh, 68vw);
+  height: 2px;
+  transform: translate(-50%, -50%);
+}
+
+#scope .v {
+  width: 2px;
+  height: min(68vh, 68vw);
+  transform: translate(-50%, -50%);
+}
+
+#scope .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff3b2f;
+  transform: translate(-50%, -50%);
+}
+
+#screen-game.scoped #scope {
+  opacity: 1;
+}
+
+#screen-game.scoped #crosshair {
+  display: none;
+}
+
+/* 스코프 중에도 버튼과 HUD는 위에 보이게 */
+#screen-game #touch-layer {
+  z-index: 2;
+}
+
+.cls-sniper .ctl-btn .count,
+.cls-sniper .ctl-btn .timer {
+  display: none;
+}
+
+.ctl-btn.aiming {
+  background: rgba(224, 85, 58, 0.55);
+  border-color: var(--accent);
+}
+
+.cls-sniper .ctl-btn.main .lbl {
+  position: relative;
+  z-index: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.cls-sniper .m-only,
+#screen-game:not(.cls-sniper) .sn-only {
+  display: none;
+}

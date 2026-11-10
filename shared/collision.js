@@ -17,6 +17,7 @@ export class CollisionWorld {
       maxX: b.x + b.w / 2,
       minZ: b.z - b.d / 2,
       maxZ: b.z + b.d / 2,
+      h: b.h ?? Infinity,
     };
     const idx = this.boxes.length;
     this.boxes.push(box);
@@ -139,6 +140,15 @@ export class CollisionWorld {
         }
       }
       if (hit) return true;
+    }
+    return false;
+  }
+
+  /** 3D 점이 장애물 안에 있는지 (총알 판정용, 장애물 높이 고려) */
+  pointBlocked(x, y, z) {
+    if (y <= 0) return true;
+    for (const b of this.query(x, z, x, z)) {
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && y <= b.h) return true;
     }
     return false;
   }

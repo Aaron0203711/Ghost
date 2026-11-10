@@ -1,6 +1,6 @@
 // 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 강퇴, 호스트 위임, 게임 시작/종료.
 
-import { RULES } from '../../shared/constants.js';
+import { RULES, HUNTER_CLASS, CLASS_PICK_TIME } from '../../shared/constants.js';
 import { Game } from './game.js';
 
 const randomCode = (rand) => String(1000 + Math.floor(rand() * 9000));
@@ -67,7 +67,10 @@ export class RoomManager {
         if (client.room?.game) client.room.game.handleInput(client.id, msg);
         break;
       case 'attack':
-        if (client.room?.game) client.room.game.handleAttack(client.id);
+        if (client.room?.game) client.room.game.handleAttack(client.id, msg);
+        break;
+      case 'pickClass':
+        this.pickClass(client, msg.cls);
         break;
       case 'trap':
         if (client.room?.game) client.room.game.handleTrap(client.id);
@@ -90,7 +93,7 @@ export class RoomManager {
     let code;
     do code = randomCode(this.rand);
     while (this.rooms.has(code));
-    const room = { code, hostId: client.id, members: [client], state: 'lobby', game: null, timer: null };
+    const room = { code, hostId: client.id, members: [client], state: 'lobby', game: null, timer: null, select: null };
     this.rooms.set(code, room);
     client.room = room;
     this.broadcastRoom(room);
@@ -119,6 +122,10 @@ export class RoomManager {
     room.members = room.members.filter((m) => m !== client);
     client.room = null;
     if (room.game) room.game.removePlayer(client.id);
+    if (room.select) {
+      if (room.select.hunterId === client.id) this.cancelSelect(room, '술래가 나가서 대기실로 돌아왔어요.');
+      else if (room.members.length < RULES.MIN_PLAYERS) this.cancelSelect(room, '인원이 부족해서 대기실로 돌아왔어요.');
+    }
     if (room.members.length === 0) {
       this.closeRoom(room);
       return;
@@ -146,16 +153,61 @@ export class RoomManager {
     if (room.members.length < RULES.MIN_PLAYERS)
       return this.error(client, 'notEnough', `최소 ${RULES.MIN_PLAYERS}명이 있어야 시작할 수 있어요.`);
 
+    // 1) 무작위로 술래를 정하고, 술래가 직업을 고르는 동안 생존자는 대기
+    const hunter = room.members[Math.floor(this.rand() * room.members.length)];
+    room.state = 'selecting';
+    room.select = { hunterId: hunter.id, deadline: Date.now() + CLASS_PICK_TIME * 1000, timer: null };
+    const msg = {
+      t: 'classSelect',
+      hunterId: hunter.id,
+      hunterName: hunter.name,
+      time: CLASS_PICK_TIME,
+      classes: Object.values(HUNTER_CLASS),
+    };
+    for (const m of room.members) m.send(msg);
+    this.broadcastRoom(room);
+    if (this.autoTick) room.select.timer = setTimeout(() => this.selectTimeout(room), CLASS_PICK_TIME * 1000);
+  }
+
+  /** 술래가 직업을 골랐을 때 */
+  pickClass(client, cls) {
+    const room = client.room;
+    if (!room?.select || room.select.hunterId !== client.id) return;
+    if (!Object.values(HUNTER_CLASS).includes(cls)) return;
+    this.beginGame(room, cls);
+  }
+
+  /** 15초 안에 고르지 않으면 무작위 직업 */
+  selectTimeout(room) {
+    if (!room.select) return;
+    const list = Object.values(HUNTER_CLASS);
+    this.beginGame(room, list[Math.floor(this.rand() * list.length)], true);
+  }
+
+  cancelSelect(room, message) {
+    if (room.select?.timer) clearTimeout(room.select.timer);
+    room.select = null;
+    room.state = 'lobby';
+    for (const m of room.members) m.send({ t: 'notice', message });
+  }
+
+  /** 2) 직업이 정해지면 게임 시작 */
+  beginGame(room, hunterClass, auto = false) {
+    const hunterId = room.select.hunterId;
+    if (room.select.timer) clearTimeout(room.select.timer);
+    room.select = null;
     const roster = room.members.map((m) => ({ id: m.id, name: m.name }));
     room.state = 'playing';
     room.game = new Game(roster, {
+      hunterId,
+      hunterClass,
       rand: this.rand,
       emit: (toId, msg) => {
         if (toId === null) for (const m of room.members) m.send(msg);
         else room.members.find((m) => m.id === toId)?.send(msg);
       },
     });
-    for (const m of room.members) m.send(room.game.startPayload(m.id));
+    for (const m of room.members) m.send({ ...room.game.startPayload(m.id), autoPicked: auto });
     this.broadcastRoom(room);
 
     if (this.autoTick) {
@@ -183,6 +235,8 @@ export class RoomManager {
   }
 
   closeRoom(room) {
+    if (room.select?.timer) clearTimeout(room.select.timer);
+    room.select = null;
     if (room.timer) clearInterval(room.timer);
     room.timer = null;
     room.game = null;

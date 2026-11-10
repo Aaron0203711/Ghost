@@ -3,7 +3,17 @@
 // 공격, 덫, 발전기, 탈출, 승패 판정은 모두 서버가 결정한다.
 
 import { CollisionWorld } from '../../shared/collision.js';
-import { RULES, ROLE, STATUS, stepStamina, speedFor, matchRules } from '../../shared/constants.js';
+import {
+  RULES,
+  ROLE,
+  STATUS,
+  stepStamina,
+  speedFor,
+  matchRules,
+  HUNTER_CLASS,
+  SNIPER,
+  aimDirection,
+} from '../../shared/constants.js';
 import { generateMap, planMatch, generatorBox } from './mapgen.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -11,7 +21,7 @@ const r2 = (v) => Math.round(v * 100) / 100;
 export class Game {
   /**
    * @param {{id:string,name:string}[]} roster
-   * @param {{hunterId?:string, seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
+   * @param {{hunterId?:string, hunterClass?:string, seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
    *   emit(null, msg)는 전체 방송, emit(id, msg)는 한 명에게 전송
    */
   constructor(roster, opts) {
@@ -23,6 +33,7 @@ export class Game {
     const hunterId = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
     const survivors = roster.filter((p) => p.id !== hunterId);
     this.rules = matchRules(roster.length);
+    this.hunterClass = opts.hunterClass === HUNTER_CLASS.SNIPER ? HUNTER_CLASS.SNIPER : HUNTER_CLASS.MANIAC;
     const plan = planMatch(this.map, survivors.length, this.rand, this.rules.generators);
 
     this.world = new CollisionWorld(this.map.boxes);
@@ -56,6 +67,8 @@ export class Game {
         charges: RULES.TRAP_MAX_CHARGES,
         chargeTimer: 0,
         attackReadyAt: 0,
+        aiming: false,
+        cls: role === ROLE.HUNTER ? this.hunterClass : null,
       });
     };
     const hunter = roster.find((p) => p.id === hunterId);
@@ -65,6 +78,8 @@ export class Game {
     this.hunterId = hunterId;
     this.traps = [];
     this.trapSeq = 0;
+    this.bullets = [];
+    this.bulletSeq = 0;
     this.exit = null;
     this.time = 0;
     this.ended = false;
@@ -77,12 +92,14 @@ export class Game {
       t: 'start',
       you: forId,
       rules: this.rules,
+      hunterClass: this.hunterClass,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         role: p.role,
+        cls: p.cls,
         x: r2(p.x),
         z: r2(p.z),
         yaw: r2(p.yaw),
@@ -103,6 +120,7 @@ export class Game {
     p.wantsRun = p.role === ROLE.SURVIVOR && !!msg.run;
     p.moving = !!msg.moving;
     p.interact = p.role === ROLE.SURVIVOR && !!msg.interact;
+    p.aiming = p.cls === HUNTER_CLASS.SNIPER && !!msg.aim;
 
     // 서버가 위치를 보정한 뒤에 도착한 옛 입력은 위치를 무시한다
     if (msg.corr !== p.corr) return;
@@ -137,10 +155,17 @@ export class Game {
     this.emit(p.id, { t: 'correct', x: r2(p.x), z: r2(p.z), corr: p.corr });
   }
 
-  handleAttack(id) {
+  /** 공격 키: 미치광이는 방망이, 저격수는 저격총. msg.yaw/pitch는 누른 순간의 시점 */
+  handleAttack(id, msg = {}) {
     const p = this.players.get(id);
-    if (!p || this.ended || p.role !== ROLE.HUNTER) return;
+    if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
     if (this.time < p.attackReadyAt) return;
+    if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
+    if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
+    if (p.cls === HUNTER_CLASS.SNIPER) {
+      this.fire(p);
+      return;
+    }
     p.attackReadyAt = this.time + RULES.ATTACK_COOLDOWN;
     this.emit(null, { t: 'event', kind: 'swing', id });
 
@@ -165,22 +190,104 @@ export class Game {
       }
     }
     if (!best || this.time < best.invulnUntil) return;
+    this.damage(best, id, 1);
+  }
 
-    best.hits++;
-    best.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
-    if (best.hits >= this.rules.hitsToCatch) {
-      best.status = STATUS.CAUGHT;
-      best.repairing = false;
-      this.emit(null, { t: 'event', kind: 'caught', id: best.id, by: id, name: best.name });
+  /** 생존자에게 피해. 맞으면 2초 무적, 체력이 다 닳으면 잡힘 */
+  damage(s, byId, amount, extra = {}) {
+    s.hits = Math.min(this.rules.hitsToCatch, s.hits + amount);
+    s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
+    if (s.hits >= this.rules.hitsToCatch) {
+      s.status = STATUS.CAUGHT;
+      s.repairing = false;
+      this.emit(null, { t: 'event', kind: 'caught', id: s.id, by: byId, name: s.name, dmg: amount, ...extra });
       this.checkEnd();
     } else {
-      this.emit(null, { t: 'event', kind: 'hit', id: best.id, by: id, hits: best.hits, max: this.rules.hitsToCatch });
+      this.emit(null, {
+        t: 'event',
+        kind: 'hit',
+        id: s.id,
+        by: byId,
+        hits: s.hits,
+        max: this.rules.hitsToCatch,
+        dmg: amount,
+        ...extra,
+      });
+    }
+  }
+
+  /** 저격총 발사: 총알은 초속 150m로 날아가며 장애물에 막힌다 (거리 제한 없음) */
+  fire(p) {
+    p.attackReadyAt = this.time + SNIPER.SHOT_COOLDOWN;
+    const dir = aimDirection(p.yaw, p.pitch);
+    const b = {
+      id: ++this.bulletSeq,
+      owner: p.id,
+      ox: p.x,
+      oy: RULES.EYE_HEIGHT,
+      oz: p.z,
+      x: p.x,
+      y: RULES.EYE_HEIGHT,
+      z: p.z,
+      dir,
+      traveled: 0,
+    };
+    this.bullets.push(b);
+    this.emit(null, {
+      t: 'event',
+      kind: 'shot',
+      id: p.id,
+      bid: b.id,
+      x: r2(b.x),
+      y: r2(b.y),
+      z: r2(b.z),
+      dx: Math.round(dir.x * 1e4) / 1e4,
+      dy: Math.round(dir.y * 1e4) / 1e4,
+      dz: Math.round(dir.z * 1e4) / 1e4,
+    });
+    return b;
+  }
+
+  /** 총알을 dt만큼 진행. 작은 간격으로 나눠 생존자 → 장애물 순으로 검사 */
+  stepBullets(dt) {
+    const STEP = 0.25;
+    const LIMIT = 100; // 맵(±75) 밖으로 나가면 사라짐
+    for (const b of [...this.bullets]) {
+      let remain = SNIPER.BULLET_SPEED * dt;
+      let end = null;
+      while (remain > 0 && !end) {
+        const s = Math.min(STEP, remain);
+        remain -= s;
+        b.x += b.dir.x * s;
+        b.y += b.dir.y * s;
+        b.z += b.dir.z * s;
+        b.traveled += s;
+        for (const t of this.players.values()) {
+          if (t.role !== ROLE.SURVIVOR || t.status !== STATUS.ALIVE) continue;
+          if (b.y < 0 || b.y > SNIPER.BODY_HEIGHT) continue;
+          if (Math.hypot(t.x - b.x, t.z - b.z) > SNIPER.HIT_RADIUS) continue;
+          end = { hit: t.id };
+          // 무적 중이면 피해 없이 막힌다
+          if (this.time >= t.invulnUntil) {
+            const far = Math.hypot(b.x - b.ox, b.z - b.oz) >= SNIPER.FAR_DISTANCE;
+            const dist = Math.round(Math.hypot(b.x - b.ox, b.z - b.oz));
+            this.damage(t, b.owner, far ? SNIPER.FAR_DAMAGE : SNIPER.NEAR_DAMAGE, { far, dist });
+          } else end.blocked = true;
+          break;
+        }
+        if (!end && this.world.pointBlocked(b.x, b.y, b.z)) end = { hit: null };
+        if (!end && (Math.abs(b.x) > LIMIT || Math.abs(b.z) > LIMIT || b.y > 80)) end = { hit: null, out: true };
+      }
+      if (end) {
+        this.bullets.splice(this.bullets.indexOf(b), 1);
+        this.emit(null, { t: 'event', kind: 'bulletEnd', bid: b.id, x: r2(b.x), y: r2(b.y), z: r2(b.z), hit: end.hit, out: !!end.out });
+      }
     }
   }
 
   handleTrap(id) {
     const p = this.players.get(id);
-    if (!p || this.ended || p.role !== ROLE.HUNTER) return;
+    if (!p || this.ended || p.role !== ROLE.HUNTER || p.cls !== HUNTER_CLASS.MANIAC) return;
     if (p.charges <= 0) return;
     p.charges--;
     const trap = { id: ++this.trapSeq, x: p.x, z: p.z, owner: id };
@@ -223,10 +330,13 @@ export class Game {
         if (p.charges >= RULES.TRAP_MAX_CHARGES) p.chargeTimer = 0;
       }
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
-      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0));
+      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), p.aiming);
       if (stunned) p.budget = 0;
       else p.budget = Math.min(p.budget + speed * dt * 1.2, speed * 0.6);
     }
+
+    this.stepBullets(dt);
+    if (this.ended) return;
 
     // 덫 밟기
     for (const s of this.players.values()) {
@@ -330,10 +440,12 @@ export class Game {
       t: 'end',
       winner,
       reason,
+      hunterClass: this.hunterClass,
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         role: p.role,
+        cls: p.cls,
         status: p.status,
         hits: p.hits,
       })),
@@ -363,6 +475,7 @@ export class Game {
         inv: this.time < p.invulnUntil ? 1 : 0,
         run: p.running ? 1 : 0,
         rep: p.repairing ? 1 : 0,
+        aim: p.aiming ? 1 : 0,
       })),
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),
       traps,

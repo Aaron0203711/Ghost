@@ -49,6 +49,11 @@ function noiseBurst(dur = 0.12, vol = 0.25, freq = 1200) {
 
 export const sfx = {
   swing: () => noiseBurst(0.18, 0.2, 700),
+  gunshot: (vol = 1) => {
+    noiseBurst(0.35, 0.7 * vol, 900);
+    noiseBurst(0.08, 0.5 * vol, 3000);
+    tone({ freq: 120, to: 40, dur: 0.3, type: 'square', vol: 0.25 * vol });
+  },
   hit: () => {
     tone({ freq: 160, to: 60, dur: 0.25, type: 'square', vol: 0.25 });
     noiseBurst(0.1, 0.35, 400);

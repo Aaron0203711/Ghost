@@ -89,7 +89,20 @@ test('시작: 방장만, 2명 이상, 무작위 1명이 술래', () => {
   mgr.handle(b, { t: 'start' });
   assert.equal(b.last('error').code, 'notHost');
   mgr.handle(a, { t: 'start' });
+  // 술래가 정해지고 직업 선택 단계
+  const sel = a.last('classSelect');
+  assert.ok(sel, '직업 선택 메시지');
+  assert.equal(b.last('classSelect').hunterId, sel.hunterId);
+  assert.equal(a.room.state, 'selecting');
+  assert.equal(a.last('start'), undefined, '직업을 고르기 전에는 시작하지 않음');
+  const hunter = [a, b, c].find((x) => x.id === sel.hunterId);
+  const other = [a, b, c].find((x) => x.id !== sel.hunterId);
+  mgr.handle(other, { t: 'pickClass', cls: 'sniper' });
+  assert.equal(a.last('start'), undefined, '술래가 아닌 사람은 고를 수 없음');
+  mgr.handle(hunter, { t: 'pickClass', cls: 'sniper' });
   const start = a.last('start');
+  assert.equal(start.hunterClass, 'sniper');
+  assert.equal(start.players.find((p) => p.role === 'hunter').id, sel.hunterId);
   assert.ok(start);
   const hunters = start.players.filter((p) => p.role === 'hunter');
   assert.equal(hunters.length, 1);
@@ -115,6 +128,9 @@ test('게임이 끝나면 같은 방 대기실로 돌아간다', () => {
   const room = a.room;
   mgr.handle(b, { t: 'join', code: room.code });
   mgr.handle(a, { t: 'start' });
+  mgr.selectTimeout(room); // 15초 동안 고르지 않음 → 무작위 직업
+  assert.ok(['maniac', 'sniper'].includes(room.game.hunterClass));
+  assert.equal(a.last('start').autoPicked, true);
   const hunterId = room.game.hunterId;
   const survivor = hunterId === a.id ? b : a;
   mgr.handle(survivor, { t: 'leave' });
@@ -156,6 +172,10 @@ test('실제 WebSocket 서버: 방 만들기 → 참가 → 시작 → 상태 �
     b.send(JSON.stringify({ t: 'join', code: room.code, name: 'B' }));
     await waitFor(a, (m) => m.t === 'room' && m.players.length === 2);
     a.send(JSON.stringify({ t: 'start' }));
+    const sel = await waitFor(b, (m) => m.t === 'classSelect');
+    // 술래 쪽 소켓으로 직업 선택
+    const ids = await Promise.all([waitFor(a, (m) => m.t === 'welcome'), waitFor(b, (m) => m.t === 'welcome')]);
+    (ids[0].id === sel.hunterId ? a : b).send(JSON.stringify({ t: 'pickClass', cls: 'maniac' }));
     const start = await waitFor(b, (m) => m.t === 'start');
     assert.ok(start.map.boxes.length > 100);
     const st = await waitFor(b, (m) => m.t === 'state');
@@ -172,4 +192,38 @@ test('실제 WebSocket 서버: 방 만들기 → 참가 → 시작 → 상태 �
   } finally {
     await srv.close();
   }
+});
+
+test('직업 선택 중 술래가 나가면 대기실로 돌아감', () => {
+  const { mgr, mk } = setup();
+  const a = mk('A');
+  const b = mk('B');
+  const c = mk('C');
+  mgr.handle(a, { t: 'create' });
+  const room = a.room;
+  mgr.handle(b, { t: 'join', code: room.code });
+  mgr.handle(c, { t: 'join', code: room.code });
+  mgr.handle(a, { t: 'start' });
+  const hunter = [a, b, c].find((x) => x.id === room.select.hunterId);
+  const rest = [a, b, c].filter((x) => x !== hunter);
+  mgr.handle(hunter, { t: 'leave' });
+  assert.equal(room.state, 'lobby');
+  assert.equal(room.game, null);
+  assert.ok(rest[0].last('notice'));
+  assert.equal(rest[0].last('room').state, 'lobby');
+  // 다시 시작 가능
+  mgr.handle(rest[0].id === room.hostId ? rest[0] : rest[1], { t: 'start' });
+  assert.equal(room.state, 'selecting');
+});
+
+test('직업 선택 중에는 참가할 수 없음', () => {
+  const { mgr, mk } = setup();
+  const a = mk('A');
+  const b = mk('B');
+  mgr.handle(a, { t: 'create' });
+  mgr.handle(b, { t: 'join', code: a.room.code });
+  mgr.handle(a, { t: 'start' });
+  const late = mk('late');
+  mgr.handle(late, { t: 'join', code: a.room.code });
+  assert.equal(late.last('error').code, 'inGame');
 });

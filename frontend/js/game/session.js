@@ -1,9 +1,9 @@
 // 한 판의 게임 클라이언트: 렌더링, 내 이동 예측, 서버 상태 반영, HUD, 관전.
 import * as THREE from 'three';
 import { CollisionWorld } from '@shared/collision.js';
-import { RULES, ROLE, STATUS, stepStamina, speedFor } from '@shared/constants.js';
+import { RULES, ROLE, STATUS, stepStamina, speedFor, HUNTER_CLASS, SNIPER, CLASS_INFO } from '@shared/constants.js';
 import { buildWorld, buildSky } from './world.js';
-import { Avatar, BatViewModel, GeneratorModel, makeTrap, makeExit } from './models.js';
+import { Avatar, BatViewModel, RifleViewModel, GeneratorModel, makeTrap, makeExit, Tracer, makeImpact } from './models.js';
 import { Controls } from './input.js';
 import { Gyro } from './gyro.js';
 import { sfx, unlockAudio } from './audio.js';
@@ -26,6 +26,14 @@ export class GameSession {
     const me = this.info.get(this.myId);
     this.role = me.role;
     this.isHunter = this.role === ROLE.HUNTER;
+    // 술래 직업: 미치광이(방망이+덫) / 저격수(저격총+조준)
+    this.hunterClass = start.hunterClass ?? HUNTER_CLASS.MANIAC;
+    this.isSniper = this.isHunter && this.hunterClass === HUNTER_CLASS.SNIPER;
+    this.attackCooldown = this.isSniper ? SNIPER.SHOT_COOLDOWN : RULES.ATTACK_COOLDOWN;
+    this.aiming = false;
+    this.tracers = new Map(); // 서버 총알 id → 궤적 (끝 위치를 받기 전)
+    this.liveTracers = []; // 화면에 그리는 중인 궤적
+    this.effects = [];
     // 이번 판 규칙 (5명이면 발전기 5개, 체력 2칸)
     this.hitsToCatch = start.rules?.hitsToCatch ?? RULES.HITS_TO_CATCH;
 
@@ -104,13 +112,14 @@ export class GameSession {
       if (p.id === this.myId) continue;
       // 이름표는 같은 생존자끼리만 보인다
       const showLabel = !this.isHunter && p.role === ROLE.SURVIVOR;
-      const a = new Avatar(p.role, p.index, p.name, showLabel);
+      const a = new Avatar(p.role, p.index, p.name, showLabel, p.cls ?? this.hunterClass);
       a.setTarget(p.x, p.z, p.yaw, true);
       scene.add(a.group);
       this.avatars.set(p.id, a);
     }
 
-    if (this.isHunter) this.viewBat = new BatViewModel(camera);
+    if (this.isSniper) this.viewBat = new RifleViewModel(camera);
+    else if (this.isHunter) this.viewBat = new BatViewModel(camera);
 
     this.onResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -124,13 +133,20 @@ export class GameSession {
     const screen = $('screen-game');
     screen.classList.toggle('role-hunter', this.isHunter);
     screen.classList.toggle('role-survivor', !this.isHunter);
-    screen.classList.remove('spectating');
-    $('hud-role').textContent = this.isHunter ? '👹 술래' : '🏃 생존자';
+    screen.classList.toggle('cls-sniper', this.isSniper);
+    screen.classList.remove('spectating', 'scoped');
+    const info = CLASS_INFO[this.hunterClass];
+    $('hud-role').textContent = this.isHunter ? `${info.icon} 술래 · ${info.name}` : `🏃 생존자 · 술래는 ${info.name}`;
     $('hud-role').className = `badge ${this.isHunter ? 'hunter' : 'survivor'}`;
-    $('btn-main').querySelector('.lbl').textContent = this.isHunter ? '공격' : '수리';
-    $('btn-main').querySelector('.ico').textContent = this.isHunter ? '🏏' : '🔧';
-    $('btn-action').querySelector('.lbl').textContent = this.isHunter ? '덫' : '달리기';
-    $('btn-action').querySelector('.ico').textContent = this.isHunter ? '🪤' : '👟';
+    const labels = this.isSniper
+      ? { main: ['🎯', '발사'], action: ['🔭', '조준'] }
+      : this.isHunter
+        ? { main: ['🏏', '공격'], action: ['🪤', '덫'] }
+        : { main: ['🔧', '수리'], action: ['👟', '달리기'] };
+    $('btn-main').querySelector('.ico').textContent = labels.main[0];
+    $('btn-main').querySelector('.lbl').textContent = labels.main[1];
+    $('btn-action').querySelector('.ico').textContent = labels.action[0];
+    $('btn-action').querySelector('.lbl').textContent = labels.action[1];
     $('hud-feed').innerHTML = '';
     $('hud-exit').classList.add('hidden');
     $('hud-repair').classList.add('hidden');
@@ -139,7 +155,11 @@ export class GameSession {
     this.updateGenHud();
     this.renderPlayerList();
     this.centerMsg(
-      this.isHunter ? '생존자를 모두 잡으세요!' : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`,
+      this.isSniper
+        ? '저격수: 조준해서 멀리서 맞히면 2칸!'
+        : this.isHunter
+          ? '생존자를 모두 잡으세요!'
+          : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`,
       3,
     );
   }
@@ -162,7 +182,7 @@ export class GameSession {
     });
     this.controls.onPress('action', () => {
       unlockAudio();
-      if (this.isHunter) this.tryTrap();
+      if (this.isHunter && !this.isSniper) this.tryTrap(); // 저격수는 누르고 있는 동안 조준
     });
     this.onSettingsClick = () => {
       this.controls.releaseAll();
@@ -175,10 +195,14 @@ export class GameSession {
 
   tryAttack() {
     if (this.status !== STATUS.ALIVE || this.attackLeft > 0) return;
-    this.attackLeft = RULES.ATTACK_COOLDOWN;
+    this.attackLeft = this.attackCooldown;
     this.viewBat?.playSwing();
-    sfx.swing();
-    this.net.send({ t: 'attack' });
+    if (this.isSniper) {
+      sfx.gunshot(1);
+      this.shake = 0.12;
+    } else sfx.swing();
+    // 누른 순간의 시점으로 판정하도록 방향을 함께 보낸다
+    this.net.send({ t: 'attack', yaw: this.yaw, pitch: this.pitch });
   }
 
   tryTrap() {
@@ -223,6 +247,7 @@ export class GameSession {
       a.pitch = p.pitch;
       a.stunned = p.stun > 0;
       a.repairing = !!p.rep;
+      a.aiming = !!p.aim;
       a.group.visible = p.st === STATUS.ALIVE && p.id !== this.spectateId;
     }
     // 떠난 플레이어
@@ -287,23 +312,31 @@ export class GameSession {
           if (this.distTo(e.id) < 15) sfx.swing();
         }
         break;
-      case 'hit':
+      case 'shot':
+        this.onShot(e);
+        break;
+      case 'bulletEnd':
+        this.onBulletEnd(e);
+        break;
+      case 'hit': {
         this.avatars.get(e.id)?.hitFlash();
+        const far = e.far ? ` · ${e.dist}m 원거리 저격! -${e.dmg}칸` : e.dmg > 1 ? ` -${e.dmg}칸` : '';
         if (me) {
           sfx.hit();
           this.flash('hit');
           this.shake = 0.35;
-          this.centerMsg(`맞았다! (${e.hits}/${this.hitsToCatch})`, 1.5);
+          this.centerMsg(`맞았다! (${e.hits}/${this.hitsToCatch})${e.far ? ' 원거리 저격 -2칸' : ''}`, 1.5);
         } else if (e.by === this.myId) {
           sfx.hit();
           this.hitMarker();
-          this.feed(`${name(e.id)} 명중 (${e.hits}/${this.hitsToCatch})`);
-        } else this.feed(`${name(e.id)}이(가) 맞았다 (${e.hits}/${this.hitsToCatch})`);
+          this.feed(`${name(e.id)} 명중 (${e.hits}/${this.hitsToCatch})${far}`);
+        } else this.feed(`${name(e.id)}이(가) 맞았다 (${e.hits}/${this.hitsToCatch})${far}`);
         break;
+      }
       case 'caught':
         sfx.caught();
         if (e.by === this.myId) this.hitMarker();
-        this.feed(`💀 ${name(e.id)}이(가) 잡혔다`, 'bad');
+        this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
         if (me) this.flash('hit');
         break;
       case 'trapped':
@@ -339,6 +372,40 @@ export class GameSession {
     }
   }
 
+  /** 총알 발사 이벤트: 총구에서 궤적을 그린다 */
+  onShot(e) {
+    const dir = new THREE.Vector3(e.dx, e.dy, e.dz);
+    let origin;
+    if (e.id === this.myId) {
+      // 내 총알은 화면 오른쪽 아래 총구에서 출발하는 것처럼 보이게
+      origin = new THREE.Vector3(0.18, -0.12, -0.6).applyQuaternion(this.camera.quaternion).add(this.camera.position);
+    } else {
+      const a = this.avatars.get(e.id);
+      a?.playSwing();
+      origin = a ? a.muzzleWorld() : new THREE.Vector3(e.x, e.y, e.z);
+      // 멀어도 들리는 총소리 (거리에 따라 작게)
+      const d = this.distTo(e.id);
+      sfx.gunshot(Math.max(0.15, 1 - d / 120));
+    }
+    // 서버 기준 출발점과 방향으로 그리되, 화면상 총구 위치에서 시작
+    const tracer = new Tracer(this.scene, origin, dir, SNIPER.BULLET_SPEED);
+    tracer.serverOrigin = new THREE.Vector3(e.x, e.y, e.z);
+    this.tracers.set(e.bid, tracer);
+    this.liveTracers.push(tracer);
+    this.effects.push(makeImpact(this.scene, origin, '#ffd27a'));
+  }
+
+  onBulletEnd(e) {
+    const p = new THREE.Vector3(e.x, e.y, e.z);
+    const t = this.tracers.get(e.bid);
+    if (t) {
+      // 화면상 출발점(총구)이 서버 출발점과 조금 달라도, 서버에서 날아간 거리만큼 가서 멈춘다
+      t.stopAt(t.start.clone().addScaledVector(t.dir, p.distanceTo(t.serverOrigin)));
+      this.tracers.delete(e.bid);
+    }
+    if (!e.out) this.effects.push(makeImpact(this.scene, p, e.hit ? '#ff5a4a' : '#fff2c0'));
+  }
+
   setMyStatus(st) {
     this.status = st;
     if (st === STATUS.ALIVE) return;
@@ -366,7 +433,7 @@ export class GameSession {
     const a = this.avatars.get(next.id);
     if (a) a.group.visible = false;
     $('hud-spectate').classList.remove('hidden');
-    $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? '👹 ' : ''}${next.name}`;
+    $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? `${CLASS_INFO[this.hunterClass].icon} ` : ''}${next.name}`;
   }
 
   distTo(id) {
@@ -389,14 +456,18 @@ export class GameSession {
     const c = this.controls;
     const alive = this.status === STATUS.ALIVE;
 
-    // 시점
+    // 저격수 조준: 조준 키를 누르고 있는 동안 확대
+    this.aiming = this.isSniper && alive && c.isHeld('action');
+
+    // 시점 (확대 중에는 확대한 만큼 감도를 낮춰 정밀하게)
     const look = c.consumeLook();
     const gyro = this.gyro.consume();
+    const zoom = this.camera.fov / 75;
     // 설정 창이 열려 있을 때는 자이로 회전을 버린다
     const settingsOpen = !$('modal-settings').classList.contains('hidden');
     if (alive) {
-      this.yaw -= look.dx;
-      this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - look.dy));
+      this.yaw -= look.dx * zoom;
+      this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - look.dy * zoom));
       if (!settingsOpen) {
         this.yaw += gyro.yaw;
         this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch + gyro.pitch));
@@ -413,7 +484,7 @@ export class GameSession {
     this.interact = !this.isHunter && c.isHeld('main');
     if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned, this.moving, dt);
     if (alive && this.moving) {
-      const speed = speedFor(this.role, this.running);
+      const speed = speedFor(this.role, this.running, this.aiming);
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -441,11 +512,14 @@ export class GameSession {
         run: wantsRun,
         moving: this.moving,
         interact: this.interact,
+        aim: this.aiming,
         corr: this.corr,
       });
     }
 
     for (const a of this.avatars.values()) a.update(dt);
+    this.liveTracers = this.liveTracers.filter((t) => t.update(dt));
+    this.effects = this.effects.filter((fx) => fx(dt));
     for (const g of this.gens.values()) g.model.update(dt);
     if (this.exitMesh) {
       const portal = this.exitMesh.userData.portal;
@@ -466,6 +540,11 @@ export class GameSession {
       } else {
         cam.position.set(a.pos.x, RULES.EYE_HEIGHT, a.pos.z);
         cam.rotation.set(a.pitch ?? 0, a.yaw, 0);
+        if (cam.fov !== 75) {
+          cam.fov = 75;
+          cam.updateProjectionMatrix();
+          $('screen-game').classList.remove('scoped');
+        }
         this.sky.position.copy(cam.position);
         return;
       }
@@ -482,13 +561,14 @@ export class GameSession {
     const eye = this.stunLeft > 0 ? RULES.EYE_HEIGHT - 0.25 : RULES.EYE_HEIGHT;
     cam.position.set(this.pos.x + sx, eye + bob + sy, this.pos.z);
     cam.rotation.set(this.pitch, this.yaw, 0);
-    const targetFov = this.running ? 82 : 75;
+    const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running ? 82 : 75;
     if (Math.abs(cam.fov - targetFov) > 0.1) {
-      cam.fov += (targetFov - cam.fov) * Math.min(1, dt * 6);
+      cam.fov += (targetFov - cam.fov) * Math.min(1, dt * (this.aiming ? 14 : 8));
       cam.updateProjectionMatrix();
     }
     this.sky.position.copy(cam.position);
-    this.viewBat?.update(dt, this.moving);
+    this.viewBat?.update(dt, this.moving, this.aiming);
+    $('screen-game').classList.toggle('scoped', this.aiming && cam.fov < 40);
   }
 
   // ───────────────────────── HUD ─────────────────────────
@@ -574,8 +654,14 @@ export class GameSession {
   updateHunterHud() {
     const btnA = $('btn-main');
     const btnT = $('btn-action');
-    btnA.style.setProperty('--cd', String(this.attackLeft / RULES.ATTACK_COOLDOWN));
+    btnA.style.setProperty('--cd', String(this.attackLeft / this.attackCooldown));
     btnA.classList.toggle('cooling', this.attackLeft > 0);
+    if (this.isSniper) {
+      // 저격수: 발사 쿨타임 숫자, 조준 버튼은 누르는 동안 강조
+      btnA.querySelector('.lbl').textContent = this.attackLeft > 0 ? `${this.attackLeft.toFixed(1)}s` : '발사';
+      btnT.classList.toggle('aiming', this.aiming);
+      return;
+    }
     btnT.querySelector('.count').textContent = String(this.charges);
     const frac = this.charges < RULES.TRAP_MAX_CHARGES ? this.chargeLeft / RULES.TRAP_COOLDOWN : 0;
     btnT.style.setProperty('--cd', String(frac));
@@ -597,7 +683,7 @@ export class GameSession {
     const rows = [...this.info.values()].map((p) => {
       const st = p.status ?? STATUS.ALIVE;
       let tag;
-      if (p.role === ROLE.HUNTER) tag = '👹';
+      if (p.role === ROLE.HUNTER) tag = CLASS_INFO[this.hunterClass].icon;
       else if (st === STATUS.CAUGHT) tag = '💀';
       else if (st === STATUS.ESCAPED) tag = '🏁';
       else if (st === 'left') tag = '🚪';

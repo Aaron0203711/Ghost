@@ -28,20 +28,49 @@ export function makeBat() {
   return g;
 }
 
+/** 저격총: 개머리판이 원점, 총구가 -z 방향 */
+export function makeRifle() {
+  const g = new THREE.Group();
+  const dark = mat('#22262b');
+  const wood = mat('#6b4a2f');
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.32), wood);
+  stock.position.set(0, -0.02, 0.0);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.5), wood);
+  body.position.set(0, 0, -0.38);
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.07, 0.22), dark);
+  receiver.position.set(0, 0.05, -0.3);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.62, 8), dark);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.03, -0.9);
+  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.3, 10), dark);
+  scope.rotation.x = Math.PI / 2;
+  scope.position.set(0, 0.12, -0.32);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.024, 10), new THREE.MeshBasicMaterial({ color: '#7fd0ff' }));
+  lens.position.set(0, 0.12, -0.471);
+  lens.rotation.y = Math.PI;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.05), dark);
+  grip.position.set(0, -0.07, -0.2);
+  g.add(stock, body, receiver, barrel, scope, lens, grip);
+  g.userData.muzzle = new THREE.Vector3(0, 0.03, -1.22);
+  return g;
+}
+
 /** 다른 플레이어 모델. yaw=0에서 -z를 바라본다 */
 export class Avatar {
-  constructor(role, colorIndex, name, showLabel) {
+  constructor(role, colorIndex, name, showLabel, cls = 'maniac') {
     this.role = role;
+    this.cls = role === 'hunter' ? cls : null;
     this.group = new THREE.Group();
     const isHunter = role === 'hunter';
+    const sniper = this.cls === 'sniper';
     const scale = isHunter ? 1.12 : 1;
     const body = new THREE.Group();
     body.scale.setScalar(scale);
     this.group.add(body);
 
-    const shirt = isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
-    const pants = isHunter ? '#1a1718' : '#3b3f4a';
-    const skin = isHunter ? '#b8342c' : '#e9c6a1';
+    const shirt = sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
+    const pants = sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
+    const skin = sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.26), mat(shirt));
     torso.position.y = 1.15;
@@ -49,7 +78,16 @@ export class Avatar {
     head.position.y = 1.62;
     body.add(torso, head);
 
-    if (isHunter) {
+    if (sniper) {
+      // 저격수: 복면 + 모자, 빨간 고글
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), mat('#2c3326'));
+      cap.position.y = 1.76;
+      const top = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat('#2c3326'));
+      top.position.y = 1.76;
+      const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.05), new THREE.MeshBasicMaterial({ color: '#ff3b2f' }));
+      goggles.position.set(0, 1.66, -0.15);
+      body.add(cap, top, goggles);
+    } else if (isHunter) {
       // 도깨비 탈: 뿔 두 개와 노란 눈
       for (const s of [-1, 1]) {
         const horn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.18, 6), mat('#e8dcc0'));
@@ -85,7 +123,12 @@ export class Avatar {
     this.armR.position.set(0.3, 1.42, 0); // 오른손 (+x)
     body.add(this.legL, this.legR, this.armL, this.armR);
 
-    if (isHunter) {
+    if (sniper) {
+      this.rifle = makeRifle();
+      this.rifle.position.set(0, -0.56, 0);
+      this.rifle.rotation.x = -Math.PI / 2; // 총구가 팔 방향
+      this.armR.add(this.rifle);
+    } else if (isHunter) {
       this.bat = makeBat();
       this.bat.position.set(0, -0.58, 0);
       this.bat.rotation.x = -Math.PI / 2.2;
@@ -109,6 +152,8 @@ export class Avatar {
     this.speed = 0;
     this.stunned = false;
     this.repairing = false;
+    this.aiming = false;
+    this.recoil = 0;
     this.flash = 0;
     this.materials = [];
     this.group.traverse((o) => o.material && this.materials.push(o.material));
@@ -125,6 +170,14 @@ export class Avatar {
 
   playSwing() {
     this.swing = 1;
+    this.recoil = 1;
+  }
+
+  /** 저격총 총구의 월드 좌표 */
+  muzzleWorld(out = new THREE.Vector3()) {
+    if (!this.rifle) return out.set(this.pos.x, 1.5, this.pos.z);
+    this.group.updateMatrixWorld(true);
+    return this.rifle.localToWorld(out.copy(this.rifle.userData.muzzle));
   }
 
   hitFlash() {
@@ -153,8 +206,16 @@ export class Avatar {
     this.armL.rotation.x = -s * 0.8;
 
     if (this.repairing) {
-      this.armL.rotation.x = -1.2 + Math.sin(performance.now() / 120) * 0.15;
-      this.armR.rotation.x = -1.2 - Math.sin(performance.now() / 120) * 0.15;
+      // 앞으로 팔을 뻗어 수리
+      this.armL.rotation.x = 1.2 + Math.sin(performance.now() / 120) * 0.15;
+      this.armR.rotation.x = 1.2 - Math.sin(performance.now() / 120) * 0.15;
+    } else if (this.cls === 'sniper') {
+      // 조준하면 총을 들어 앞을 겨눈다
+      this.recoil = Math.max(0, this.recoil - dt * 4);
+      const aimX = this.aiming ? 1.5 : 0.75 + s * 0.15;
+      this.armR.rotation.x = aimX + this.recoil * 0.5;
+      this.armL.rotation.x = aimX + 0.1;
+      this.armL.rotation.z = this.aiming ? -0.45 : -0.3;
     } else if (this.role === 'hunter' && this.swing > 0) {
       // 위에서 아래로 내려치기
       this.swing = Math.max(0, this.swing - dt * 3.2);
@@ -337,4 +398,116 @@ export function makeExit(exit) {
   g.add(kasagi, kasagi2, nuki, portal, beam, light);
   g.userData.portal = portal;
   return g;
+}
+
+/** 1인칭 저격총 (오른손). 조준(스코프) 중에는 숨긴다 */
+export class RifleViewModel {
+  constructor(camera) {
+    this.root = new THREE.Group();
+    this.gun = makeRifle();
+    const glove = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.12), mat('#2c3326'));
+    glove.position.set(0.02, -0.08, -0.18);
+    const glove2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.08, 0.12), mat('#2c3326'));
+    glove2.position.set(-0.03, -0.05, -0.62);
+    this.gun.add(glove, glove2);
+    this.root.add(this.gun);
+    this.root.scale.setScalar(0.7);
+    camera.add(this.root);
+    this.recoil = 0;
+    this.bob = 0;
+    this.aim = 0;
+  }
+
+  playSwing() {
+    this.recoil = 1;
+  }
+
+  update(dt, moving, aiming) {
+    this.bob += dt * (moving ? 9 : 2);
+    this.aim += ((aiming ? 1 : 0) - this.aim) * Math.min(1, dt * 14);
+    this.recoil = Math.max(0, this.recoil - dt * 3);
+    const by = Math.sin(this.bob) * (moving ? 0.012 : 0.003);
+    const bx = Math.cos(this.bob * 0.5) * (moving ? 0.01 : 0.002);
+    const r = this.recoil;
+    // 평소: 오른쪽 아래, 조준: 화면 가운데로 올라오며 스코프 화면으로 전환
+    this.root.position.set(0.22 * (1 - this.aim) + bx, -0.24 + 0.12 * this.aim + by + r * 0.03, -0.32 + r * 0.08);
+    this.gun.rotation.set(r * 0.25, 0.04 * (1 - this.aim), 0);
+    this.root.visible = this.aim < 0.85;
+  }
+}
+
+/** 총알 궤적 (빛나는 선). 서버 이벤트로 시작/끝 위치를 받는다 */
+export class Tracer {
+  constructor(scene, origin, dir, speed) {
+    this.scene = scene;
+    this.dir = dir.clone().normalize();
+    this.pos = origin.clone();
+    this.start = origin.clone();
+    this.speed = speed;
+    this.end = null;
+    this.life = 3;
+    const len = 4;
+    const geo = new THREE.CylinderGeometry(0.025, 0.025, len, 5, 1, true);
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, 0, len / 2);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#ffe9a8', transparent: true, opacity: 0.9, fog: false }));
+    this.place();
+    scene.add(this.mesh);
+  }
+
+  place() {
+    // 꼬리가 총알 뒤에 오도록 (궤적은 -dir 방향으로 늘어짐)
+    this.mesh.position.copy(this.pos).addScaledVector(this.dir, -4);
+    this.mesh.lookAt(this.mesh.position.clone().add(this.dir));
+  }
+
+  stopAt(p) {
+    this.end = p.clone();
+  }
+
+  /** @returns {boolean} 계속 살아 있으면 true */
+  update(dt) {
+    this.life -= dt;
+    const step = this.speed * dt;
+    if (this.end) {
+      const left = this.end.clone().sub(this.pos).dot(this.dir);
+      if (left <= step) {
+        this.dispose();
+        return false;
+      }
+    }
+    this.pos.addScaledVector(this.dir, step);
+    this.place();
+    if (this.life <= 0) {
+      this.dispose();
+      return false;
+    }
+    return true;
+  }
+
+  dispose() {
+    this.scene.remove(this.mesh);
+    this.mesh.geometry.dispose();
+    this.mesh.material.dispose();
+  }
+}
+
+/** 총알이 박힌 곳의 작은 섬광 */
+export function makeImpact(scene, p, color = '#fff2c0') {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color, transparent: true }));
+  m.position.copy(p);
+  scene.add(m);
+  let t = 0;
+  return (dt) => {
+    t += dt;
+    m.scale.setScalar(1 + t * 6);
+    m.material.opacity = Math.max(0, 1 - t * 4);
+    if (t > 0.25) {
+      scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+      return false;
+    }
+    return true;
+  };
 }

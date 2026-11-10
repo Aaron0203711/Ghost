@@ -7,12 +7,13 @@ import { CollisionWorld } from '../../shared/collision.js';
 
 const DT = 1 / 20;
 
-function makeGame(n = 3, seed = 7) {
+function makeGame(n = 3, seed = 7, hunterClass = 'maniac') {
   const events = [];
   const roster = Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
   const game = new Game(roster, {
     seed,
     hunterId: 'p1',
+    hunterClass,
     rand: mulberry32(seed),
     emit: (to, msg) => events.push({ to, msg }),
   });
@@ -335,4 +336,121 @@ test('제한 시간 7분: 이미 탈출한 생존자가 있으면 시간 종료 
   assert.ok(game.ended);
   assert.equal(game.result.winner, 'survivors');
   assert.equal(game.result.reason, 'timeUpEscaped');
+});
+
+// ───────────── 저격수 ─────────────
+
+/** 장애물 없는 빈 공간에서 시험: 맵의 장애물을 모두 지운 세계 */
+function openField(game) {
+  game.world = new CollisionWorld([]);
+}
+
+test('저격수: 가까이서 맞히면 1칸, 총알은 날아가는 시간이 있음', () => {
+  const { game, events, hunter, s1, s2 } = makeGame(3, 7, 'sniper');
+  openField(game);
+  hunter.x = 0;
+  hunter.z = 0;
+  s1.x = 0;
+  s1.z = -15; // 15m 앞
+  s2.x = s2.z = 500;
+  game.handleAttack('p1', { yaw: 0, pitch: -0.007 });
+  assert.equal(game.bullets.length, 1);
+  assert.ok(events.some((e) => e.msg.kind === 'shot'));
+  assert.equal(s1.hits, 0, '쏜 순간에는 아직 안 맞음');
+  game.tick(DT); // 7.5m
+  assert.equal(s1.hits, 0);
+  game.tick(DT); // 15m
+  game.tick(DT);
+  assert.equal(s1.hits, 1);
+  assert.equal(game.bullets.length, 0);
+  const hit = events.find((e) => e.msg.kind === 'hit');
+  assert.equal(hit.msg.dmg, 1);
+});
+
+test('저격수: 30m 밖에서 맞히면 2칸, 거리 제한 없음', () => {
+  const { game, hunter, s1, s2 } = makeGame(4, 7, 'sniper');
+  openField(game);
+  hunter.x = 0;
+  hunter.z = 70;
+  s1.x = 0;
+  s1.z = -70; // 140m 앞
+  s2.x = s2.z = 500;
+  game.players.get('p4').x = 600;
+  game.handleAttack('p1', { yaw: 0, pitch: -0.001 });
+  run(game, 1.2);
+  assert.equal(s1.hits, 2);
+  assert.equal(s1.status, STATUS.ALIVE, '3칸 중 2칸');
+});
+
+test('저격수: 5인 규칙(체력 2칸)에서 원거리 명중은 바로 잡힘', () => {
+  const { game, hunter, s1 } = makeGame(5, 7, 'sniper');
+  openField(game);
+  for (const p of game.players.values()) if (p !== hunter && p !== s1) p.x = p.z = 600;
+  hunter.x = 0;
+  hunter.z = 20;
+  s1.x = 0;
+  s1.z = -20; // 40m
+  game.handleAttack('p1', { yaw: 0, pitch: -0.002 });
+  run(game, 0.5);
+  assert.equal(s1.status, STATUS.CAUGHT);
+});
+
+test('저격수: 쿨타임 3초, 덫 없음', () => {
+  const { game, hunter } = makeGame(3, 7, 'sniper');
+  openField(game);
+  game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
+  game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
+  assert.equal(game.bulletSeq, 1);
+  run(game, 2.9);
+  game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
+  assert.equal(game.bulletSeq, 1, '3초 전');
+  run(game, 0.15);
+  game.handleAttack('p1', { yaw: 0, pitch: 0.3 });
+  assert.equal(game.bulletSeq, 2);
+  game.handleTrap('p1');
+  assert.equal(game.traps.length, 0);
+  assert.equal(hunter.charges, RULES.TRAP_MAX_CHARGES);
+});
+
+test('저격수: 담장에 막히고, 맞은 생존자는 2초 무적', () => {
+  const { game, hunter, s1, s2 } = makeGame(3, 7, 'sniper');
+  openField(game);
+  s2.x = s2.z = 500;
+  hunter.x = 0;
+  hunter.z = 0;
+  s1.x = 0;
+  s1.z = -10;
+  game.world.add({ x: 0, z: -5, w: 4, d: 0.3, h: 1.9 });
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  run(game, 0.3);
+  assert.equal(s1.hits, 0, '담장에 막힘');
+  // 담장 제거 후 무적 확인
+  game.world = new CollisionWorld([]);
+  run(game, 3);
+  game.handleAttack('p1', { yaw: 0, pitch: -0.01 });
+  run(game, 0.3);
+  assert.equal(s1.hits, 1);
+  s1.invulnUntil = game.time + 1; // 무적 중
+  run(game, 3);
+  game.handleAttack('p1', { yaw: 0, pitch: -0.01 });
+  s1.invulnUntil = game.time + 1;
+  run(game, 0.3);
+  assert.equal(s1.hits, 1, '무적 중에는 피해 없음');
+  assert.equal(game.bullets.length, 0, '총알은 막혀서 사라짐');
+});
+
+test('저격수: 조준 중에는 이동 속도가 절반', () => {
+  const { game, hunter } = makeGame(3, 7, 'sniper');
+  game.handleInput('p1', { x: hunter.x, z: hunter.z, aim: true, moving: true, corr: hunter.corr });
+  run(game, 2);
+  assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.5 * 0.6) < 0.01, `budget ${hunter.budget}`);
+  game.handleInput('p1', { x: hunter.x, z: hunter.z, aim: false, moving: true, corr: hunter.corr });
+  run(game, 2);
+  assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.6) < 0.01);
+});
+
+test('미치광이는 조준할 수 없음', () => {
+  const { game, hunter } = makeGame(3, 7, 'maniac');
+  game.handleInput('p1', { x: hunter.x, z: hunter.z, aim: true, corr: hunter.corr });
+  assert.equal(hunter.aiming, false);
 });

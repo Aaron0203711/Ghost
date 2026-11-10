@@ -2,7 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, unlockAudio } from './game/audio.js';
-import { matchRules, LARGE_MATCH } from '@shared/constants.js';
+import { matchRules, LARGE_MATCH, CLASS_INFO } from '@shared/constants.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
 const $ = (id) => document.getElementById(id);
@@ -384,7 +384,8 @@ tap($('btn-rotate-ok'), () => $('rotate-hint').classList.add('hidden'));
 function showResult(msg) {
   const meEntry = msg.players.find((p) => p.id === myId);
   const iWon = meEntry ? (msg.winner === 'hunter') === (meEntry.role === 'hunter') : false;
-  const title = msg.winner === 'hunter' ? '👹 술래 승리' : '🏁 생존자 승리';
+  const hc = CLASS_INFO[msg.hunterClass] || CLASS_INFO.maniac;
+  const title = msg.winner === 'hunter' ? `${hc.icon} 술래(${hc.name}) 승리` : '🏁 생존자 승리';
   const reasons = {
     escaped: '생존자가 탈출에 성공했습니다',
     allCaught: '생존자가 모두 잡혔습니다',
@@ -407,7 +408,8 @@ function showResult(msg) {
     li.appendChild(n);
     const t = document.createElement('span');
     t.className = 'tag';
-    t.textContent = p.role === 'hunter' ? '👹 술래' : label[p.status] || p.status;
+    const cls = CLASS_INFO[p.cls || msg.hunterClass] || CLASS_INFO.maniac;
+    t.textContent = p.role === 'hunter' ? `${cls.icon} 술래 · ${cls.name}` : label[p.status] || p.status;
     li.appendChild(t);
     if (p.id === myId) li.classList.add('me');
     list.appendChild(li);
@@ -472,7 +474,58 @@ net.on('left', () => {
   room = null;
 });
 
+// ───────────────────────── 술래 직업 선택 ─────────────────────────
+
+let selectTimer = null;
+function showClassSelect(m) {
+  const isHunter = m.hunterId === myId;
+  $('select-hunter').classList.toggle('hidden', !isHunter);
+  $('select-wait').classList.toggle('hidden', isHunter);
+  $('select-hunter-name').textContent = m.hunterName;
+  document.querySelectorAll('.class-card').forEach((c) => {
+    c.disabled = false;
+    c.classList.remove('picked');
+  });
+  const end = Date.now() + m.time * 1000;
+  const ring = $('select-ring');
+  const tick = () => {
+    const left = Math.max(0, (end - Date.now()) / 1000);
+    $('select-time').textContent = String(Math.ceil(left));
+    ring.style.strokeDashoffset = String(100.5 * (1 - left / m.time));
+    ring.classList.toggle('urgent', left <= 5);
+  };
+  clearInterval(selectTimer);
+  tick();
+  selectTimer = setInterval(tick, 200);
+  closeSettings();
+  show('screen-select');
+}
+
+document.querySelectorAll('.class-card').forEach((card) =>
+  tap(card, () => {
+    document.querySelectorAll('.class-card').forEach((c) => {
+      c.disabled = true;
+      c.classList.toggle('picked', c === card);
+    });
+    net.send({ t: 'pickClass', cls: card.dataset.cls });
+  }),
+);
+
+net.on('classSelect', (m) => {
+  done();
+  showClassSelect(m);
+});
+
+net.on('notice', (m) => {
+  clearInterval(selectTimer);
+  toast(m.message);
+});
+
 net.on('start', (m) => {
+  clearInterval(selectTimer);
+  if (m.autoPicked && m.players.find((p) => p.id === myId)?.role === 'hunter') {
+    toast(`시간이 지나 직업이 무작위로 정해졌어요: ${m.hunterClass === 'sniper' ? '저격수' : '미치광이'}`);
+  }
   done();
   startSession(m);
 });

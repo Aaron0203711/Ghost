@@ -73,8 +73,9 @@ export function stepStamina(s, wantsRun, moving, dt) {
   return running;
 }
 
-export function speedFor(role, running) {
-  if (role === ROLE.HUNTER) return RULES.HUNTER_SPEED;
+/** aiming: 저격수가 조준 중이면 절반 속도 */
+export function speedFor(role, running, aiming = false) {
+  if (role === ROLE.HUNTER) return aiming ? RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR : RULES.HUNTER_SPEED;
   return running ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
 }
 
@@ -88,4 +89,35 @@ export function matchRules(playerCount) {
     generators: large ? LARGE_MATCH.GENERATORS : RULES.GENERATOR_COUNT,
     hitsToCatch: large ? LARGE_MATCH.HITS_TO_CATCH : RULES.HITS_TO_CATCH,
   };
+}
+
+// ───────────── 술래 직업 ─────────────
+
+export const HUNTER_CLASS = Object.freeze({ MANIAC: 'maniac', SNIPER: 'sniper' });
+
+/** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
+export const CLASS_PICK_TIME = 15;
+
+/** 저격수: 저격총(거리 무제한, 날아가는 시간 있음), 조준 키(확대), 덫 없음 */
+export const SNIPER = Object.freeze({
+  SHOT_COOLDOWN: 3,
+  BULLET_SPEED: 150, // m/s
+  FAR_DISTANCE: 30, // 이 거리(m) 밖에서 맞히면 2칸
+  NEAR_DAMAGE: 1,
+  FAR_DAMAGE: 2,
+  AIM_SPEED_FACTOR: 0.5, // 조준 중 이동 속도 배율 (20km/h → 10km/h)
+  AIM_FOV: 24, // 조준 시 시야각(확대)
+  HIT_RADIUS: 0.45, // 총알이 생존자에게 맞는 판정 반경
+  BODY_HEIGHT: 1.85,
+});
+
+export const CLASS_INFO = Object.freeze({
+  maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
+  sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 3초) · 조준 확대 · 30m 밖 명중 시 2칸' },
+});
+
+/** 총알 방향 (yaw=0, pitch=0이면 -z) */
+export function aimDirection(yaw, pitch) {
+  const c = Math.cos(pitch);
+  return { x: -Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c };
 }

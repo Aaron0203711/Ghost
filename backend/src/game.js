@@ -377,7 +377,7 @@ export class Game {
         if (p.charges >= RULES.TRAP_MAX_CHARGES) p.chargeTimer = 0;
       }
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
-      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), p.aiming);
+      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), p.aiming, this.isInvisible(p));
       if (stunned) p.budget = 0;
       else p.budget = Math.min(p.budget + speed * dt * 1.2, speed * 0.6);
     }

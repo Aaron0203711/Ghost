@@ -562,7 +562,7 @@ export class GameSession {
     this.interact = !this.isHunter && c.isHeld('main');
     if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned, this.moving, dt);
     if (alive && this.moving) {
-      const speed = speedFor(this.role, this.running, this.aiming);
+      const speed = speedFor(this.role, this.running, this.aiming, this.isAssassin && this.invisLeft > 0);
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)

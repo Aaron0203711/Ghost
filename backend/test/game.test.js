@@ -684,3 +684,26 @@ test('미치광이·저격수는 투명화 스킬을 쓸 수 없음', () => {
     assert.ok(!game.isInvisible(hunter));
   }
 });
+
+test('암살자: 투명화 중에는 이동 속도 50% 증가, 풀리면 원래대로', () => {
+  const { game, hunter } = makeGame(3, 7, 'assassin');
+  run(game, 2);
+  const normal = RULES.HUNTER_SPEED * 0.6;
+  assert.ok(Math.abs(hunter.budget - normal) < 0.01, '평소 20km/h');
+  game.handleSkill('p1');
+  run(game, 2);
+  assert.ok(Math.abs(hunter.budget - normal * 1.5) < 0.01, `투명화 30km/h (${hunter.budget})`);
+  // 실제로 1초에 30km/h(8.33m)까지 움직일 수 있는지: 열린 곳에서 이동 입력
+  game.world = new CollisionWorld([]);
+  const start = { x: hunter.x, z: hunter.z };
+  for (let i = 0; i < 20; i++) {
+    game.tick(DT);
+    game.handleInput('p1', { x: hunter.x, z: hunter.z - (RULES.HUNTER_SPEED * 1.5) / 20, moving: true, corr: hunter.corr });
+  }
+  const moved = Math.hypot(hunter.x - start.x, hunter.z - start.z);
+  assert.ok(Math.abs(moved - RULES.HUNTER_SPEED * 1.5) < 0.05, `1초 이동 ${moved.toFixed(2)}m`);
+  run(game, 14);
+  assert.ok(!game.isInvisible(hunter));
+  run(game, 1);
+  assert.ok(Math.abs(hunter.budget - normal) < 0.01, '풀리면 다시 20km/h');
+});

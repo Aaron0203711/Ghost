@@ -73,9 +73,13 @@ export function stepStamina(s, wantsRun, moving, dt) {
   return running;
 }
 
-/** aiming: 저격수가 조준 중이면 절반 속도 */
-export function speedFor(role, running, aiming = false) {
-  if (role === ROLE.HUNTER) return aiming ? RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR : RULES.HUNTER_SPEED;
+/** aiming: 저격수 조준 중이면 절반 속도, invisible: 암살자 투명화 중이면 1.5배 */
+export function speedFor(role, running, aiming = false, invisible = false) {
+  if (role === ROLE.HUNTER) {
+    if (aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
+    if (invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
+    return RULES.HUNTER_SPEED;
+  }
   return running ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
 }
 
@@ -122,11 +126,12 @@ export const ASSASSIN = Object.freeze({
   ATTACK_RANGE: 2.0,
   INVIS_TIME: 15,
   SKILL_COOLDOWN: 8, // 투명화가 끝난 뒤부터 셈
+  INVIS_SPEED_FACTOR: 1.5, // 투명화 중 이동 속도 50% 증가 (20km/h → 30km/h)
 });
 
 export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
-  assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 근접 공격 (쿨타임 1.5초) · 15초 투명화 (쿨타임 8초)' },
+  assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 근접 공격 (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
 });
 

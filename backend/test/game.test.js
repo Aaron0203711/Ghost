@@ -542,3 +542,44 @@ test('술래는 동료 술래의 덫을 밟지 않는다', () => {
   assert.equal(game.traps.length, 1);
   assert.ok(!game.isStunned(h2));
 });
+
+// ───────────── 맵 테마 ─────────────
+
+test('폐광산 맵: 마을과 구조가 같고 갱도 버팀목만 추가된다', async () => {
+  const { generateMap, reachableCells, roadCenter } = await import('../src/mapgen.js');
+  for (const seed of [1, 2, 3]) {
+    const v = generateMap(seed, 'village');
+    const m = generateMap(seed, 'mine');
+    assert.equal(v.theme, 'village');
+    assert.equal(m.theme, 'mine');
+    const base = m.boxes.filter((b) => b.kind !== 'timber');
+    assert.deepEqual(base, v.boxes, '버팀목을 빼면 마을 맵과 똑같은 배치');
+    assert.ok(m.arches.length > 60, `버팀목 ${m.arches.length}개`);
+    assert.equal(m.boxes.filter((b) => b.kind === 'timber').length, m.arches.length * 2);
+    assert.equal(v.arches.length, 0);
+    // 버팀목 때문에 막힌 곳이 생기지 않음: 걸어갈 수 있는 면적이 거의 같다
+    const c = roadCenter(2); // 가운데 교차로
+    const reachV = reachableCells(new CollisionWorld(v.boxes), c, c).length;
+    const reachM = reachableCells(new CollisionWorld(m.boxes), c, c).length;
+    assert.ok(reachV > 50000);
+    assert.ok(reachM > reachV * 0.97, `${reachM} vs ${reachV}`);
+  }
+});
+
+test('폐광산 맵으로 게임 시작: 시작 위치와 발전기가 장애물과 겹치지 않음', () => {
+  for (const seed of [1, 2, 3, 4]) {
+    const roster = Array.from({ length: 8 }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+    const game = new Game(roster, {
+      seed,
+      theme: 'mine',
+      rand: mulberry32(seed),
+      hunters: [
+        { id: 'p1', cls: 'maniac' },
+        { id: 'p2', cls: 'sniper' },
+      ],
+      emit: () => {},
+    });
+    assert.equal(game.startPayload('p3').map.theme, 'mine');
+    for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9), `seed ${seed}`);
+  }
+});

@@ -3,10 +3,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as T from './textures.js';
+import { buildMineWorld, buildMineSky } from './mine.js';
 
 const tmpColor = new THREE.Color();
 
-function paint(geo, color) {
+export function paint(geo, color) {
   tmpColor.set(color);
   const n = geo.attributes.position.count;
   const arr = new Float32Array(n * 3);
@@ -20,7 +21,7 @@ function paint(geo, color) {
 }
 
 /** 텍스처가 실제 크기(m)에 맞게 반복되는 박스. su/sv = 텍스처 1장이 덮는 m */
-function texturedBox(w, h, d, su, sv) {
+export function texturedBox(w, h, d, su, sv) {
   const g = new THREE.BoxGeometry(w, h, d);
   const uv = g.attributes.uv;
   const spans = [
@@ -40,14 +41,14 @@ function texturedBox(w, h, d, su, sv) {
   return g;
 }
 
-function place(geo, x, y, z, rotY = 0) {
+export function place(geo, x, y, z, rotY = 0) {
   if (rotY) geo.rotateY(rotY);
   geo.translate(x, y, z);
   return geo;
 }
 
 /** 박공지붕 (용마루가 x축 방향). w: x폭, d: z폭, rh: 높이 */
-function gableRoof(w, d, rh) {
+export function gableRoof(w, d, rh) {
   const hw = w / 2;
   const hd = d / 2;
   const p = [];
@@ -73,7 +74,7 @@ function gableRoof(w, d, rh) {
   return g;
 }
 
-function groundPlane(w, d, s) {
+export function groundPlane(w, d, s) {
   const g = new THREE.PlaneGeometry(w, d);
   g.rotateX(-Math.PI / 2);
   const uv = g.attributes.uv;
@@ -81,7 +82,7 @@ function groundPlane(w, d, s) {
   return g;
 }
 
-class Batch {
+export class Batch {
   constructor() {
     this.list = [];
   }
@@ -101,9 +102,10 @@ class Batch {
   }
 }
 
-const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
+export const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
 
 export function buildWorld(scene, map) {
+  if (map.theme === 'mine') return buildMineWorld(scene, map);
   const group = new THREE.Group();
   const size = map.size;
 
@@ -332,7 +334,8 @@ function buildMountains(size) {
 }
 
 /** 해질녘 하늘 */
-export function buildSky(scene) {
+export function buildSky(scene, theme = 'village') {
+  if (theme === 'mine') return buildMineSky(scene);
   const geo = new THREE.SphereGeometry(190, 24, 12);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,

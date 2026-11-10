@@ -1608,3 +1608,29 @@ body.touch #pc-hint {
   padding: 2px 8px;
   font-size: 11px;
 }
+
+.select-map {
+  margin: 0 auto 4px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  background: rgba(242, 166, 90, 0.15);
+  color: var(--accent-2);
+  animation: pop 0.3s ease;
+}
+
+.select-map.mine {
+  background: rgba(150, 120, 90, 0.25);
+  color: #e8c79a;
+}
+
+#exit-label {
+  font-style: normal;
+}
+
+.theme-mine #hud-exit {
+  background: rgba(70, 55, 35, 0.75);
+  border-color: rgba(255, 220, 160, 0.5);
+  color: #ffe9c4;
+}

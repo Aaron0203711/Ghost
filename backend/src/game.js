@@ -21,15 +21,16 @@ const r2 = (v) => Math.round(v * 100) / 100;
 export class Game {
   /**
    * @param {{id:string,name:string}[]} roster
-   * @param {{hunterId?:string, hunterClass?:string, hunters?:{id:string,cls:string}[], seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
+   * @param {{hunterId?:string, hunterClass?:string, hunters?:{id:string,cls:string}[], theme?:string, seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
    *   hunters: 술래 목록과 각자의 직업 (6명 이상이면 2명). 없으면 hunterId/hunterClass 하나
+   *   theme: 맵 테마 ('village' | 'mine')
    *   emit(null, msg)는 전체 방송, emit(id, msg)는 한 명에게 전송
    */
   constructor(roster, opts) {
     this.rand = opts.rand || Math.random;
     this.emit = opts.emit;
     this.seed = opts.seed ?? Math.floor(this.rand() * 2 ** 31);
-    this.map = generateMap(this.seed);
+    this.map = generateMap(this.seed, opts.theme);
 
     this.rules = matchRules(roster.length);
     const validCls = (c) => (c === HUNTER_CLASS.SNIPER ? HUNTER_CLASS.SNIPER : HUNTER_CLASS.MANIAC);
@@ -451,6 +452,7 @@ export class Game {
       winner,
       reason,
       hunterClass: this.hunterClass,
+      theme: this.map.theme,
       hunterClasses: [...this.players.values()].filter((p) => p.role === ROLE.HUNTER).map((p) => p.cls),
       players: [...this.players.values()].map((p) => ({
         id: p.id,

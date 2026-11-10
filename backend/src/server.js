@@ -88,7 +88,8 @@ export function createServer({ port = 3000, host = '0.0.0.0' } = {}) {
     });
   });
 
-  const manager = new RoomManager();
+  // GHOST_MAP=mine|village 로 맵을 고정할 수 있다 (개발/시험용). 없으면 무작위
+  const manager = new RoomManager({ theme: process.env.GHOST_MAP });
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 
   wss.on('connection', (ws) => {

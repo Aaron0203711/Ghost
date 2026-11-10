@@ -2,6 +2,7 @@
 
 import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules } from '../../shared/constants.js';
 import { Game } from './game.js';
+import { MAP_THEMES } from './mapgen.js';
 
 const randomCode = (rand) => String(1000 + Math.floor(rand() * 9000));
 
@@ -15,12 +16,13 @@ export function sanitizeName(name, fallback) {
 
 export class RoomManager {
   /**
-   * @param {{rand?:()=>number, tickRate?:number, autoTick?:boolean}} opts
+   * @param {{rand?:()=>number, tickRate?:number, autoTick?:boolean, theme?:string}} opts
    */
   constructor(opts = {}) {
     this.rand = opts.rand || Math.random;
     this.tickRate = opts.tickRate || RULES.TICK_RATE;
     this.autoTick = opts.autoTick !== false;
+    this.forceTheme = MAP_THEMES[opts.theme] ? opts.theme : null; // 개발용: 맵 고정
     this.rooms = new Map();
     this.clients = new Map(); // id -> client
     this.seq = 0;
@@ -162,13 +164,17 @@ export class RoomManager {
     const hunters = [];
     while (hunters.length < count) hunters.push(pool.splice(Math.floor(this.rand() * pool.length), 1)[0]);
     room.state = 'selecting';
-    room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null };
+    // 맵은 술래가 직업을 고르는 동안 무작위로 정해진다
+    const themes = Object.keys(MAP_THEMES);
+    const theme = this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
+    room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null, theme };
     const msg = {
       t: 'classSelect',
       hunterIds: hunters.map((h) => h.id),
       hunterNames: hunters.map((h) => h.name),
       time: CLASS_PICK_TIME,
       classes: Object.values(HUNTER_CLASS),
+      map: MAP_THEMES[theme],
     };
     for (const m of room.members) m.send(msg);
     this.broadcastRoom(room);
@@ -220,6 +226,7 @@ export class RoomManager {
     room.state = 'playing';
     room.game = new Game(roster, {
       hunters,
+      theme: sel.theme,
       rand: this.rand,
       emit: (toId, msg) => {
         if (toId === null) for (const m of room.members) m.send(msg);

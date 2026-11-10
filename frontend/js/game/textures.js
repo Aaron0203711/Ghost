@@ -3,7 +3,7 @@ import * as THREE from 'three';
 
 const cache = new Map();
 
-function canvasTexture(key, w, h, draw, { repeat = true, srgb = true } = {}) {
+export function canvasTexture(key, w, h, draw, { repeat = true, srgb = true } = {}) {
   if (cache.has(key)) return cache.get(key);
   const c = document.createElement('canvas');
   c.width = w;
@@ -18,7 +18,7 @@ function canvasTexture(key, w, h, draw, { repeat = true, srgb = true } = {}) {
   return tex;
 }
 
-function noise(g, w, h, alpha, n = 1800, light = false) {
+export function noise(g, w, h, alpha, n = 1800, light = false) {
   for (let i = 0; i < n; i++) {
     const v = light ? 255 : 0;
     g.fillStyle = `rgba(${v},${v},${v},${Math.random() * alpha})`;

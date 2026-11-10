@@ -34,7 +34,14 @@ const roadStart = (j) => -HALF + j * (BLOCK + ROAD);
 const blockStart = (i) => roadStart(i) + ROAD;
 export const roadCenter = (j) => roadStart(j) + ROAD / 2;
 
-export function generateMap(seed = Date.now()) {
+/** 맵 테마: 구조(충돌 배치)는 같고 분위기만 다르다 */
+export const MAP_THEMES = Object.freeze({
+  village: { id: 'village', name: '시골 마을', icon: '🏘️' },
+  mine: { id: 'mine', name: '폐광산', icon: '⛏️' },
+});
+
+export function generateMap(seed = Date.now(), theme = 'village') {
+  if (!MAP_THEMES[theme]) theme = 'village';
   const rand = mulberry32(seed);
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const range = (a, b) => a + rand() * (b - a);
@@ -315,6 +322,36 @@ export function generateMap(seed = Date.now()) {
     exits.push({ x: HALF - 2.2, z: c, rot: -Math.PI / 2 });
   }
 
+  // 폐광산: 갱도 버팀목(도로 양쪽 기둥 + 머리 위 들보). 마을 배치를 바꾸지 않도록 다른 난수 사용
+  const arches = [];
+  if (theme === 'mine') {
+    const r2 = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+    const POST = ROAD / 2 - 0.3;
+    const blocked = (x, z) =>
+      boxes.some((b) => (b.kind === 'truck' || b.kind === 'vending' || b.kind === 'pole') && Math.hypot(b.x - x, b.z - z) < 1.9);
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i < N; i++) {
+        for (const alongX of [false, true]) {
+          for (let k = 0; k < 2; k++) {
+            for (let tries = 0; tries < 6; tries++) {
+              const along = blockStart(i) + 2.5 + (k + r2()) * ((BLOCK - 5) / 2);
+              const c = roadCenter(j);
+              const x = alongX ? along : c;
+              const z = alongX ? c : along;
+              const p1 = alongX ? { x, z: c - POST } : { x: c - POST, z };
+              const p2 = alongX ? { x, z: c + POST } : { x: c + POST, z };
+              if (blocked(p1.x, p1.z) || blocked(p2.x, p2.z)) continue;
+              arches.push({ x, z, alongX });
+              box('timber', p1.x, p1.z, 0.3, 0.3, 3.4);
+              box('timber', p2.x, p2.z, 0.3, 0.3, 3.4);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
   for (const b of boxes) {
     b.x = round(b.x);
     b.z = round(b.z);
@@ -322,7 +359,7 @@ export function generateMap(seed = Date.now()) {
     b.d = round(b.d);
   }
 
-  return { seed, size: MAP_SIZE, boxes, decor, roads, poles, exits };
+  return { seed, theme, size: MAP_SIZE, boxes, decor, roads, poles, exits, arches };
 }
 
 const round = (v) => Math.round(v * 1000) / 1000;

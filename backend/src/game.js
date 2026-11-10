@@ -278,6 +278,16 @@ export class Game {
     }
 
     this.checkEnd();
+    if (!this.ended && this.time >= RULES.MATCH_TIME) this.timeUp();
+  }
+
+  /** 제한 시간 종료: 탈출한 생존자가 1명이라도 있으면 생존자 승리, 아무도 없으면 술래 승리 */
+  timeUp() {
+    const escaped = [...this.players.values()].filter(
+      (p) => p.role === ROLE.SURVIVOR && p.status === STATUS.ESCAPED,
+    ).length;
+    if (escaped > 0) this.finish('survivors', 'timeUpEscaped');
+    else this.finish('hunter', 'timeUp');
   }
 
   nearestGen(s) {

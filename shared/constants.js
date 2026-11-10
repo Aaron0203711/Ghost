@@ -30,6 +30,9 @@ export const RULES = Object.freeze({
   HITS_TO_CATCH: 3, // 4명 이하일 때 (5명 이상이면 matchRules 참고)
   HIT_INVULNERABLE: 2,
 
+  // 제한 시간: 7분 안에 아무도 탈출하지 못하면 술래 승리
+  MATCH_TIME: 7 * 60,
+
   // 발전기 / 탈출
   GENERATOR_COUNT: 3, // 4명 이하일 때 (5명 이상이면 matchRules 참고)
   GENERATOR_REPAIR_TIME: 10, // 혼자서 10초. 여럿이면 합산되어 빨라짐

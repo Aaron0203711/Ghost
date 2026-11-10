@@ -390,6 +390,8 @@ function showResult(msg) {
     allCaught: '생존자가 모두 잡혔습니다',
     hunterLeft: '술래가 게임을 나갔습니다',
     survivorsLeft: '생존자가 모두 나갔습니다',
+    timeUp: '7분 동안 아무도 탈출하지 못했습니다',
+    timeUpEscaped: '시간 종료 · 탈출한 생존자가 있습니다',
   };
   $('result-title').textContent = title;
   $('result-sub').textContent = `${reasons[msg.reason] || ''}${meEntry ? (iWon ? ' · 승리!' : ' · 패배') : ''}`;

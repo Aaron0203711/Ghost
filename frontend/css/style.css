@@ -1345,3 +1345,20 @@ body.touch #pc-hint {
 .modal-card > * {
   flex-shrink: 0;
 }
+
+.gens .sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+#hud-timer {
+  min-width: 38px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#hud-timer.urgent {
+  color: var(--bad);
+  animation: pulse 1s ease-in-out infinite;
+}

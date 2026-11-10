@@ -315,3 +315,24 @@ test('5인 규칙: 발전기 5개도 장애물과 겹치지 않고 서로 떨어
     }
   }
 });
+
+test('제한 시간 7분: 아무도 탈출하지 못하면 술래 승리', () => {
+  const { game, hunter } = makeGame();
+  hunter.x = hunter.z = 900;
+  run(game, RULES.MATCH_TIME - 1);
+  assert.ok(!game.ended, '7분 전에는 끝나지 않음');
+  run(game, 1.1);
+  assert.ok(game.ended);
+  assert.equal(game.result.winner, 'hunter');
+  assert.equal(game.result.reason, 'timeUp');
+});
+
+test('제한 시간 7분: 이미 탈출한 생존자가 있으면 시간 종료 시 생존자 승리', () => {
+  const { game, hunter, s1 } = makeGame();
+  hunter.x = hunter.z = 900;
+  s1.status = STATUS.ESCAPED;
+  run(game, RULES.MATCH_TIME + 0.1);
+  assert.ok(game.ended);
+  assert.equal(game.result.winner, 'survivors');
+  assert.equal(game.result.reason, 'timeUpEscaped');
+});

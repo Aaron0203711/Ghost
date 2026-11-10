@@ -205,6 +205,7 @@ export class GameSession {
 
   onState(s) {
     this.lastState = s;
+    this.matchTime = s.time;
     for (const p of s.players) {
       const info = this.info.get(p.id);
       if (!info) continue;
@@ -424,6 +425,7 @@ export class GameSession {
     }
 
     this.attackLeft = Math.max(0, this.attackLeft - dt);
+    this.matchTime = Math.min(RULES.MATCH_TIME, (this.matchTime || 0) + dt);
     if (this.chargeLeft > 0 && this.charges < RULES.TRAP_MAX_CHARGES) this.chargeLeft = Math.max(0, this.chargeLeft - dt);
 
     // 서버로 입력 전송 (초당 20회)
@@ -506,6 +508,16 @@ export class GameSession {
   }
 
   updateHud(dt) {
+    // 남은 시간
+    const left = Math.max(0, Math.ceil(RULES.MATCH_TIME - (this.matchTime || 0)));
+    const timerText = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    if (timerText !== this.lastTimerText) {
+      this.lastTimerText = timerText;
+      const el = $('hud-timer');
+      el.textContent = timerText;
+      el.classList.toggle('urgent', left <= 60);
+      if (left === 60) this.centerMsg('남은 시간 1분!', 2);
+    }
     const alive = this.status === STATUS.ALIVE;
     if (!this.isHunter && alive) {
       const st = this.stam.stamina / RULES.STAMINA_MAX;

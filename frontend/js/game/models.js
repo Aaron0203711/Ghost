@@ -2,10 +2,10 @@
 import * as THREE from 'three';
 import { labelTexture, generatorPanel } from './textures.js';
 import { RULES, jumpHeight } from '@shared/constants.js';
+import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS } from './characters.js';
 
 const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 
-export const SURVIVOR_COLORS = ['#3d7bd9', '#e0a526', '#3fae6a', '#c64f9b', '#8a5bd6'];
 
 /** 방망이: 손잡이가 원점, +y 방향으로 뻗음 */
 export function makeBat() {
@@ -185,170 +185,42 @@ export class Avatar {
     this.cls = role === 'hunter' ? cls : null;
     this.group = new THREE.Group();
     const isHunter = role === 'hunter';
-    const sniper = this.cls === 'sniper';
-    const assassin = this.cls === 'assassin';
-    const captain = this.cls === 'captain';
-    const ghost = this.cls === 'ghost';
-    const skin_ = this.cls === 'skinwalker';
-    const sprinter = this.cls === 'sprinter';
-    // 새 직업 색: [윗옷, 바지, 피부]
-    const palette = {
-      captain: ['#1f2f5a', '#2b2420', '#d7b089'],
-      ghost: ['#dfe6ee', '#dfe6ee', '#eef3f8'],
-      skinwalker: ['#c79a86', '#7a4f3f', '#d9a58e'],
-      sprinter: ['#c8282d', '#1c1c22', '#e3b98f'],
-    }[this.cls];
-    const scale = isHunter ? 1.12 : 1;
-    const body = new THREE.Group();
-    body.scale.setScalar(scale);
-    this.group.add(body);
+    // 사람 모델: 생존자는 5가지 외형, 술래는 직업별 의상
+    const look = SURVIVOR_LOOKS[colorIndex % SURVIVOR_LOOKS.length];
+    const spec = isHunter ? hunterSpec(this.cls) : { ...look, sleeves: look.top === 'tshirt' ? 'short' : 'long' };
+    const h = buildHumanoid(spec);
+    if (isHunter) dressHunter(this.cls, h);
+    this.body = h.root;
+    this.body.scale.setScalar(isHunter ? 1.08 : 1);
+    this.group.add(this.body);
+    const P = h.parts;
+    this.parts = P;
+    this.head = P.head;
+    this.armL = P.armL;
+    this.armR = P.armR; // 오른손 (+x)
+    this.elbowL = P.elbowL;
+    this.elbowR = P.elbowR;
+    this.legL = P.legL;
+    this.legR = P.legR;
+    this.kneeL = P.kneeL;
+    this.kneeR = P.kneeR;
 
-    const shirt = palette ? palette[0] : assassin ? '#1c2230' : sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
-    const pants = palette ? palette[1] : assassin ? '#141822' : sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
-    const skin = palette ? palette[2] : assassin ? '#d9b38f' : sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
-
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.26), mat(shirt));
-    torso.position.y = 1.15;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), mat(skin));
-    head.position.y = 1.62;
-    body.add(torso, head);
-
-    if (captain) {
-      // 선장: 삼각 모자 + 수염
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.03, 3), mat('#15151a'));
-      brim.position.y = 1.76;
-      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.14, 12), mat('#15151a'));
-      crown.position.y = 1.84;
-      const beard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.12), mat('#3a2a1e'));
-      beard.position.set(0, 1.52, -0.11);
-      const patch = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.02), mat('#111'));
-      patch.position.set(0.06, 1.65, -0.16);
-      body.add(brim, crown, beard, patch);
-    } else if (ghost) {
-      // 유령: 텅 빈 검은 눈과 입
-      for (const s of [-1, 1]) {
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), new THREE.MeshBasicMaterial({ color: '#05070c' }));
-        eye.position.set(0.06 * s, 1.65, -0.14);
-        eye.scale.set(1, 1.5, 0.6);
-        body.add(eye);
-      }
-      const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({ color: '#05070c' }));
-      mouth.position.set(0, 1.55, -0.15);
-      mouth.scale.set(0.8, 1.6, 0.5);
-      // 아래로 흘러내리는 천 자락
-      const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.1, 12, 1, true), mat('#dfe6ee', { side: THREE.DoubleSide }));
-      cloak.position.y = 0.62;
-      body.add(mouth, cloak);
-    } else if (skin_) {
-      // 살가죽: 꿰맨 자국과 짝짝이 눈
-      for (const [x, y, rz] of [
-        [-0.05, 1.68, 0.3],
-        [0.07, 1.58, -0.4],
-        [0, 1.72, 1.4],
-      ]) {
-        const stitch = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.012, 0.01), mat('#3a1a14'));
-        stitch.position.set(x, y, -0.165);
-        stitch.rotation.z = rz;
-        body.add(stitch);
-      }
-      const eyeA = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({ color: '#f2efe4' }));
-      eyeA.position.set(0.06, 1.64, -0.15);
-      const eyeB = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), new THREE.MeshBasicMaterial({ color: '#111' }));
-      eyeB.position.set(-0.06, 1.63, -0.16);
-      body.add(eyeA, eyeB);
-    } else if (sprinter) {
-      // 질주자: 흰 머리띠 + 짧은 머리
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.176, 0.02, 6, 20), mat('#f2f2f2'));
-      band.rotation.x = Math.PI / 2;
-      band.position.y = 1.68;
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.175, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), mat('#1b1410'));
-      hair.position.y = 1.65;
-      body.add(band, hair);
-    } else if (assassin) {
-      // 암살자: 두건 + 입을 가린 복면 + 빨간 머리띠
-      const hood = new THREE.Mesh(new THREE.SphereGeometry(0.182, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.9), mat('#1c2230'));
-      hood.position.y = 1.63;
-      const maskM = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.13, 0.2), mat('#1c2230'));
-      maskM.position.set(0, 1.55, -0.06);
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.178, 0.018, 6, 20), mat('#b3262b'));
-      band.rotation.x = Math.PI / 2;
-      band.position.y = 1.7;
-      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.02), mat('#b3262b'));
-      tail.position.set(0.04, 1.62, 0.19);
-      tail.rotation.z = 0.3;
-      body.add(hood, maskM, band, tail);
-    } else if (sniper) {
-      // 저격수: 복면 + 모자, 빨간 고글
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), mat('#2c3326'));
-      cap.position.y = 1.76;
-      const top = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat('#2c3326'));
-      top.position.y = 1.76;
-      const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.05), new THREE.MeshBasicMaterial({ color: '#ff3b2f' }));
-      goggles.position.set(0, 1.66, -0.15);
-      body.add(cap, top, goggles);
-    } else if (isHunter) {
-      // 도깨비 탈: 뿔 두 개와 노란 눈
-      for (const s of [-1, 1]) {
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.18, 6), mat('#e8dcc0'));
-        horn.position.set(0.08 * s, 1.8, -0.02);
-        horn.rotation.z = -0.3 * s;
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), new THREE.MeshBasicMaterial({ color: '#ffd23a' }));
-        eye.position.set(0.06 * s, 1.65, -0.15);
-        body.add(horn, eye);
-      }
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat('#111'));
-      hair.position.y = 1.64;
-      body.add(hair);
-    } else {
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.175, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2.2), mat('#2a1d14'));
-      hair.position.y = 1.64;
-      body.add(hair);
-    }
-
-    const limb = (w, h, color) => {
-      const pivot = new THREE.Group();
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat(color));
-      m.position.y = -h / 2;
-      pivot.add(m);
-      return pivot;
+    // 오른손 무기
+    const hand = P.handR;
+    const hold = (obj, rx) => {
+      obj.position.set(0, -0.06, 0);
+      obj.rotation.x = rx;
+      hand.add(obj);
+      return obj;
     };
-    this.legL = limb(0.17, 0.85, pants);
-    this.legR = limb(0.17, 0.85, pants);
-    this.legL.position.set(-0.11, 0.85, 0);
-    this.legR.position.set(0.11, 0.85, 0);
-    this.armL = limb(0.13, 0.6, shirt);
-    this.armR = limb(0.13, 0.6, shirt);
-    this.armL.position.set(-0.3, 1.42, 0);
-    this.armR.position.set(0.3, 1.42, 0); // 오른손 (+x)
-    body.add(this.legL, this.legR, this.armL, this.armR);
-
-    if (captain || ghost || skin_) {
-      // 오른손 무기: 후크 / 손톱 / 쇠사슬 갈고리
-      this.weapon = captain ? makeHook() : ghost ? makeClaws() : makeChainHook();
-      this.weapon.position.set(0, -0.58, 0);
-      this.weapon.rotation.x = Math.PI;
-      this.armR.add(this.weapon);
-    }
-    if (ghost) {
-      // 다리 없이 떠다닌다
-      this.legL.visible = false;
-      this.legR.visible = false;
-    }
-    if (assassin) {
-      this.kunai = makeKunai();
-      this.kunai.position.set(0, -0.6, 0);
-      this.kunai.rotation.x = Math.PI; // 날이 팔 끝 방향 (아래로 들고 다님)
-      this.armR.add(this.kunai);
-    } else if (sniper) {
-      this.rifle = makeRifle();
-      this.rifle.position.set(0, -0.56, 0);
-      this.rifle.rotation.x = -Math.PI / 2; // 총구가 팔 방향
-      this.armR.add(this.rifle);
-    } else if (isHunter) {
-      this.bat = makeBat();
-      this.bat.position.set(0, -0.58, 0);
-      this.bat.rotation.x = -Math.PI / 2.2;
-      this.armR.add(this.bat);
+    if (this.cls === 'captain' || this.cls === 'ghost' || this.cls === 'skinwalker') {
+      this.weapon = hold(this.cls === 'captain' ? makeHook() : this.cls === 'ghost' ? makeClaws() : makeChainHook(), Math.PI);
+    } else if (this.cls === 'assassin') {
+      this.kunai = hold(makeKunai(), Math.PI); // 날이 팔 끝 방향 (아래로 들고 다님)
+    } else if (this.cls === 'sniper') {
+      this.rifle = hold(makeRifle(), -Math.PI / 2); // 총구가 팔 방향
+    } else if (this.cls === 'maniac') {
+      this.bat = hold(makeBat(), -Math.PI / 2.2);
     }
 
     if (showLabel) {
@@ -365,6 +237,7 @@ export class Avatar {
     this.target = new THREE.Vector3();
     this.yaw = 0;
     this.targetYaw = 0;
+    this.pitch = 0;
     this.speed = 0;
     this.stunned = false;
     this.repairing = false;
@@ -373,7 +246,7 @@ export class Avatar {
     this.flash = 0;
     this.materials = [];
     this.group.traverse((o) => o.material && this.materials.push(o.material));
-    this.baseAlpha = ghost ? 0.55 : 1; // 유령은 늘 반투명
+    this.baseAlpha = this.cls === 'ghost' ? 0.55 : 1; // 유령은 늘 반투명
     this.ghost = null;
     this.setGhost(1);
   }
@@ -437,59 +310,102 @@ export class Avatar {
     this.speed += (moved - this.speed) * Math.min(1, dt * 10);
     const moving = this.speed > 0.3 && !this.stunned;
     this.walk += dt * (moving ? 2.2 + this.speed * 1.4 : 0);
-    const amp = moving ? Math.min(0.7, 0.25 + this.speed * 0.08) : 0;
+    const amp = moving ? Math.min(0.75, 0.3 + this.speed * 0.08) : 0;
     const s = Math.sin(this.walk) * amp;
+    const now = performance.now();
+    // 걷기: 엉덩이·무릎·어깨·팔꿈치가 번갈아 움직이고 몸이 살짝 오르내린다
     this.legL.rotation.x = s;
     this.legR.rotation.x = -s;
-    this.armL.rotation.x = -s * 0.8;
+    this.kneeL.rotation.x = -Math.max(0, Math.sin(this.walk + 1.3)) * amp * 1.5;
+    this.kneeR.rotation.x = -Math.max(0, Math.sin(this.walk + 1.3 + Math.PI)) * amp * 1.5;
+    this.armL.rotation.set(-s * 0.8, 0, -0.06);
+    this.armR.rotation.set(s * 0.8, 0, 0.06);
+    this.elbowL.rotation.x = 0.2 + Math.max(0, -s) * 0.6;
+    this.elbowR.rotation.x = 0.2 + Math.max(0, s) * 0.6;
+    this.body.position.y = moving ? Math.abs(Math.sin(this.walk)) * 0.035 : 0;
+    this.body.rotation.x = moving ? -Math.min(0.12, this.speed * 0.015) : 0;
+    this.head.rotation.x = Math.max(-0.6, Math.min(0.6, (this.pitch || 0) * 0.6)); // 보는 방향으로 고개
 
     if (this.repairing) {
-      // 앞으로 팔을 뻗어 수리
-      this.armL.rotation.x = 1.2 + Math.sin(performance.now() / 120) * 0.15;
-      this.armR.rotation.x = 1.2 - Math.sin(performance.now() / 120) * 0.15;
+      // 앞으로 팔을 뻗어 손을 바삐 움직이며 수리
+      const w = Math.sin(now / 120) * 0.15;
+      this.armL.rotation.x = 0.9 + w;
+      this.armR.rotation.x = 0.9 - w;
+      this.elbowL.rotation.x = 0.7;
+      this.elbowR.rotation.x = 0.7;
+      this.kneeL.rotation.x = -0.5;
+      this.kneeR.rotation.x = -0.5;
+      this.body.position.y = -0.08;
     } else if (this.cls === 'sprinter' && this.swing > 0) {
       // 오른발 앞차기
       this.swing = Math.max(0, this.swing - dt * 4);
       const t = 1 - this.swing;
-      this.legR.rotation.x = t < 0.3 ? -(t / 0.3) * 1.6 : -1.6 + Math.min(1, (t - 0.3) / 0.5) * 1.6;
+      const kick = t < 0.3 ? t / 0.3 : 1 - Math.min(1, (t - 0.3) / 0.5);
+      this.legR.rotation.x = kick * 1.5;
+      this.kneeR.rotation.x = -(1 - kick) * 0.9;
+      this.body.rotation.x = kick * 0.15;
     } else if (this.cls === 'assassin' && this.swing > 0) {
       // 앞으로 찌르기
       this.swing = Math.max(0, this.swing - dt * 4);
       const t = 1 - this.swing;
       this.armR.rotation.x = t < 0.25 ? 0.4 + (t / 0.25) * 1.3 : 1.7 - Math.min(1, (t - 0.25) / 0.6) * 1.3;
+      this.elbowR.rotation.x = t < 0.25 ? 0.8 - (t / 0.25) * 0.8 : 0.2;
     } else if (this.cls === 'sniper') {
-      // 조준하면 총을 들어 앞을 겨눈다
+      // 조준하면 총을 어깨에 대고 앞을 겨눈다
       this.recoil = Math.max(0, this.recoil - dt * 4);
-      const aimX = this.aiming ? 1.5 : 0.75 + s * 0.15;
-      this.armR.rotation.x = aimX + this.recoil * 0.5;
-      this.armL.rotation.x = aimX + 0.1;
-      this.armL.rotation.z = this.aiming ? -0.45 : -0.3;
+      const aimX = this.aiming ? 1.35 : 0.65 + s * 0.15;
+      this.armR.rotation.set(aimX + this.recoil * 0.5, 0, 0.1);
+      this.elbowR.rotation.x = this.aiming ? 0.25 : 0.5;
+      this.armL.rotation.set(aimX + 0.15, 0, this.aiming ? -0.55 : -0.35);
+      this.elbowL.rotation.x = this.aiming ? 0.35 : 0.6;
     } else if (this.role === 'hunter' && this.swing > 0) {
       // 위에서 아래로 내려치기
-      this.swing = Math.max(0, this.swing - dt * 3.2);
+      this.swing = Math.max(0, this.swing - dt * (this.cls === 'captain' || this.cls === 'ghost' ? 5.5 : 3.2));
       const t = 1 - this.swing;
       this.armR.rotation.x = t < 0.3 ? -2.6 * (t / 0.3) : -2.6 + 3.2 * Math.min(1, (t - 0.3) / 0.35);
-    } else {
-      this.armR.rotation.x = this.role === 'hunter' ? -0.4 + s * 0.3 : s * 0.8;
+      this.elbowR.rotation.x = t < 0.3 ? 0.9 : 0.15;
+      this.body.rotation.y = t < 0.3 ? -0.2 : 0.15; // 허리를 비틀어 휘두름
+    } else if (this.role === 'hunter') {
+      // 무기를 든 채 걷기
+      this.armR.rotation.x = -0.25 + s * 0.3;
+      this.elbowR.rotation.x = 0.45;
+      this.body.rotation.y = 0;
     }
+    if (this.swing <= 0) this.body.rotation.y = 0;
     if (this.stunned) {
-      this.legL.rotation.x = 0.2;
+      // 덫에 걸려 한쪽 무릎이 꺾임
+      this.legL.rotation.x = 0.3;
+      this.kneeL.rotation.x = -1.1;
       this.legR.rotation.x = -0.1;
+      this.kneeR.rotation.x = -0.2;
+      this.body.position.y = -0.12;
     }
     if (this.dash === 'windup') {
       // 질주 대기: 몸을 낮추고 웅크림
-      this.legL.rotation.x = 0.8;
-      this.legR.rotation.x = -0.6;
-      this.armL.rotation.x = -0.8;
-      this.armR.rotation.x = -0.8;
+      this.legL.rotation.x = 0.9;
+      this.kneeL.rotation.x = -1.4;
+      this.legR.rotation.x = -0.4;
+      this.kneeR.rotation.x = -1.2;
+      this.armL.rotation.x = -0.7;
+      this.armR.rotation.x = -0.7;
+      this.body.position.y = -0.22;
+      this.body.rotation.x = -0.35;
     } else if (this.dash === 'dash') {
-      this.armL.rotation.x = -1.4;
-      this.armR.rotation.x = -1.4;
-      this.legL.rotation.x = Math.sin(performance.now() / 40) * 0.9;
-      this.legR.rotation.x = -this.legL.rotation.x;
+      const r = Math.sin(now / 40) * 0.9;
+      this.legL.rotation.x = r;
+      this.legR.rotation.x = -r;
+      this.kneeL.rotation.x = -Math.max(0, -r) * 1.4;
+      this.kneeR.rotation.x = -Math.max(0, r) * 1.4;
+      this.armL.rotation.x = -1.3;
+      this.armR.rotation.x = -1.3;
+      this.body.rotation.x = -0.4;
     }
-    if (this.cls === 'ghost') this.group.position.y += 0.15 + Math.sin(performance.now() / 500) * 0.08;
-    if (this.pulled) this.group.rotation.z = Math.sin(performance.now() / 60) * 0.08; // 끌려가며 버둥거림
+    if (this.cls === 'ghost') {
+      this.group.position.y += 0.15 + Math.sin(now / 500) * 0.08;
+      this.armL.rotation.x = 0.9 + Math.sin(now / 700) * 0.1; // 팔을 앞으로 내민 채 떠다님
+      if (this.swing <= 0) this.armR.rotation.x = 0.9 - Math.sin(now / 700) * 0.1;
+    }
+    if (this.pulled) this.group.rotation.z = Math.sin(now / 60) * 0.08; // 끌려가며 버둥거림
     else this.group.rotation.z = 0;
 
     if (this.flash > 0) {
@@ -503,7 +419,7 @@ export class Avatar {
     this.group.traverse((o) => {
       o.geometry?.dispose();
       if (o.material) {
-        o.material.map?.dispose();
+        if (o.isSprite) o.material.map?.dispose(); // 이름표만 따로 만든 텍스처 (옷감 질감은 공유)
         o.material.dispose();
       }
     });

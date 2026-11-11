@@ -126,7 +126,10 @@
           <div id="crosshair"></div>
           <div id="hud-center"></div>
           <div id="hud-stun" class="hidden"></div>
-          <div id="hud-exit" class="hidden"><i id="exit-arrow">▲</i><span><em id="exit-label">⛩ 탈출구</em> <b id="exit-dist"></b></span></div>
+          <div id="hud-exit" class="hidden">
+            <svg id="exit-arrow" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 L34 19 L25 19 L25 37 L15 37 L15 19 L6 19 Z" /></svg>
+            <span class="exit-text"><em id="exit-label">⛩ 탈출구</em><span><b id="exit-dir"></b> <b id="exit-dist"></b></span></span>
+          </div>
           <div id="hud-repair" class="hidden">
             <div class="bar"><i id="repair-fill"></i></div>
             <span id="repair-text"></span>

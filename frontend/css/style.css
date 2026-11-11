@@ -884,26 +884,64 @@ input[type='range'] {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 12px 5px 6px;
-  border-radius: 999px;
-  background: rgba(30, 60, 70, 0.7);
-  border: 1px solid rgba(160, 230, 255, 0.5);
-  color: #c8f2ff;
-  font-weight: 700;
-  font-size: 13px;
+  gap: 10px;
+  padding: 6px 16px 6px 8px;
+  border-radius: 16px;
+  background: rgba(20, 55, 65, 0.78);
+  border: 2px solid rgba(160, 230, 255, 0.7);
+  color: #e6faff;
+  font-weight: 800;
+  font-size: 14px;
   pointer-events: none;
+  box-shadow: 0 0 18px rgba(120, 220, 255, 0.35);
 }
 
+/* 탈출구 방향 화살표 (위 = 정면) */
 #exit-arrow {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  transition: transform 0.08s linear;
+  filter: drop-shadow(0 0 6px rgba(140, 230, 255, 0.9));
+}
+
+#exit-arrow path {
+  fill: #7fe3ff;
+  stroke: #0b2a33;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+#hud-exit .exit-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+#exit-label {
   font-style: normal;
-  border-radius: 50%;
-  background: rgba(200, 242, 255, 0.2);
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+#exit-dir {
+  font-size: 16px;
+  color: #ffffff;
+}
+
+#exit-dist {
+  font-size: 16px;
+  color: #7fe3ff;
+}
+
+#hud-exit.near {
+  animation: exitPulse 0.8s ease-in-out infinite;
+}
+
+@keyframes exitPulse {
+  50% {
+    box-shadow: 0 0 28px rgba(120, 220, 255, 0.85);
+  }
 }
 
 #hud-repair {
@@ -1625,10 +1663,6 @@ body.touch #pc-hint {
   color: #e8c79a;
 }
 
-#exit-label {
-  font-style: normal;
-}
-
 .theme-mine #hud-exit {
   background: rgba(70, 55, 35, 0.75);
   border-color: rgba(255, 220, 160, 0.5);
@@ -1812,4 +1846,16 @@ body.touch #pc-hint {
 
 #screen-game:not(.cls-skill) .sk-only {
   display: none;
+}
+
+.theme-mine #exit-arrow path,
+.theme-mine #exit-dist {
+  fill: #ffd27a;
+  color: #ffd27a;
+}
+
+.theme-backrooms #exit-arrow path,
+.theme-backrooms #exit-dist {
+  fill: #7dff9a;
+  color: #7dff9a;
 }

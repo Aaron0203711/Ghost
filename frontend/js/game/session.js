@@ -1022,9 +1022,19 @@ export class GameSession {
       const yaw = ref ? ref.yaw : this.yaw;
       const dx = this.exit.x - px;
       const dz = this.exit.z - pz;
-      const angle = Math.atan2(-dx, -dz) - yaw; // 0 = 정면
+      // 0 = 정면, +는 왼쪽, -는 오른쪽 (-π ~ π)
+      let angle = Math.atan2(-dx, -dz) - yaw;
+      angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+      // 화살표는 위(정면)를 기준으로 탈출구 쪽으로 돈다
       $('exit-arrow').style.transform = `rotate(${-angle}rad)`;
-      $('exit-dist').textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+      const deg = (angle * 180) / Math.PI;
+      const a = Math.abs(deg);
+      const side = deg > 0 ? '왼쪽' : '오른쪽';
+      const dir = a < 22.5 ? '앞으로' : a < 67.5 ? `${side} 앞` : a < 112.5 ? `${side}으로` : a < 157.5 ? `${side} 뒤` : '뒤로';
+      $('exit-dir').textContent = dir;
+      const dist = Math.hypot(dx, dz);
+      $('exit-dist').textContent = `${Math.round(dist)}m`;
+      $('hud-exit').classList.toggle('near', dist < 12);
     }
   }
 

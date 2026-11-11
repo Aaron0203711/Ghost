@@ -122,6 +122,9 @@ export class Game {
     this.anchorSeq = 0;
     this.wisps = [];
     this.wispSeq = 0;
+    // 생존자 지도: 생존자가 다가가 찾은 발전기(모두 공유), 생존자가 잡힌 자리
+    this.foundGens = new Set();
+    this.deaths = [];
     this.exit = null;
     this.time = 0;
     this.ended = false;
@@ -250,6 +253,11 @@ export class Game {
     return p.cls === HUNTER_CLASS.ASSASSIN && this.time < p.invisUntil;
   }
 
+  /** 생존자(관전 중인 생존자 포함)에게만 보낸다 */
+  emitToSurvivors(msg) {
+    for (const q of this.players.values()) if (q.role === ROLE.SURVIVOR) this.emit(q.id, msg);
+  }
+
   /** 생존자가 아닌 사람(술래, 관전자)에게만 보낸다 */
   emitToSeers(msg) {
     for (const q of this.players.values()) {
@@ -303,6 +311,7 @@ export class Game {
     s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
     if (s.hits >= this.rules.hitsToCatch) {
       s.status = STATUS.CAUGHT;
+      this.deaths.push({ x: r2(s.x), z: r2(s.z), id: s.id });
       s.repairing = false;
       this.emit(null, { t: 'event', kind: 'caught', id: s.id, by: byId, name: s.name, dmg: amount, ...extra });
       this.checkEnd();
@@ -479,6 +488,17 @@ export class Game {
       this.emit(null, { t: 'event', kind: 'trapped', id: s.id, name: s.name, x: r2(trap.x), z: r2(trap.z) });
     }
 
+    // 발전기 발견: 생존자가 수리 거리까지 다가가면 모든 생존자 지도에 표시
+    for (const s of this.players.values()) {
+      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
+      for (const g of this.gens) {
+        if (!this.foundGens.has(g.id) && Math.hypot(g.x - s.x, g.z - s.z) <= RULES.GENERATOR_INTERACT_RANGE) {
+          this.foundGens.add(g.id);
+          this.emitToSurvivors({ t: 'event', kind: 'genFound', genId: g.id, by: s.id });
+        }
+      }
+    }
+
     // 발전기 수리: 범위 안에서 상호작용 키를 누르고 있는 생존자 수만큼 빨라진다
     for (const g of this.gens) g.repairers = 0;
     for (const s of this.players.values()) {
@@ -634,6 +654,10 @@ export class Game {
         forced: isForced(this, me) ? 1 : 0, // 서버가 내 위치를 움직이는 중
         disguised: me.disguiseAs ? 1 : 0,
       };
+      // 생존자 지도 정보 (술래는 지도를 볼 수 없으므로 보내지 않는다)
+      if (me.role === ROLE.SURVIVOR) {
+        snap.map = { found: [...this.foundGens], deaths: this.deaths.map((d) => ({ x: d.x, z: d.z })) };
+      }
     }
     return snap;
   }

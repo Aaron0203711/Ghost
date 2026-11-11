@@ -24,6 +24,7 @@ import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
 import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
 import { Bgm } from './bgm.js';
+import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 
@@ -130,6 +131,7 @@ export class GameSession {
 
     const scene = new THREE.Scene();
     this.theme = ['mine', 'backrooms'].includes(start.map.theme) ? start.map.theme : 'village';
+    this.startMap = start.map;
     this.isMine = this.theme === 'mine';
     this.isBackrooms = this.theme === 'backrooms';
     // 시야: 마을 약 75m, 폐광산 약 60m(어두움), 백룸 약 75m(누런 안개)
@@ -309,6 +311,17 @@ export class GameSession {
       else if (this.hasClassSkill) this.tryClassSkill();
       else if (this.isHunter && !this.isSniper) this.tryTrap(); // 저격수는 누르고 있는 동안 조준
     });
+    // 지도: 생존자만 (술래는 볼 수 없음)
+    this.mapOpen = false;
+    if (!this.isHunter) this.minimap = new MiniMap(this.startMap, this.gens, this.theme);
+    $('btn-map').classList.toggle('hidden', this.isHunter);
+    $('map-overlay').classList.add('hidden');
+    this.onMapClick = () => this.toggleMap();
+    $('btn-map').addEventListener('click', this.onMapClick);
+    this.onMapKey = (e) => {
+      if (e.code === 'KeyM' && !(e.target instanceof HTMLInputElement) && !e.repeat) this.toggleMap();
+    };
+    window.addEventListener('keydown', this.onMapKey);
     this.onSettingsClick = () => {
       this.controls.releaseAll();
       onOpenSettings();
@@ -490,6 +503,7 @@ export class GameSession {
       gen.model.set(g.p, gen.done);
     }
     this.syncTraps(s.traps);
+    this.minimap?.update(s.map, s.exit);
     if (s.exit && !this.exit) this.showExit(s.exit);
     this.updateGenHud();
     this.renderPlayerList();
@@ -674,6 +688,9 @@ export class GameSession {
         break;
       case 'trapPlaced':
         break;
+      case 'genFound':
+        if (!this.isHunter) this.feed('🗺️ 발전기를 찾아 지도에 표시했다', 'good');
+        break;
       case 'genDone':
         sfx.genDone();
         this.feed(`💡 발전기 가동 (${e.done}/${this.gens.size})`, 'good');
@@ -735,6 +752,20 @@ export class GameSession {
       this.tracers.delete(e.bid);
     }
     if (!e.out) this.effects.push(makeImpact(this.scene, p, e.hit ? '#ff5a4a' : '#fff2c0'));
+  }
+
+  toggleMap(force) {
+    if (this.isHunter || !this.minimap) return;
+    this.mapOpen = force ?? !this.mapOpen;
+    $('map-overlay').classList.toggle('hidden', !this.mapOpen);
+    $('btn-map').classList.toggle('on', this.mapOpen);
+    if (this.mapOpen) this.drawMap();
+  }
+
+  drawMap() {
+    // 살아 있으면 내 위치와 방향, 관전 중이면 위치 표시 없음
+    const me = this.status === STATUS.ALIVE ? { x: this.pos.x, z: this.pos.z, yaw: this.yaw } : null;
+    this.minimap.draw($('map-canvas'), me);
   }
 
   setMyStatus(st) {
@@ -883,6 +914,7 @@ export class GameSession {
 
     this.updateCamera(dt);
     this.updateHud(dt);
+    if (this.mapOpen) this.drawMap();
   }
 
   updateCamera(dt) {
@@ -1199,6 +1231,9 @@ export class GameSession {
     this.bgm.stop();
     window.removeEventListener('resize', this.onResize);
     $('btn-game-settings').removeEventListener('click', this.onSettingsClick);
+    $('btn-map').removeEventListener('click', this.onMapClick);
+    window.removeEventListener('keydown', this.onMapKey);
+    $('map-overlay').classList.add('hidden');
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);
     this.scene.traverse((o) => {
       o.geometry?.dispose();

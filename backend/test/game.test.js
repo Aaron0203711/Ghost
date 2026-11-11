@@ -1065,3 +1065,37 @@ test('유령: 보이는 생존자가 없어도 스킬 쿨타임은 소모됨', (
   assert.ok(Math.abs(hunter.skillReadyAt - game.time - 7) < 1e-9);
   assert.equal(events.find((e) => e.msg.kind === 'wisps').msg.count, 0);
 });
+
+// ───────────── 생존자 지도 ─────────────
+
+test('지도: 생존자가 수리 거리까지 다가간 발전기만 표시되고 모든 생존자에게 공유, 술래는 받지 않음', () => {
+  const { game, hunter, s1, s2 } = makeGame();
+  hunter.x = hunter.z = 900;
+  s1.x = s1.z = 800;
+  s2.x = s2.z = 700;
+  game.tick(DT);
+  assert.deepEqual(game.snapshotFor('p2').map.found, [], '처음엔 아무것도 없음');
+  const g = game.gens[1];
+  s1.x = g.x + 5;
+  s1.z = g.z;
+  game.tick(DT);
+  assert.deepEqual(game.snapshotFor('p2').map.found, [], '5m 밖은 아직');
+  s1.x = g.x + 1.5;
+  game.tick(DT);
+  assert.deepEqual(game.snapshotFor('p2').map.found, [g.id]);
+  assert.deepEqual(game.snapshotFor('p3').map.found, [g.id], '다른 생존자에게도 공유');
+  assert.equal(game.snapshotFor('p1').map, undefined, '술래는 지도 정보를 받지 않음');
+});
+
+test('지도: 생존자가 잡힌 자리가 기록됨', () => {
+  const { game, hunter, s1 } = makeGame();
+  faceOff(game, hunter, s1);
+  s1.hits = 2;
+  const at = { x: s1.x, z: s1.z };
+  game.handleAttack('p1', { yaw: 0 });
+  assert.equal(s1.status, STATUS.CAUGHT);
+  const deaths = game.snapshotFor('p3').map.deaths;
+  assert.equal(deaths.length, 1);
+  assert.ok(Math.abs(deaths[0].x - at.x) < 0.01 && Math.abs(deaths[0].z - at.z) < 0.01);
+  assert.equal(game.snapshotFor('p2').map.deaths.length, 1, '잡힌 본인(관전)도 봄');
+});

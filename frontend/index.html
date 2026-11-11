@@ -119,7 +119,10 @@
           <div class="hud-top">
             <span id="hud-role" class="badge"></span>
             <div class="gens"><span>발전기</span><span id="hud-gens"></span><b id="hud-gen-count">0/3</b><span class="sep"></span><b id="hud-timer">7:00</b></div>
-            <button id="btn-game-settings" class="icon-btn" data-ui aria-label="설정">⚙</button>
+            <div class="top-btns">
+              <button id="btn-map" class="icon-btn" data-ui aria-label="지도">🗺️</button>
+              <button id="btn-game-settings" class="icon-btn" data-ui aria-label="설정">⚙</button>
+            </div>
           </div>
           <ul id="hud-players"></ul>
           <div id="hud-feed"></div>
@@ -143,11 +146,16 @@
             <button id="btn-spectate-next" class="btn small" data-ui>다음 ▶</button>
           </div>
 
+          <!-- 생존자 지도 (보는 동안에도 아래 조작 버튼은 그대로 쓸 수 있음) -->
+          <div id="map-overlay" class="hidden">
+            <canvas id="map-canvas" width="600" height="600"></canvas>
+            <p class="map-legend"><span class="me">▲ 나</span><span class="gen">⚡ 찾은 발전기</span><span class="x">✖ 잡힌 곳</span><span class="ex">● 탈출구</span></p>
+          </div>
           <div id="joy"><div id="joy-knob"></div></div>
           <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
           <div id="btn-jump" class="ctl-btn jump"><span class="ico">⤒</span><span class="lbl">점프</span></div>
           <div id="btn-action" class="ctl-btn action"><span class="ico"></span><span class="lbl"></span><span class="count"></span><span class="timer"></span></div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · Esc 커서 해제</p>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>

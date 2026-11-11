@@ -1859,3 +1859,69 @@ body.touch #pc-hint {
   fill: #7dff9a;
   color: #7dff9a;
 }
+
+/* ───────────── 생존자 지도 ───────────── */
+
+.top-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn.on {
+  background: rgba(242, 166, 90, 0.75);
+  border-color: var(--accent-2);
+}
+
+#map-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none; /* 지도를 보는 중에도 조작은 그대로 */
+}
+
+#map-canvas {
+  width: min(78vh, 78vw);
+  height: min(78vh, 78vw);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  image-rendering: auto;
+}
+
+.map-legend {
+  margin: 0;
+  display: flex;
+  gap: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-legend .me {
+  color: #ffe14d;
+}
+
+.map-legend .gen {
+  color: #ff8a6a;
+}
+
+.map-legend .x {
+  color: #ff4a4a;
+}
+
+.map-legend .ex {
+  color: #7fe3ff;
+}
+
+@media (max-height: 520px) {
+  #map-canvas {
+    width: min(72vh, 70vw);
+    height: min(72vh, 70vw);
+  }
+}

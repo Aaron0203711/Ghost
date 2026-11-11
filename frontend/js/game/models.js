@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { labelTexture, generatorPanel } from './textures.js';
 import { RULES, jumpHeight } from '@shared/constants.js';
-import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS } from './characters.js';
+import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS, survivorSpec, dressSurvivor } from './characters.js';
 
 const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 
@@ -178,18 +178,99 @@ export function makeRifle() {
   return g;
 }
 
-/** 다른 플레이어 모델. yaw=0에서 -z를 바라본다 */
+/** 광대 공: 알록달록한 고무공 */
+export function makeBall() {
+  const g = new THREE.Group();
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), mat('#e0393e', { emissive: '#3a0808' }));
+  const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 20), mat('#f2c230', { emissive: '#3a2a00' }));
+  const stripe2 = stripe.clone();
+  stripe2.material = mat('#2f6fd6', { emissive: '#08183a' });
+  stripe2.rotation.y = Math.PI / 2;
+  g.add(ball, stripe, stripe2);
+  return g;
+}
+
+/** 광대 실 함정: 두 벽 사이에 걸린 가는 실 (술래는 또렷하게, 생존자는 희미하게) */
+export function makeThread(faint) {
+  const geo = new THREE.CylinderGeometry(0.012, 0.012, 1, 5);
+  geo.rotateZ(Math.PI / 2); // 길이 방향이 +x
+  const m = new THREE.Mesh(
+    geo,
+    new THREE.MeshBasicMaterial({ color: '#f4f0ff', transparent: true, opacity: faint ? 0.3 : 0.85, depthWrite: false }),
+  );
+  m.userData.setEnds = (ax, az, bx, bz) => {
+    const len = Math.max(0.05, Math.hypot(bx - ax, bz - az));
+    m.position.set((ax + bx) / 2, 0.35, (az + bz) / 2);
+    m.scale.set(len, 1, 1);
+    m.rotation.set(0, -Math.atan2(bz - az, bx - ax), 0);
+  };
+  return m;
+}
+
+/** 엔지니어 소형 로봇: 발전기 위에 붙어 불빛을 깜빡이며 수리한다 */
+export function makeRobot() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), mat('#e3802a'));
+  body.position.y = 0.09;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), mat('#d9dde2'));
+  head.position.y = 0.23;
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.01), new THREE.MeshBasicMaterial({ color: '#4ff2ff' }));
+  eye.position.set(0, 0.24, -0.075);
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 4), mat('#555'));
+  antenna.position.y = 0.34;
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff5a3a' }));
+  tip.position.y = 0.41;
+  g.add(body, head, eye, antenna, tip);
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.16), mat('#9aa1a8'));
+    arm.position.set(0.15 * s, 0.1, -0.08);
+    g.add(arm);
+  }
+  g.userData.tip = tip;
+  return g;
+}
+
+/** 군인 연막: 지름 3m의 뿌연 구름 (여러 겹의 반투명 덩어리) */
+export function makeSmoke(radius) {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: '#cfd2d6', transparent: true, opacity: 0.55, depthWrite: false });
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const r = i === 0 ? 0 : radius * 0.55;
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(radius * (0.55 + (i % 3) * 0.12), 12, 9), m);
+    puff.position.set(Math.cos(a) * r, 0.8 + (i % 3) * 0.35, Math.sin(a) * r);
+    g.add(puff);
+  }
+  g.userData.mat = m;
+  return g;
+}
+
+/** 경찰 테이저건 탄: 노랗게 번쩍이는 작은 침 */
+export function makeTaserBolt() {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff36a' }));
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 10, 8),
+    new THREE.MeshBasicMaterial({ color: '#7ad7ff', transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  g.add(core, halo);
+  return g;
+}
+
+/** 다른 플레이어 모델. yaw=0에서 -z를 바라본다. cls: 술래 직업 또는 생존자 직업 */
 export class Avatar {
   constructor(role, colorIndex, name, showLabel, cls = 'maniac') {
     this.role = role;
     this.cls = role === 'hunter' ? cls : null;
+    this.scls = role === 'hunter' ? null : cls;
     this.group = new THREE.Group();
     const isHunter = role === 'hunter';
-    // 사람 모델: 생존자는 5가지 외형, 술래는 직업별 의상
+    // 사람 모델: 생존자는 5가지 외형 + 직업 의상, 술래는 직업별 의상
     const look = SURVIVOR_LOOKS[colorIndex % SURVIVOR_LOOKS.length];
-    const spec = isHunter ? hunterSpec(this.cls) : { ...look, sleeves: look.top === 'tshirt' ? 'short' : 'long' };
+    const spec = isHunter ? hunterSpec(this.cls) : survivorSpec(this.scls, look);
     const h = buildHumanoid(spec);
     if (isHunter) dressHunter(this.cls, h);
+    else dressSurvivor(this.scls, h);
     this.body = h.root;
     this.glowEyes = h.glow || []; // 술래 눈빛
     this.eyesLit = true;
@@ -223,6 +304,9 @@ export class Avatar {
       this.rifle = hold(makeRifle(), -Math.PI / 2); // 총구가 팔 방향
     } else if (this.cls === 'maniac') {
       this.bat = hold(makeBat(), -Math.PI / 2.2);
+    } else if (this.cls === 'clown') {
+      this.weapon = hold(makeBall(), 0);
+      this.weapon.position.set(0, -0.14, 0);
     }
 
     if (showLabel) {
@@ -290,6 +374,26 @@ export class Avatar {
 
   hitFlash() {
     this.flash = 0.35;
+  }
+
+  /** 광대 실에 걸려 몸이 빛남: 벽 너머로도 보이도록 깊이 검사 없이 노란 윤곽을 겹쳐 그린다 */
+  setReveal(on) {
+    if (!!on === !!this.revealed) return;
+    this.revealed = !!on;
+    if (on && !this.revealMeshes) {
+      this.revealMat = new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.6, depthTest: false, depthWrite: false });
+      this.revealMeshes = [];
+      const targets = [];
+      this.body.traverse((o) => o.isMesh && targets.push(o));
+      for (const o of targets) {
+        const m = new THREE.Mesh(o.geometry, this.revealMat);
+        m.renderOrder = 999;
+        m.userData.overlay = true;
+        o.add(m);
+        this.revealMeshes.push(m);
+      }
+    }
+    for (const m of this.revealMeshes || []) m.visible = !!on;
   }
 
   update(dt) {
@@ -421,6 +525,7 @@ export class Avatar {
     if (this.pulled) this.group.rotation.z = Math.sin(now / 60) * 0.08; // 끌려가며 버둥거림
     else this.group.rotation.z = 0;
 
+    if (this.revealed && this.revealMat) this.revealMat.opacity = 0.45 + Math.sin(now / 90) * 0.2;
     if (this.flash > 0) {
       this.flash -= dt;
       const on = this.flash > 0 && Math.floor(this.flash * 20) % 2 === 0;
@@ -430,6 +535,7 @@ export class Avatar {
 
   dispose() {
     this.group.traverse((o) => {
+      if (o.userData.overlay) return; // 빛나는 윤곽은 원래 모델과 모양을 같이 씀
       o.geometry?.dispose();
       if (o.material) {
         if (o.isSprite) o.material.map?.dispose(); // 이름표만 따로 만든 텍스처 (옷감 질감은 공유)
@@ -787,6 +893,8 @@ export function makeViewModel(camera, cls) {
       return new BatViewModel(camera, { weapon: makeChainHook(), arm: '#c79a86', fist: '#d9a58e', speed: 3, scale: 0.75 });
     case 'sprinter':
       return new KickViewModel(camera);
+    case 'clown':
+      return new BatViewModel(camera, { weapon: makeBall(), arm: '#e0393e', fist: '#f4f1ea', speed: 7, scale: 0.42 });
     case 'sniper':
       return new RifleViewModel(camera);
     case 'assassin':

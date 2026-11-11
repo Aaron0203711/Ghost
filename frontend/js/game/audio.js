@@ -171,4 +171,27 @@ export const sfx = {
     tone({ freq: 55, to: 38, dur: 0.12, type: 'sine', vol: 0.35 * vol, delay: 0.2 });
   },
   repairTick: () => tone({ freq: 1200, dur: 0.03, type: 'square', vol: 0.03 }),
+  // 2차 업데이트: 광대, 생존자 직업
+  ballThrow: (vol = 1) => tone({ freq: 500, to: 900, dur: 0.12, type: 'triangle', vol: 0.12 * vol }),
+  ballBounce: (vol = 1) => tone({ freq: 260, to: 140, dur: 0.1, type: 'sine', vol: 0.18 * vol }),
+  threadTwang: () => {
+    tone({ freq: 1600, to: 600, dur: 0.35, type: 'triangle', vol: 0.12 });
+    tone({ freq: 1610, to: 610, dur: 0.35, type: 'sine', vol: 0.08 });
+  },
+  heal: () => {
+    tone({ freq: 660, dur: 0.15, vol: 0.14 });
+    tone({ freq: 990, dur: 0.3, vol: 0.12, delay: 0.1 });
+  },
+  zap: (vol = 1) => {
+    noiseBurst(0.25, 0.4 * vol, 5000);
+    tone({ freq: 2200, to: 400, dur: 0.25, type: 'square', vol: 0.08 * vol });
+  },
+  smoke: (vol = 1) => noiseBurst(0.9, 0.35 * vol, 350),
+  poof: () => {
+    noiseBurst(0.3, 0.25, 1500);
+    tone({ freq: 700, to: 200, dur: 0.25, type: 'sine', vol: 0.1 });
+  },
+  robot: () => {
+    for (let i = 0; i < 3; i++) tone({ freq: 880 + i * 220, dur: 0.07, type: 'square', vol: 0.06, delay: i * 0.08 });
+  },
 };

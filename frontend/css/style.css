@@ -1937,6 +1937,7 @@ body.touch #pc-hint {
 }
 
 body.touch #pc-cd,
+.role-survivor #pc-cd,
 .spectating #pc-cd {
   display: none !important;
 }
@@ -2162,5 +2163,208 @@ body.touch #pc-cd,
   .map-choice {
     font-size: 12px;
     padding: 4px 9px;
+  }
+}
+
+/* ───────────── 2차 업데이트: 광대, 생존자 직업 ───────────── */
+
+.cls-clown .m-only,
+#screen-game:not(.cls-clown) .cl-only {
+  display: none;
+}
+
+/* 메인 화면: 생존자 직업 고르기 */
+.scls-list {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.scls-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 2px 6px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f3eaff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.scls-card .ico {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.scls-card.on {
+  border-color: var(--good);
+  background: rgba(79, 209, 122, 0.18);
+  box-shadow: 0 0 12px rgba(79, 209, 122, 0.35);
+}
+
+.scls-desc {
+  margin: 4px 0 0;
+  min-height: 2.6em;
+  font-size: 12px;
+  line-height: 1.3;
+  color: rgba(243, 234, 255, 0.72);
+}
+
+@media (max-width: 420px) {
+  .scls-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-height: 460px) {
+  .scls-card {
+    padding: 4px 2px;
+    font-size: 10px;
+  }
+  .scls-card .ico {
+    font-size: 18px;
+  }
+  .scls-desc {
+    min-height: 0;
+    font-size: 11px;
+  }
+}
+
+/* 대기실·결과·게임 목록의 생존자 직업 표시 */
+.tag.scls {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 생존자 직업 스킬 버튼: 수리 버튼 왼쪽 */
+.ctl-btn.sskill {
+  right: calc(30px + 82px + 16px + var(--safe-r));
+  top: 50%;
+  margin-top: -20px;
+  width: 66px;
+  height: 66px;
+  translate: 0 -50%;
+}
+
+.ctl-btn.sskill .ico {
+  font-size: 20px;
+}
+
+.ctl-btn.sskill .lbl {
+  font-size: 10px;
+}
+
+.role-hunter .ctl-btn.sskill,
+.ctl-btn.sskill.passive {
+  display: none !important;
+}
+
+.role-survivor .ctl-btn.sskill .timer {
+  display: block;
+}
+
+.ctl-btn.sskill.cooling .ico {
+  opacity: 0.4;
+}
+
+@media (max-height: 520px) {
+  .ctl-btn.sskill {
+    top: auto;
+    translate: none;
+    margin-top: 0;
+    right: calc(25px + 82px + 12px + var(--safe-r));
+    bottom: calc(190px + var(--safe-b));
+  }
+}
+
+@media (max-height: 430px) {
+  .ctl-btn.sskill {
+    width: 58px;
+    height: 58px;
+    right: calc(25px + 72px + 10px + var(--safe-r));
+    bottom: calc(169px + var(--safe-b));
+  }
+}
+
+/* PC 생존자 직업 스킬 쿨타임: 체력·스태미나 오른쪽 */
+#cd-sskill {
+  position: absolute;
+  left: calc(50% + min(120px, 17vw) + 16px);
+  bottom: calc(26px + var(--safe-b));
+  pointer-events: none;
+}
+
+#cd-sskill.passive,
+body.touch #cd-sskill,
+.spectating #cd-sskill {
+  display: none !important;
+}
+
+/* 반 칸 하트 (광대 공) */
+#hearts i {
+  font-style: normal;
+  background: linear-gradient(90deg, #ff4d5e 50%, rgba(40, 40, 40, 0.8) 50%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+#hearts.many {
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+/* 술래: 군인 연막 속이면 화면이 매우 뿌옇게 */
+#vignette-smoke {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  background: rgba(205, 208, 212, 0.86);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+#screen-game.smoked #vignette-smoke {
+  opacity: 1;
+}
+
+/* 생존자 감속 중 (덫이 풀린 뒤, 조준 저격, 광대 실) */
+#screen-game.s-slowed #stamina {
+  outline: 2px solid rgba(122, 180, 255, 0.8);
+}
+
+#screen-game.no-run #stamina-fill {
+  filter: grayscale(1) brightness(0.7);
+}
+
+/* 직업 스킬 쿨타임 중: 이름 대신 남은 초를 가운데 크게 */
+.ctl-btn.sskill.cooling .lbl {
+  display: none;
+}
+
+.ctl-btn.sskill .timer {
+  bottom: auto;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: 16px;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* 휴대폰 가로: 메인 화면 카드를 넓혀 높이를 줄인다 */
+@media (max-height: 460px) and (min-width: 600px) {
+  #screen-main .menu-card {
+    width: min(560px, calc(100vw - 32px));
+    padding-top: 16px;
+  }
+  #screen-main .scls-desc {
+    display: none;
   }
 }

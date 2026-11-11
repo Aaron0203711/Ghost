@@ -18,6 +18,7 @@ export class CollisionWorld {
       minZ: b.z - b.d / 2,
       maxZ: b.z + b.d / 2,
       h: b.h ?? Infinity,
+      kind: b.kind,
     };
     const idx = this.boxes.length;
     this.boxes.push(box);
@@ -142,6 +143,45 @@ export class CollisionWorld {
       if (hit) return true;
     }
     return false;
+  }
+
+  /**
+   * (x,z)에서 방향 (dx,dz)(단위 벡터)로 반직선을 쏘아 처음 닿는 박스까지의 거리. 없으면 Infinity.
+   * filter(box)가 false인 박스는 무시한다 (광대 실은 벽·건물에만 걸림)
+   */
+  rayDistance(x, z, dx, dz, max, filter = null) {
+    const ex = x + dx * max;
+    const ez = z + dz * max;
+    let best = Infinity;
+    for (const b of this.query(Math.min(x, ex), Math.min(z, ez), Math.max(x, ex), Math.max(z, ez))) {
+      if (filter && !filter(b)) continue;
+      let t0 = 0;
+      let t1 = max;
+      let hit = true;
+      for (const [p, d, lo, hi] of [
+        [x, dx, b.minX, b.maxX],
+        [z, dz, b.minZ, b.maxZ],
+      ]) {
+        if (Math.abs(d) < 1e-9) {
+          if (p < lo || p > hi) {
+            hit = false;
+            break;
+          }
+        } else {
+          let ta = (lo - p) / d;
+          let tb = (hi - p) / d;
+          if (ta > tb) [ta, tb] = [tb, ta];
+          t0 = Math.max(t0, ta);
+          t1 = Math.min(t1, tb);
+          if (t0 > t1) {
+            hit = false;
+            break;
+          }
+        }
+      }
+      if (hit && t0 < best) best = t0;
+    }
+    return best;
   }
 
   /** 3D 점이 장애물 안에 있는지 (총알 판정용, 장애물 높이 고려) */

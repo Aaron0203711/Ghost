@@ -30,6 +30,11 @@
             <span>닉네임</span>
             <input id="input-name" maxlength="12" autocomplete="off" enterkeyhint="done" placeholder="이름을 입력하세요" />
           </label>
+          <div class="field">
+            <span>생존자 직업 <b id="scls-name"></b></span>
+            <div class="scls-list" id="scls-list"><!-- main.js가 SURVIVOR_CLASS_INFO로 만든다 --></div>
+            <p class="scls-desc" id="scls-desc"></p>
+          </div>
           <button id="btn-start" class="btn primary big">시작하기</button>
           <button id="btn-settings-main" class="btn">⚙ 설정</button>
           <p class="conn"><i id="conn-dot"></i><span id="conn-text">서버 연결 중…</span></p>
@@ -132,7 +137,7 @@
             <h2 id="select-wait-title">술래가 정해졌어요</h2>
             <p class="wait-name"><b id="select-hunter-name"></b> 님이 직업을 고르는 중…</p>
             <div class="wait-dots"><i></i><i></i><i></i></div>
-            <p class="hint">술래 직업은 미치광이·암살자·저격수·선장·유령·살가죽을 뒤집어 쓴 자·질주자 중 하나예요.</p>
+            <p class="hint">술래 직업은 미치광이·암살자·저격수·선장·유령·살가죽을 뒤집어 쓴 자·질주자·광대 중 하나예요.</p>
           </div>
         </div>
       </section>
@@ -179,6 +184,8 @@
           </div>
           <div id="joy"><div id="joy-knob"></div></div>
           <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
+          <!-- 생존자 직업 스킬: 수리 버튼 왼쪽 -->
+          <div id="btn-sskill" class="ctl-btn sskill"><span class="ico"></span><span class="lbl"></span><span class="timer"></span></div>
           <div id="btn-jump" class="ctl-btn jump"><span class="ico">⤒</span><span class="lbl">점프</span></div>
           <div id="btn-action" class="ctl-btn action"><span class="ico"></span><span class="lbl"></span><span class="count"></span><span class="timer"></span></div>
           <!-- PC 술래: 공격·스킬 쿨타임 (터치 기기에서는 버튼에 표시) -->
@@ -186,11 +193,14 @@
             <div class="cd-slot" id="cd-main"><span class="ico"></span><span class="t"></span><kbd>좌클릭</kbd></div>
             <div class="cd-slot" id="cd-action"><span class="ico"></span><span class="count"></span><span class="t"></span><kbd>E</kbd></div>
           </div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · V 마이크 · Esc 커서 해제</p>
+          <!-- PC 생존자: 직업 스킬 쿨타임 -->
+          <div class="cd-slot s-only" id="cd-sskill"><span class="ico"></span><span class="t"></span><kbd>Q</kbd></div>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · <span id="pc-hint-sskill">Q 직업 스킬 · </span>M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span><span class="h-only cl-only">좌클릭 공 던지기 · E 실 함정</span> · V 마이크 · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>
         <div id="vignette-invis"></div>
+        <div id="vignette-smoke"></div>
         <div id="scope"><i class="h"></i><i class="v"></i><i class="dot"></i></div>
       </section>
 

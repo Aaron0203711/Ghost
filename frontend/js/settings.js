@@ -7,6 +7,7 @@ const DEFAULTS = {
   sound: true,
   bgm: true, // 인게임 배경음악
   name: '',
+  scls: 'doctor', // 메인 화면에서 고른 생존자 직업
   gyro: true,
   gyroSensitivity: 1.0,
   gyroInvertX: false,

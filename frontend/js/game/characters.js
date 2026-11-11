@@ -323,6 +323,7 @@ const HUNTER_SPECS = {
   ghost: { skin: '#eef3f8', topColor: '#dfe6ee', pants: '#dfe6ee', shoes: '#dfe6ee', hairStyle: 'none', top: 'tshirt', noFace: true },
   skinwalker: { skin: '#d9a58e', topColor: '#c79a86', pants: '#7a4f3f', shoes: '#3a2418', hairStyle: 'none', top: 'tshirt', noFace: true },
   sprinter: { skin: '#e3b98f', topColor: '#c8282d', pants: '#1c1c22', shoes: '#f2f2f2', hairStyle: 'short', hair: '#1b1410', top: 'jacket' },
+  clown: { skin: '#f4f1ea', topColor: '#e0393e', pants: '#2f6fd6', shoes: '#e0393e', hairStyle: 'curly', hair: '#ff7a1a', top: 'tshirt', eyes: '#111' },
 };
 
 export function hunterSpec(cls) {
@@ -486,6 +487,161 @@ export function dressHunter(cls, h) {
         (s < 0 ? h.parts.legL : h.parts.legR).add(legStripe);
       }
       root.add(mesh(new THREE.BoxGeometry(0.05, 0.06, 0.01), cloth('#f2f2f2'), 0.08, 1.33, -0.13)); // 등번호 대신 가슴 로고
+      break;
+    }
+    case 'clown': {
+      // 하얀 분장 얼굴, 빨간 코, 크게 웃는 입, 별 모양 눈 화장, 주름 깃(러프), 고깔모자와 방울 단추
+      head.add(mesh(new THREE.SphereGeometry(0.024, 12, 10), solid('#e0201a', 0.3), 0, 0.08, -0.115));
+      const smile = mesh(new THREE.TorusGeometry(0.045, 0.008, 6, 16, Math.PI), solid('#c2121a', 0.4), 0, 0.05, -0.097);
+      smile.rotation.z = Math.PI;
+      head.add(smile);
+      for (const s of [-1, 1]) {
+        const paint = mesh(new THREE.BoxGeometry(0.008, 0.05, 0.004), solid('#2a3fbf'), 0.037 * s, 0.105, -0.104);
+        head.add(paint);
+      }
+      addGlowEyes(h, FACE_EYES, '#7dff6a');
+      const hat = mesh(new THREE.ConeGeometry(0.06, 0.2, 12), cloth('#f2c230'), 0.02, 0.29, 0.01);
+      hat.rotation.z = -0.2;
+      const pom = mesh(new THREE.SphereGeometry(0.025, 8, 6), solid('#2fb35a'), 0.04, 0.39, 0.01);
+      head.add(hat, pom);
+      const ruffColors = ['#ffffff', '#f2c230', '#2fb35a', '#2f6fd6'];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        root.add(mesh(new THREE.SphereGeometry(0.045, 8, 6), solid(ruffColors[i % 4], 0.8), Math.cos(a) * 0.13, 1.47, Math.sin(a) * 0.1));
+      }
+      for (let i = 0; i < 3; i++) root.add(mesh(new THREE.SphereGeometry(0.026, 8, 6), solid(ruffColors[(i + 1) % 4]), 0, 1.33 - i * 0.12, -0.13));
+      // 커다란 신발
+      for (const leg of [h.parts.kneeL, h.parts.kneeR]) {
+        const big = mesh(new THREE.SphereGeometry(0.09, 10, 8), solid('#e0393e', 0.5), 0, -0.44, -0.12);
+        big.scale.set(1, 0.55, 1.7);
+        leg.add(big);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+// ───────────── 생존자 직업별 의상 ─────────────
+
+/** 직업마다 옷 색과 종류를 바꾼다 (피부·머리색은 사람마다 다른 기본 외형을 따름) */
+const SURVIVOR_CLASS_SPECS = {
+  doctor: { top: 'shirt', topColor: '#f3f5f7', pants: '#7fa7c9', shoes: '#f0f0f0' },
+  police: { top: 'shirt', topColor: '#2a3d6e', pants: '#1b2238', shoes: '#151515', hairStyle: 'short' },
+  soldier: { top: 'jacket', topColor: '#56613d', pants: '#4a5236', shoes: '#1e1a14', hairStyle: 'short' },
+  foodfighter: { top: 'tshirt', topColor: '#d8452f', pants: '#3a3a3a', shoes: '#f0f0f0' },
+  ninja: { top: 'jacket', topColor: '#1b1b22', pants: '#1b1b22', shoes: '#111', hairStyle: 'none' },
+  engineer: { top: 'jacket', topColor: '#e3802a', pants: '#c86a1e', shoes: '#4a3420', hairStyle: 'short' },
+};
+
+export function survivorSpec(scls, look) {
+  const spec = { ...look, ...(SURVIVOR_CLASS_SPECS[scls] || {}) };
+  if (spec.hairStyle === 'cap' && SURVIVOR_CLASS_SPECS[scls]) spec.hairStyle = 'short';
+  spec.sleeves = spec.top === 'tshirt' ? 'short' : 'long';
+  return spec;
+}
+
+/** 생존자 직업 소품: 한눈에 구분되도록 모자·도구를 단다 */
+export function dressSurvivor(scls, h) {
+  const { head, chest } = h.parts;
+  const root = h.root;
+  switch (scls) {
+    case 'doctor': {
+      // 흰 가운 자락, 청진기, 이마의 반사경, 등의 빨간 십자
+      for (const s of [-1, 1]) {
+        const tail = mesh(new THREE.BoxGeometry(0.16, 0.45, 0.025), cloth('#f3f5f7'), 0.09 * s, 0.78, -0.02);
+        tail.rotation.x = 0.05;
+        root.add(tail);
+      }
+      const steth = mesh(new THREE.TorusGeometry(0.08, 0.009, 6, 18, Math.PI * 1.3), solid('#2a2a2a', 0.4), 0, 1.36, -0.1);
+      steth.rotation.z = Math.PI * 1.15;
+      root.add(steth, mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 10), solid('#c8ccd2', 0.2, 0.8), 0.05, 1.28, -0.13));
+      const mirror = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.006, 14), solid('#e8edf2', 0.1, 0.9), 0, 0.17, -0.1);
+      mirror.rotation.x = Math.PI / 2 - 0.3;
+      const strap = mesh(new THREE.TorusGeometry(0.108, 0.006, 4, 20), solid('#333'), 0, 0.16, 0);
+      strap.rotation.x = Math.PI / 2;
+      head.add(mirror, strap);
+      const red = solid('#e0262e', 0.5);
+      root.add(mesh(new THREE.BoxGeometry(0.12, 0.035, 0.01), red, 0, 1.25, 0.13), mesh(new THREE.BoxGeometry(0.035, 0.12, 0.01), red, 0, 1.25, 0.13));
+      break;
+    }
+    case 'police': {
+      // 경찰 모자(챙과 금색 휘장), 가슴 배지, 허리의 테이저건
+      const navy = cloth('#1b2a52');
+      const crown = mesh(new THREE.CylinderGeometry(0.12, 0.105, 0.07, 16), navy, 0, 0.22, 0.005);
+      const band = mesh(new THREE.CylinderGeometry(0.108, 0.108, 0.03, 16), solid('#111'), 0, 0.185, 0.005);
+      const visor = mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.01, 16, 1, false, Math.PI / 2, Math.PI), solid('#0d0d0d', 0.3), 0, 0.175, -0.07);
+      visor.scale.z = 1.2;
+      const crest = mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), solid('#e8c24a', 0.3, 0.8), 0, 0.22, -0.118);
+      head.add(crown, band, visor, crest);
+      root.add(mesh(new THREE.BoxGeometry(0.04, 0.05, 0.012), solid('#e8c24a', 0.3, 0.8), -0.08, 1.32, -0.13));
+      root.add(mesh(new THREE.BoxGeometry(0.06, 0.1, 0.04), solid('#f2d21e', 0.5), 0.17, 0.95, -0.02));
+      break;
+    }
+    case 'soldier': {
+      // 철모, 얼룩무늬, 탄띠
+      const helmet = mesh(new THREE.SphereGeometry(0.125, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), solid('#4b5634', 0.7), 0, 0.12, 0.005);
+      helmet.scale.set(1, 0.9, 1.05);
+      const rim = mesh(new THREE.TorusGeometry(0.125, 0.012, 6, 20), solid('#3e472b', 0.7), 0, 0.12, 0.005);
+      rim.rotation.x = Math.PI / 2;
+      head.add(helmet, rim);
+      const camo = ['#3b4428', '#6f6a45', '#2c3320'];
+      for (let i = 0; i < 9; i++) {
+        root.add(mesh(new THREE.SphereGeometry(0.03 + (i % 3) * 0.008, 6, 4), solid(camo[i % 3], 0.9), (((i * 37) % 9) / 9 - 0.5) * 0.3, 1.0 + ((i * 53) % 10) * 0.045, -0.115));
+      }
+      const belt = mesh(new THREE.BoxGeometry(0.06, 0.5, 0.02), cloth('#3a3220'), 0, 1.2, -0.12);
+      belt.rotation.z = 0.7;
+      root.add(belt);
+      break;
+    }
+    case 'foodfighter': {
+      // 불룩한 배, 머리띠, 앞치마
+      chest.scale.set(1.28, 1, 0.68 * 1.35);
+      const belly = mesh(new THREE.SphereGeometry(0.2, 16, 12), h.materials.top, 0, 1.08, -0.04);
+      belly.scale.set(1.05, 0.9, 0.95);
+      root.add(belly);
+      const band = mesh(new THREE.TorusGeometry(0.108, 0.014, 6, 20), cloth('#f4f4f4'), 0, 0.15, 0);
+      band.rotation.x = Math.PI / 2;
+      const dot = mesh(new THREE.SphereGeometry(0.018, 8, 6), solid('#e0262e'), 0, 0.15, -0.11);
+      head.add(band, dot);
+      root.add(mesh(new THREE.BoxGeometry(0.28, 0.32, 0.01), cloth('#f4f4f4'), 0, 1.0, -0.235));
+      break;
+    }
+    case 'ninja': {
+      // 복면, 빨간 머리띠와 꼬리, 등에 멘 칼
+      const black = cloth('#15151b');
+      const hood = mesh(new THREE.SphereGeometry(0.116, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.8), black, 0, 0.1, 0.008);
+      hood.scale.set(0.97, 1.12, 1.05);
+      const mask = mesh(new THREE.BoxGeometry(0.18, 0.07, 0.11), black, 0, 0.045, -0.05);
+      const band = mesh(new THREE.TorusGeometry(0.11, 0.012, 6, 20), cloth('#c62a2a'), 0, 0.15, 0);
+      band.rotation.x = Math.PI / 2;
+      head.add(hood, mask, band);
+      for (const s of [-1, 1]) {
+        const tail = mesh(new THREE.BoxGeometry(0.025, 0.16, 0.008), cloth('#c62a2a'), 0.02 * s, 0.09, 0.12);
+        tail.rotation.z = 0.25 * s;
+        head.add(tail);
+      }
+      const sword = new THREE.Group();
+      sword.add(mesh(new THREE.BoxGeometry(0.03, 0.6, 0.02), solid('#2a2a2a', 0.5), 0, 0, 0));
+      sword.add(mesh(new THREE.BoxGeometry(0.1, 0.015, 0.03), solid('#b8962e', 0.4, 0.6), 0, 0.2, 0));
+      sword.position.set(0, 1.22, 0.14);
+      sword.rotation.z = 0.7;
+      root.add(sword);
+      break;
+    }
+    case 'engineer': {
+      // 노란 안전모, 반사띠, 공구 벨트와 스패너
+      const hat = mesh(new THREE.SphereGeometry(0.122, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), solid('#f2c51e', 0.4), 0, 0.13, 0.005);
+      hat.scale.set(1, 0.85, 1.08);
+      const brim = mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.012, 18), solid('#f2c51e', 0.4), 0, 0.13, -0.01);
+      const ridge = mesh(new THREE.BoxGeometry(0.02, 0.03, 0.22), solid('#e0b218', 0.4), 0, 0.23, 0);
+      head.add(hat, brim, ridge);
+      for (const y of [1.12, 1.3]) root.add(mesh(new THREE.BoxGeometry(0.36, 0.025, 0.25), solid('#e8f0b0', 0.3, 0.2), 0, y, 0));
+      root.add(mesh(new THREE.BoxGeometry(0.36, 0.06, 0.25), cloth('#5a3a1e'), 0, 0.95, 0));
+      const wrench = mesh(new THREE.BoxGeometry(0.02, 0.18, 0.01), solid('#b8bec6', 0.3, 0.8), 0.15, 0.88, -0.1);
+      wrench.rotation.z = 0.3;
+      root.add(wrench, mesh(new THREE.BoxGeometry(0.07, 0.08, 0.05), cloth('#4a2f18'), -0.15, 0.9, -0.08));
       break;
     }
     default:

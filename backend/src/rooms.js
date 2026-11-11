@@ -1,6 +1,6 @@
 // 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 공개 방 목록·비공개 설정, 강퇴, 호스트 위임, 게임 시작/종료.
 
-import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules } from '../../shared/constants.js';
+import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules, validSurvivorClass, DEFAULT_SURVIVOR_CLASS } from '../../shared/constants.js';
 import { Game } from './game.js';
 import { MAP_THEMES } from './mapgen.js';
 
@@ -33,7 +33,7 @@ export class RoomManager {
   /** @param {(msg:object)=>void} send */
   connect(send) {
     const id = `p${++this.seq}`;
-    const client = { id, name: `플레이어${this.seq}`, room: null, send };
+    const client = { id, name: `플레이어${this.seq}`, scls: DEFAULT_SURVIVOR_CLASS, room: null, send };
     this.clients.set(id, client);
     send({ t: 'welcome', id });
     return client;
@@ -50,9 +50,11 @@ export class RoomManager {
     switch (msg.t) {
       case 'hello':
         client.name = sanitizeName(msg.name, client.name);
+        if (msg.scls !== undefined) client.scls = validSurvivorClass(msg.scls); // 메인 화면에서 고른 생존자 직업
         if (client.room) this.broadcastRoom(client.room);
         break;
       case 'create':
+        if (msg.scls !== undefined) client.scls = validSurvivorClass(msg.scls);
         this.create(client, msg.name, msg.private);
         break;
       case 'rooms':
@@ -70,6 +72,7 @@ export class RoomManager {
         this.setMap(client, msg.map);
         break;
       case 'join':
+        if (msg.scls !== undefined) client.scls = validSurvivorClass(msg.scls);
         this.join(client, msg.code, msg.name);
         break;
       case 'leave':
@@ -309,7 +312,7 @@ export class RoomManager {
     if (sel.timer) clearTimeout(sel.timer);
     room.select = null;
     const hunters = sel.hunterIds.map((id) => ({ id, cls: sel.picks[id] }));
-    const roster = room.members.map((m) => ({ id: m.id, name: m.name }));
+    const roster = room.members.map((m) => ({ id: m.id, name: m.name, scls: m.scls }));
     room.state = 'playing';
     room.game = new Game(roster, {
       hunters,
@@ -368,7 +371,7 @@ export class RoomManager {
       maps: Object.values(MAP_THEMES),
       maxPlayers: RULES.MAX_PLAYERS,
       minPlayers: RULES.MIN_PLAYERS,
-      players: room.members.map((m) => ({ id: m.id, name: m.name, mic: m.mic === true })),
+      players: room.members.map((m) => ({ id: m.id, name: m.name, mic: m.mic === true, scls: m.scls })),
     };
     for (const m of room.members) m.send(msg);
     this.pushRoomList();

@@ -18,6 +18,12 @@ import {
   aimDirection,
   VOICE,
   voiceGain,
+  MANIAC,
+  CLOWN,
+  trapChargesFor,
+  synergiesFor,
+  validSurvivorClass,
+  survivorStats,
 } from '../../shared/constants.js';
 import {
   isForced,
@@ -30,13 +36,15 @@ import {
   stepWisps,
   stepDashes,
 } from './abilities.js';
+import { throwBall, stepBalls, placeThread, stepThreads, stepHomingTraps, distToSegment } from './clown.js';
+import { useSurvivorSkill, stepTasers, stepSmokes, stepClones, stepRobots, removeClone } from './survivors.js';
 import { generateMap, planMatch, generatorBox } from './mapgen.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
 export class Game {
   /**
-   * @param {{id:string,name:string}[]} roster
+   * @param {{id:string,name:string,scls?:string}[]} roster  scls: 생존자 직업 (메인 화면에서 고름)
    * @param {{hunterId?:string, hunterClass?:string, hunters?:{id:string,cls:string}[], theme?:string, seed?:number, rand?:()=>number, emit:(toId:string|null,msg:object)=>void}} opts
    *   hunters: 술래 목록과 각자의 직업 (6명 이상이면 2명). 없으면 hunterId/hunterClass 하나
    *   theme: 맵 테마 ('village' | 'mine')
@@ -74,6 +82,9 @@ export class Game {
     this.players = new Map();
     const make = (p, role, spawn) => {
       const yaw = this.rand() * Math.PI * 2;
+      const cls = role === ROLE.HUNTER ? hunterCls.get(p.id) : null;
+      const scls = role === ROLE.SURVIVOR ? validSurvivorClass(p.scls) : null;
+      const stats = survivorStats(scls, this.rules.hitsToCatch);
       this.players.set(p.id, {
         id: p.id,
         name: p.name,
@@ -86,7 +97,9 @@ export class Game {
         hits: 0,
         invulnUntil: 0,
         stunUntil: 0,
-        stamina: RULES.STAMINA_MAX,
+        stamina: stats.staminaMax,
+        staminaMax: stats.staminaMax,
+        maxHits: stats.maxHits, // 푸드파이터는 +4칸
         regenWait: 0,
         wantsRun: false,
         moving: false,
@@ -95,7 +108,7 @@ export class Game {
         repairing: false,
         budget: 0,
         corr: 0,
-        charges: RULES.TRAP_MAX_CHARGES,
+        charges: trapChargesFor(cls).max, // 미치광이 덫 3개, 광대 실 4개
         chargeTimer: 0,
         attackReadyAt: 0,
         aiming: false,
@@ -109,7 +122,12 @@ export class Game {
         dashPhase: null, // 질주자: 'windup' | 'dash'
         dashT: 0,
         dashDir: null,
-        cls: role === ROLE.HUNTER ? hunterCls.get(p.id) : null,
+        slows: [], // 생존자 감속 목록 { from, until, factor, noRun }
+        revealUntil: 0, // 광대 실에 걸려 몸이 빛나는 동안
+        sskillReadyAt: 0, // 생존자 직업 스킬 쿨타임
+        smokeUntil: 0, // 술래: 연막으로 화면이 뿌연 동안
+        cls,
+        scls,
       });
     };
     hunters.forEach((h, i) => make(roster.find((p) => p.id === h.id), ROLE.HUNTER, plan.hunterSpawns[i]));
@@ -124,6 +142,19 @@ export class Game {
     this.anchorSeq = 0;
     this.wisps = [];
     this.wispSeq = 0;
+    this.balls = [];
+    this.ballSeq = 0;
+    this.threads = [];
+    this.threadSeq = 0;
+    this.tasers = [];
+    this.taserSeq = 0;
+    this.smokes = [];
+    this.smokeSeq = 0;
+    this.clones = [];
+    this.cloneSeq = 0;
+    this.robots = [];
+    this.robotSeq = 0;
+    this.synergies = synergiesFor(hunters.map((h) => h.cls)); // 술래 2명의 직업 조합 (함정 듀오)
     // 생존자 지도: 생존자가 다가가 찾은 발전기(모두 공유), 생존자가 잡힌 자리
     this.foundGens = new Set();
     this.deaths = [];
@@ -142,11 +173,15 @@ export class Game {
       hunterClass: this.players.get(forId)?.cls ?? this.hunterClass,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
+      synergies: this.synergies,
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         role: p.role,
         cls: p.cls,
+        scls: p.scls,
+        mx: p.maxHits,
+        stm: p.staminaMax,
         x: r2(p.x),
         z: r2(p.z),
         yaw: r2(p.yaw),
@@ -156,6 +191,37 @@ export class Game {
 
   isStunned(p) {
     return this.time < p.stunUntil;
+  }
+
+  /** 생존자 감속: factor 배율로 duration초 (from부터, 기본은 지금). noRun이면 그동안 달리기 불가 */
+  addSlow(s, factor, duration, { noRun = false, from = this.time } = {}) {
+    s.slows.push({ from, until: from + duration, factor, noRun });
+  }
+
+  /** 지금 걸린 감속 중 가장 센 것 (여러 개가 겹치면 곱하지 않고 가장 느린 배율) */
+  slowState(s) {
+    let factor = 1;
+    let noRun = false;
+    let left = 0;
+    for (const sl of s.slows) {
+      if (this.time < sl.from || this.time >= sl.until) continue;
+      factor = Math.min(factor, sl.factor);
+      noRun ||= sl.noRun;
+      left = Math.max(left, sl.until - this.time);
+    }
+    return { factor, noRun, left };
+  }
+
+  isRevealed(p) {
+    return this.time < p.revealUntil;
+  }
+
+  /** (x,z) 반경 r 안의 닌자 분신을 지운다 (술래 공격에 맞음). 지웠으면 true */
+  hitCloneNear(x, z, r, byId) {
+    const c = this.clones.find((c) => Math.hypot(c.x - x, c.z - z) <= r);
+    if (!c) return false;
+    removeClone(this, c, byId);
+    return true;
   }
 
   /** 클라이언트 입력: 위치/시점/달리기/상호작용 */
@@ -208,11 +274,15 @@ export class Game {
   handleAttack(id, msg = {}) {
     const p = this.players.get(id);
     if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
-    if (this.time < p.attackReadyAt || isForced(this, p)) return;
+    if (this.time < p.attackReadyAt || isForced(this, p) || this.isStunned(p)) return;
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
     if (p.cls === HUNTER_CLASS.SNIPER) {
       this.fire(p);
+      return;
+    }
+    if (p.cls === HUNTER_CLASS.CLOWN) {
+      throwBall(this, p);
       return;
     }
     // 근접 공격: 직업마다 사거리·쿨타임이 다르다 (방망이, 쿠나이, 후크, 할퀴기, 갈고리, 발차기)
@@ -229,7 +299,8 @@ export class Game {
     const fz = -Math.cos(p.yaw);
     let best = null;
     let bestDist = Infinity;
-    for (const s of this.players.values()) {
+    // 닌자 분신도 맞힐 수 있다 (맞으면 사라짐). 가장 가까운 대상 하나만
+    for (const s of [...this.players.values(), ...this.clones.map((c) => ({ ...c, clone: c, role: ROLE.SURVIVOR, status: STATUS.ALIVE }))]) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
       const dx = s.x - p.x;
       const dz = s.z - p.z;
@@ -244,6 +315,10 @@ export class Game {
         best = s;
         bestDist = d;
       }
+    }
+    if (best?.clone) {
+      removeClone(this, best.clone, id);
+      return;
     }
     if (!best || this.time < best.invulnUntil) return;
     this.damage(best, id, 1);
@@ -287,7 +362,12 @@ export class Game {
   /** 스킬 키: 직업마다 다르다. msg.yaw는 누른 순간의 시점 */
   handleSkill(id, msg = {}) {
     const p = this.players.get(id);
-    if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
+    if (!p || this.ended || p.status !== STATUS.ALIVE) return;
+    if (p.role === ROLE.SURVIVOR) {
+      useSurvivorSkill(this, p, msg); // 의사·경찰·군인·닌자·엔지니어
+      return;
+    }
+    if (this.isStunned(p)) return; // 테이저건에 맞은 술래
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (p.cls !== HUNTER_CLASS.ASSASSIN) {
       useSkill(this, p); // 선장·유령·살가죽·질주자
@@ -309,9 +389,9 @@ export class Game {
 
   /** 생존자에게 피해. 맞으면 2초 무적, 체력이 다 닳으면 잡힘 */
   damage(s, byId, amount, extra = {}) {
-    s.hits = Math.min(this.rules.hitsToCatch, s.hits + amount);
+    s.hits = Math.min(s.maxHits, s.hits + amount); // 광대 공은 반 칸(0.5)
     s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
-    if (s.hits >= this.rules.hitsToCatch) {
+    if (s.hits >= s.maxHits - 1e-9) {
       s.status = STATUS.CAUGHT;
       this.deaths.push({ x: r2(s.x), z: r2(s.z), id: s.id });
       s.repairing = false;
@@ -324,7 +404,7 @@ export class Game {
         id: s.id,
         by: byId,
         hits: s.hits,
-        max: this.rules.hitsToCatch,
+        max: s.maxHits,
         dmg: amount,
         ...extra,
       });
@@ -346,6 +426,7 @@ export class Game {
       z: p.z,
       dir,
       traveled: 0,
+      aimed: p.aiming, // 조준한 상태로 쏜 총알: 맞은 생존자 2초간 10% 감속
     };
     this.bullets.push(b);
     this.emit(null, {
@@ -386,10 +467,12 @@ export class Game {
           if (this.time >= t.invulnUntil) {
             const far = Math.hypot(b.x - b.ox, b.z - b.oz) >= SNIPER.FAR_DISTANCE;
             const dist = Math.round(Math.hypot(b.x - b.ox, b.z - b.oz));
-            this.damage(t, b.owner, far ? SNIPER.FAR_DAMAGE : SNIPER.NEAR_DAMAGE, { far, dist });
+            this.damage(t, b.owner, far ? SNIPER.FAR_DAMAGE : SNIPER.NEAR_DAMAGE, { far, dist, aimed: b.aimed ? 1 : 0 });
+            if (b.aimed && t.status === STATUS.ALIVE) this.addSlow(t, SNIPER.AIM_HIT_SLOW_FACTOR, SNIPER.AIM_HIT_SLOW_TIME);
           } else end.blocked = true;
           break;
         }
+        if (!end && b.y >= 0 && b.y <= SNIPER.BODY_HEIGHT && this.hitCloneNear(b.x, b.z, SNIPER.HIT_RADIUS, b.owner)) end = { hit: null };
         if (!end && this.world.pointBlocked(b.x, b.y, b.z)) end = { hit: null };
         if (!end && (Math.abs(b.x) > LIMIT || Math.abs(b.z) > LIMIT || b.y > 80)) end = { hit: null, out: true };
       }
@@ -402,8 +485,13 @@ export class Game {
 
   handleTrap(id) {
     const p = this.players.get(id);
-    if (!p || this.ended || p.role !== ROLE.HUNTER || p.cls !== HUNTER_CLASS.MANIAC) return;
+    if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE || this.isStunned(p)) return;
     if (p.charges <= 0) return;
+    if (p.cls === HUNTER_CLASS.CLOWN) {
+      placeThread(this, p); // 광대: 좌우 벽 사이 실 함정
+      return;
+    }
+    if (p.cls !== HUNTER_CLASS.MANIAC) return;
     p.charges--;
     const trap = { id: ++this.trapSeq, x: p.x, z: p.z, owner: id };
     this.traps.push(trap);
@@ -417,6 +505,7 @@ export class Game {
     // 그 선장에게 끌려오던 생존자는 풀어 준다
     for (const s of this.players.values()) if (s.pulledBy === id) endPull(this, s);
     this.wisps = this.wisps.filter((w) => w.target !== id);
+    this.clones = this.clones.filter((c) => c.owner !== id);
     if (this.ended) return;
     const huntersLeft = [...this.players.values()].some((q) => q.role === ROLE.HUNTER);
     if (p.role === ROLE.HUNTER && !huntersLeft) {
@@ -435,19 +524,22 @@ export class Game {
     for (const p of this.players.values()) {
       if (p.status !== STATUS.ALIVE) continue;
       const stunned = this.isStunned(p);
+      const slow = p.role === ROLE.SURVIVOR ? this.slowState(p) : { factor: 1, noRun: false };
       if (p.role === ROLE.SURVIVOR) {
-        p.running = stepStamina(p, p.wantsRun && !stunned, p.moving && !stunned, dt);
+        p.slows = p.slows.filter((sl) => this.time < sl.until);
+        p.running = stepStamina(p, p.wantsRun && !stunned && !slow.noRun, p.moving && !stunned, dt, p.staminaMax);
       } else {
         p.running = false;
-        // 덫 충전: 최대치보다 적으면 30초마다 1개 회복
-        if (p.charges < RULES.TRAP_MAX_CHARGES) {
+        // 덫(실) 충전: 최대치보다 적으면 미치광이 30초, 광대 23초마다 1개 회복
+        const ch = trapChargesFor(p.cls);
+        if (p.charges < ch.max) {
           p.chargeTimer += dt;
-          if (p.chargeTimer >= RULES.TRAP_COOLDOWN) {
+          if (p.chargeTimer >= ch.cooldown) {
             p.charges++;
-            p.chargeTimer -= RULES.TRAP_COOLDOWN;
+            p.chargeTimer -= ch.cooldown;
           }
         }
-        if (p.charges >= RULES.TRAP_MAX_CHARGES) p.chargeTimer = 0;
+        if (p.charges >= ch.max) p.chargeTimer = 0;
       }
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
       const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), {
@@ -456,6 +548,8 @@ export class Game {
         invisible: this.isInvisible(p),
         slowed: this.time < p.slowUntil,
         disguised: !!p.disguiseAs,
+        slowFactor: slow.factor,
+        noRun: slow.noRun,
       });
       if (stunned || isForced(this, p)) p.budget = 0;
       else p.budget = Math.min(p.budget + speed * dt * 1.2, speed * 0.6);
@@ -466,6 +560,12 @@ export class Game {
     stepPulls(this, dt);
     stepWisps(this, dt);
     stepDashes(this, dt);
+    stepBalls(this, dt);
+    stepTasers(this, dt);
+    stepClones(this, dt);
+    stepSmokes(this);
+    stepHomingTraps(this, dt);
+    stepThreads(this, dt);
     if (this.ended) return;
 
     // 투명화 시간 종료
@@ -483,6 +583,8 @@ export class Game {
       if (idx === -1) continue;
       const [trap] = this.traps.splice(idx, 1);
       s.stunUntil = this.time + RULES.TRAP_STUN;
+      // 덫이 풀린 뒤 1.5초 동안 15% 감속 + 달리기 불가
+      this.addSlow(s, MANIAC.RELEASE_SLOW_FACTOR, MANIAC.RELEASE_SLOW_TIME, { noRun: true, from: s.stunUntil });
       s.x = trap.x;
       s.z = trap.z;
       s.budget = 0;
@@ -511,9 +613,11 @@ export class Game {
       g.repairers++;
       s.repairing = true;
     }
+    const robotWork = stepRobots(this, dt); // 엔지니어 로봇: 매초 4%
     for (const g of this.gens) {
-      if (g.done || g.repairers === 0) continue;
-      g.progress = Math.min(1, g.progress + (g.repairers * dt) / RULES.GENERATOR_REPAIR_TIME);
+      const bonus = robotWork.get(g.id) || 0;
+      if (g.done || (g.repairers === 0 && bonus === 0)) continue;
+      g.progress = Math.min(1, g.progress + (g.repairers * dt) / RULES.GENERATOR_REPAIR_TIME + bonus);
       if (g.progress >= 1) {
         g.done = true;
         const doneCount = this.gens.filter((x) => x.done).length;
@@ -595,6 +699,7 @@ export class Game {
         name: p.name,
         role: p.role,
         cls: p.cls,
+        scls: p.scls,
         status: p.status,
         hits: p.hits,
       })),
@@ -642,6 +747,10 @@ export class Game {
     const traps = this.traps
       .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE)
       .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z) }));
+    // 광대 실: 술래·관전자는 모두, 생존자는 4m 안의 실만
+    const threads = this.threads
+      .filter((t) => seesAllTraps || distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE)
+      .map((t) => ({ id: t.id, ax: r2(t.ax), az: r2(t.az), bx: r2(t.bx), bz: r2(t.bz) }));
     // 살아 있는 생존자에게는 투명한 암살자의 위치를 아예 보내지 않는다
     const hideInvis = !spectator && me.role === ROLE.SURVIVOR;
     const snap = {
@@ -669,8 +778,13 @@ export class Game {
           ...(p.disguiseAs ? (hideInvis ? { look: p.disguiseAs } : { disg: p.disguiseAs }) : {}),
           ...(p.pulledBy ? { pull: p.pulledBy } : {}), // 선장 닻에 끌려오는 중
           ...(p.dashPhase ? { dash: p.dashPhase } : {}), // 질주자
+          ...(this.isRevealed(p) ? { glow: 1 } : {}), // 광대 실에 걸려 빛나는 중 (벽 너머로 보임)
         };
       }),
+      threads,
+      clones: this.clones.map((c) => ({ id: c.id, o: c.owner, x: r2(c.x), z: r2(c.z), yaw: r2(c.yaw) })),
+      smokes: this.smokes.map((s) => ({ id: s.id, x: r2(s.x), z: r2(s.z) })),
+      robots: this.robots.map((r) => ({ id: r.id, g: r.genId })),
       anchors: this.anchors.map((a) => ({ id: a.id, x: r2(a.x), z: r2(a.z) })),
       wisps: this.wisps.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z) })),
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),
@@ -682,14 +796,22 @@ export class Game {
       snap.me = {
         stamina: r2(me.stamina),
         charges: me.charges,
-        chargeLeft: me.charges < RULES.TRAP_MAX_CHARGES ? r2(RULES.TRAP_COOLDOWN - me.chargeTimer) : 0,
+        chargeLeft: me.charges < trapChargesFor(me.cls).max ? r2(trapChargesFor(me.cls).cooldown - me.chargeTimer) : 0,
         attackLeft: r2(Math.max(0, me.attackReadyAt - this.time)),
         invisLeft: this.isInvisible(me) ? r2(me.invisUntil - this.time) : 0,
         skillLeft: r2(Math.max(0, me.skillReadyAt - this.time)),
         slowLeft: r2(Math.max(0, me.slowUntil - this.time)),
         forced: isForced(this, me) ? 1 : 0, // 서버가 내 위치를 움직이는 중
         disguised: me.disguiseAs ? 1 : 0,
+        sskillLeft: r2(Math.max(0, me.sskillReadyAt - this.time)), // 생존자 직업 스킬 쿨타임
+        smoke: this.time < me.smokeUntil ? 1 : 0, // 술래: 연막 속
       };
+      if (me.role === ROLE.SURVIVOR) {
+        const sl = this.slowState(me);
+        snap.me.slow = sl.factor; // 감속 배율 (1 = 보통)
+        snap.me.noRun = sl.noRun ? 1 : 0;
+        snap.me.slowLeft = r2(sl.left);
+      }
       // 생존자 지도 정보 (술래는 지도를 볼 수 없으므로 보내지 않는다)
       if (me.role === ROLE.SURVIVOR) {
         snap.map = { found: [...this.foundGens], deaths: this.deaths.map((d) => ({ x: d.x, z: d.z })) };

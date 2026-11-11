@@ -83,6 +83,7 @@ export class Controls {
    * - 공통: 마우스 좌클릭 = main(공격/발사, 생존자는 수리), Space = 점프
    * - 생존자: Shift = 달리기(action), E 꾹 = 수리(main)
    * - 술래: E = 스킬(action: 덫 / 투명화 / 누르고 있는 동안 조준)
+   * - 생존자 직업 스킬: Q (sskill)
    */
   keyHeld(name) {
     const k = this.keys;
@@ -227,6 +228,7 @@ export class Controls {
         this.press('jump'); // 스페이스바 = 점프
       }
       if (code === 'KeyE' && this.isHunter) this.press('action'); // 술래 스킬
+      if (code === 'KeyQ' && !this.isHunter) this.press('sskill'); // 생존자 직업 스킬
     } else {
       this.keys.delete(code);
     }

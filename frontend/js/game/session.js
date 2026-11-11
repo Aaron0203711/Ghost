@@ -17,9 +17,31 @@ import {
   GHOST,
   SKINWALKER,
   SPRINTER,
+  CLOWN,
+  POLICE,
+  SOLDIER,
+  SYNERGY_INFO,
+  SURVIVOR_CLASS_INFO,
+  trapChargesFor,
+  survivorSkillCooldown,
 } from '@shared/constants.js';
 import { buildWorld, buildSky } from './world.js';
-import { Avatar, makeViewModel, makeAnchor, makeWisp, GeneratorModel, makeTrap, makeExit, Tracer, makeImpact } from './models.js';
+import {
+  Avatar,
+  makeViewModel,
+  makeAnchor,
+  makeWisp,
+  GeneratorModel,
+  makeTrap,
+  makeExit,
+  Tracer,
+  makeImpact,
+  makeBall,
+  makeThread,
+  makeRobot,
+  makeSmoke,
+  makeTaserBolt,
+} from './models.js';
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
 import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
@@ -29,6 +51,8 @@ import { Gyro } from './gyro.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
+/** 체력 칸 표시 (반 칸 포함): 1.5 → "1.5", 2 → "2" */
+const fmtHits = (h) => String(Math.round(h * 10) / 10);
 const genBox = (g) => {
   const rotated = Math.abs(Math.sin(g.rot)) > 0.5;
   return { x: g.x, z: g.z, w: rotated ? 0.8 : 1.2, d: rotated ? 1.2 : 0.8 };
@@ -54,6 +78,25 @@ export class GameSession {
     this.isGhost = this.isHunter && this.hunterClass === HUNTER_CLASS.GHOST;
     this.isSkin = this.isHunter && this.hunterClass === HUNTER_CLASS.SKINWALKER;
     this.isSprinter = this.isHunter && this.hunterClass === HUNTER_CLASS.SPRINTER;
+    this.isClown = this.isHunter && this.hunterClass === HUNTER_CLASS.CLOWN;
+    // 설치형 스킬: 미치광이 덫 3개(30초), 광대 실 4개(23초)
+    const ch = trapChargesFor(this.hunterClass);
+    this.trapMax = ch.max;
+    this.trapCooldown = ch.cooldown;
+    // 생존자 직업 (메인 화면에서 고름). 푸드파이터는 패시브라 스킬 버튼이 없다
+    this.scls = this.isHunter ? null : me.scls;
+    this.sskillCooldown = this.isHunter ? 0 : survivorSkillCooldown(this.scls);
+    this.hasSSkill = this.sskillCooldown > 0;
+    this.sskillLeft = 0;
+    this.slowFactor = 1; // 생존자 감속 배율 (서버가 알려 줌)
+    this.noRun = false;
+    this.smoked = false; // 술래: 연막 속
+    this.threadMeshes = new Map();
+    this.cloneAvatars = new Map();
+    this.smokeMeshes = new Map();
+    this.robotMeshes = new Map();
+    this.balls = new Map(); // 날아가는 광대 공 (서버 id → 화면 모델)
+    this.bolts = new Map(); // 날아가는 테이저건 탄
     // 선장·유령·살가죽·질주자: 스킬 키 한 번 누르기 + 쿨타임
     this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter;
     this.skillCooldown = {
@@ -63,7 +106,11 @@ export class GameSession {
       skinwalker: SKINWALKER.SKILL_COOLDOWN,
       sprinter: SPRINTER.SKILL_COOLDOWN,
     }[this.hunterClass] || 1;
-    this.attackCooldown = this.isSniper ? SNIPER.SHOT_COOLDOWN : (MELEE[this.hunterClass] || MELEE.maniac).cooldown;
+    this.attackCooldown = this.isSniper
+      ? SNIPER.SHOT_COOLDOWN
+      : this.isClown
+        ? CLOWN.BALL_COOLDOWN
+        : (MELEE[this.hunterClass] || MELEE.maniac).cooldown;
     this.forced = false; // 닻에 끌려오거나 질주 중: 서버가 내 위치를 움직임
     this.serverPos = null;
     this.disguised = false; // 살가죽 변장 중
@@ -82,12 +129,15 @@ export class GameSession {
     this.effects = [];
     // 이번 판 규칙 (5명이면 발전기 5개, 체력 2칸)
     this.hitsToCatch = start.rules?.hitsToCatch ?? RULES.HITS_TO_CATCH;
+    this.maxHits = me.mx ?? this.hitsToCatch; // 내 체력 칸 (푸드파이터 +4)
+    this.staminaMax = me.stm ?? RULES.STAMINA_MAX; // 푸드파이터 5초
+    this.synergies = start.synergies || [];
 
     // 내 상태 (클라이언트 예측)
     this.pos = { x: me.x, z: me.z };
     this.yaw = me.yaw;
     this.pitch = 0;
-    this.stam = { stamina: RULES.STAMINA_MAX, regenWait: 0 };
+    this.stam = { stamina: this.staminaMax, regenWait: 0 };
     this.running = false;
     this.moving = false;
     this.stunLeft = 0;
@@ -95,7 +145,7 @@ export class GameSession {
     this.hits = 0;
     this.corr = 0;
     this.attackLeft = 0;
-    this.charges = RULES.TRAP_MAX_CHARGES;
+    this.charges = this.trapMax;
     this.chargeLeft = 0;
     this.sendTimer = 0;
     this.bobT = 0;
@@ -189,7 +239,7 @@ export class GameSession {
       // 이름표는 같은 생존자끼리만 보인다
       // 같은 편끼리만 이름표가 보인다 (생존자끼리, 술래끼리)
       const showLabel = this.isHunter ? p.role === ROLE.HUNTER : p.role === ROLE.SURVIVOR;
-      const a = new Avatar(p.role, p.index, p.name, showLabel, p.cls ?? this.hunterClass);
+      const a = new Avatar(p.role, p.index, p.name, showLabel, p.role === ROLE.HUNTER ? p.cls ?? this.hunterClass : p.scls);
       a.setTarget(p.x, p.z, p.yaw, true);
       scene.add(a.group);
       this.avatars.set(p.id, a);
@@ -218,6 +268,8 @@ export class GameSession {
     screen.classList.toggle('cls-sniper', this.isSniper);
     screen.classList.toggle('cls-assassin', this.isAssassin);
     screen.classList.toggle('cls-skill', this.hasClassSkill);
+    screen.classList.toggle('cls-clown', this.isClown);
+    screen.classList.remove('smoked', 's-slowed', 'no-run');
     screen.classList.remove('disguised');
     screen.classList.remove('invisible');
     screen.classList.remove('spectating', 'scoped');
@@ -225,9 +277,10 @@ export class GameSession {
     const hunterNames = [...this.info.values()]
       .filter((p) => p.role === ROLE.HUNTER)
       .map((p) => CLASS_INFO[p.cls ?? HUNTER_CLASS.MANIAC].name);
+    const sinfo = SURVIVOR_CLASS_INFO[this.scls];
     $('hud-role').textContent = this.isHunter
       ? `${info.icon} 술래 · ${info.name}`
-      : `🏃 생존자 · 술래: ${hunterNames.join(', ')}`;
+      : `${sinfo ? `${sinfo.icon} ${sinfo.name}` : '🏃 생존자'} · 술래: ${hunterNames.join(', ')}`;
     $('hud-role').className = `badge ${this.isHunter ? 'hunter' : 'survivor'}`;
     const classLabels = {
       captain: { main: ['🪝', '후크'], action: ['⚓', '닻'] },
@@ -235,7 +288,8 @@ export class GameSession {
       skinwalker: { main: ['⛓️', '갈고리'], action: ['🎭', '변장'] },
       sprinter: { main: ['🦵', '발차기'], action: ['💨', '질주'] },
     };
-    const labels = this.hasClassSkill
+    if (this.isClown) classLabels.clown = { main: ['🤹', '공'], action: ['🧵', '실'] };
+    const labels = this.hasClassSkill || this.isClown
       ? classLabels[this.hunterClass]
       : this.isSniper
       ? { main: ['🎯', '발사'], action: ['🔭', '조준'] }
@@ -250,6 +304,14 @@ export class GameSession {
     $('btn-action').querySelector('.lbl').textContent = labels.action[1];
     $('cd-main').querySelector('.ico').textContent = labels.main[0];
     $('cd-action').querySelector('.ico').textContent = labels.action[0];
+    // 생존자 직업 스킬 버튼 (수리 왼쪽, PC는 Q)
+    const sk = { doctor: '💉', police: '⚡', soldier: '💨', ninja: '👥', engineer: '🤖' }[this.scls] || '';
+    $('btn-sskill').querySelector('.ico').textContent = sk;
+    $('btn-sskill').querySelector('.lbl').textContent = sinfo?.skill || '';
+    $('btn-sskill').classList.toggle('passive', !this.hasSSkill);
+    $('cd-sskill').querySelector('.ico').textContent = sk;
+    $('cd-sskill').classList.toggle('passive', !this.hasSSkill);
+    $('pc-hint-sskill').textContent = this.hasSSkill ? `Q ${sinfo.skill} · ` : '';
     $('hud-feed').innerHTML = '';
     $('hud-exit').classList.add('hidden');
     $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : this.isBackrooms ? '🚪 EXIT' : '⛩ 탈출구';
@@ -269,6 +331,7 @@ export class GameSession {
         ghost: '유령: 담장을 지나다니며 유도탄으로 몰아붙이세요!',
         skinwalker: '살가죽: 생존자로 변장해 다가가세요. 공격하면 정체가 드러나요',
         sprinter: '질주자: 질주로 단숨에 거리를 좁히세요!',
+        clown: '광대: 공을 던지고, 골목에 실 함정을 치세요!',
       }[this.isHunter ? this.hunterClass : ''] ||
       (this.isSniper
         ? '저격수: 조준해서 멀리서 맞히면 2칸!'
@@ -276,9 +339,16 @@ export class GameSession {
           ? '암살자: 투명해져서 다가가 쿠나이로 기습하세요!'
           : this.isHunter
           ? '생존자를 모두 잡으세요!'
-          : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.hitsToCatch}칸)`)) + mateText,
+          : `발전기 ${this.gens.size}개를 켜고 탈출하세요! (체력 ${this.maxHits}칸)`)) + mateText,
       3,
     );
+    // 술래 2명의 직업 조합 시너지
+    for (const id of this.synergies) {
+      const sy = SYNERGY_INFO[id];
+      if (!sy) continue;
+      this.feed(`${sy.icon} ${sy.name} 발동! ${sy.desc}`, this.isHunter ? 'good' : 'bad');
+      if (this.isHunter) setTimeout(() => !this.disposed && this.centerMsg(`${sy.icon} ${sy.name} 발동!`, 2.5), 3200);
+    }
   }
 
   setupControls(onOpenSettings) {
@@ -288,7 +358,7 @@ export class GameSession {
         joy: $('joy'),
         knob: $('joy-knob'),
         canvas: this.renderer.domElement,
-        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump') },
+        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null },
       },
       () => this.settings.sensitivity,
     );
@@ -307,11 +377,15 @@ export class GameSession {
       unlockAudio();
       this.tryJump();
     });
+    this.controls.onPress('sskill', () => {
+      unlockAudio();
+      this.trySurvivorSkill();
+    });
     this.controls.onPress('action', () => {
       unlockAudio();
       if (this.isAssassin) this.trySkill();
       else if (this.hasClassSkill) this.tryClassSkill();
-      else if (this.isHunter && !this.isSniper) this.tryTrap(); // 저격수는 누르고 있는 동안 조준
+      else if (this.isHunter && !this.isSniper) this.tryTrap(); // 미치광이 덫, 광대 실 (저격수는 누르고 있는 동안 조준)
     });
     // 지도: 생존자만 (술래는 볼 수 없음)
     this.mapOpen = false;
@@ -347,14 +421,15 @@ export class GameSession {
   }
 
   tryAttack() {
-    if (this.status !== STATUS.ALIVE || this.attackLeft > 0 || this.forced) return;
+    if (this.status !== STATUS.ALIVE || this.attackLeft > 0 || this.forced || this.stunLeft > 0) return;
     this.attackLeft = this.attackCooldown;
     this.lastAttackAt = performance.now();
     this.viewBat?.playSwing();
     if (this.isSniper) {
       sfx.gunshot(1);
       this.shake = 0.12;
-    } else sfx.swing();
+    } else if (this.isClown) sfx.ballThrow();
+    else sfx.swing();
     if (this.disguised) this.setDisguised(false); // 공격하면 변장이 풀린다 (서버도 같은 규칙)
     // 누른 순간의 시점으로 판정하도록 방향을 함께 보낸다
     this.net.send({ t: 'attack', yaw: this.yaw, pitch: this.pitch });
@@ -378,8 +453,17 @@ export class GameSession {
   }
 
   /** 선장 닻 · 유령 유도탄 · 살가죽 변장 · 질주자 질주 */
+  /** 생존자 직업 스킬: 의사 회복, 경찰 테이저건, 군인 연막탄, 닌자 분신, 엔지니어 로봇 */
+  trySurvivorSkill() {
+    if (this.isHunter || !this.hasSSkill || this.status !== STATUS.ALIVE || this.sskillLeft > 0) return;
+    if (performance.now() - (this.lastSSkillAt || 0) < 400) return;
+    this.lastSSkillAt = performance.now();
+    this.sskillLeft = this.sskillCooldown; // 대상이 없어 실패하면 서버가 알려 주고 되돌린다
+    this.net.send({ t: 'skill', yaw: this.yaw, pitch: this.pitch });
+  }
+
   tryClassSkill() {
-    if (this.status !== STATUS.ALIVE || this.skillLeft > 0 || this.forced || this.disguised) return;
+    if (this.status !== STATUS.ALIVE || this.skillLeft > 0 || this.forced || this.disguised || this.stunLeft > 0) return;
     if (performance.now() - (this.lastSkillAt || 0) < 400) return;
     this.lastSkillAt = performance.now();
     // 쓰는 순간부터 쿨타임이 도는 직업은 바로 표시 (살가죽·질주자는 끝난 뒤부터)
@@ -402,7 +486,7 @@ export class GameSession {
 
   /** 암살자 투명화 */
   trySkill() {
-    if (this.status !== STATUS.ALIVE || this.invisLeft > 0 || this.skillLeft > 0) return;
+    if (this.status !== STATUS.ALIVE || this.invisLeft > 0 || this.skillLeft > 0 || this.stunLeft > 0) return;
     this.invisLeft = ASSASSIN.INVIS_TIME;
     this.lastSkillAt = performance.now();
     sfx.invisOn();
@@ -411,12 +495,14 @@ export class GameSession {
   }
 
   tryTrap() {
-    if (this.status !== STATUS.ALIVE || this.charges <= 0) return;
+    if (this.status !== STATUS.ALIVE || this.charges <= 0 || this.stunLeft > 0) return;
+    if (performance.now() - (this.lastTrapAt || 0) < 250) return;
     this.charges--;
     this.lastTrapAt = performance.now();
-    if (this.chargeLeft <= 0) this.chargeLeft = RULES.TRAP_COOLDOWN;
-    sfx.trapPlace();
-    this.net.send({ t: 'trap' });
+    if (this.chargeLeft <= 0) this.chargeLeft = this.trapCooldown;
+    if (this.isClown) sfx.threadTwang();
+    else sfx.trapPlace();
+    this.net.send({ t: 'trap', yaw: this.yaw });
     this.updateHunterHud();
   }
 
@@ -475,6 +561,7 @@ export class GameSession {
       a.aiming = !!p.aim;
       a.pulled = !!p.pull;
       a.dash = p.dash || null;
+      a.setReveal(!!p.glow); // 광대 실에 걸려 빛남 (벽 너머로 보임)
       a.group.visible = p.st === STATUS.ALIVE && p.id !== this.spectateId && !p.look;
     }
     // 떠난 플레이어
@@ -489,6 +576,10 @@ export class GameSession {
     this.pulls = s.players.filter((p) => p.pull).map((p) => [p.id, p.pull]);
     this.syncProjectiles(this.anchorMeshes, s.anchors || [], makeAnchor);
     this.syncProjectiles(this.wispMeshes, s.wisps || [], makeWisp);
+    this.syncThreads(s.threads || []);
+    this.syncClones(s.clones || []);
+    this.syncSmokes(s.smokes || []);
+    this.syncRobots(s.robots || []);
     if (s.me) {
       this.forced = !!s.me.forced;
       if (Math.abs(s.me.stamina - this.stam.stamina) > 0.6) this.stam.stamina = s.me.stamina;
@@ -504,6 +595,12 @@ export class GameSession {
         this.skillLeft = s.me.skillLeft ?? 0;
         if (this.isSkin && !!s.me.disguised !== this.disguised) this.setDisguised(!!s.me.disguised);
       }
+      if (!this.isHunter) {
+        if (!fresh(this.lastSSkillAt)) this.sskillLeft = s.me.sskillLeft ?? 0;
+        this.slowFactor = s.me.slow ?? 1;
+        this.noRun = !!s.me.noRun;
+      }
+      this.smoked = this.isHunter && !!s.me.smoke;
       if (this.isAssassin && !fresh(this.lastSkillAt)) {
         this.invisLeft = s.me.invisLeft ?? 0;
         this.skillLeft = s.me.skillLeft ?? 0;
@@ -539,6 +636,96 @@ export class GameSession {
       mesh.position.set(t.x, 0, t.z);
       this.scene.add(mesh);
       this.traps.set(t.id, mesh);
+    }
+    // 함정 듀오: 덫이 생존자를 따라 움직인다
+    for (const t of list) this.traps.get(t.id).userData.target = { x: t.x, z: t.z };
+  }
+
+  /** 광대 실 (함정 듀오에서는 움직인다) */
+  syncThreads(list) {
+    const ids = new Set(list.map((t) => t.id));
+    for (const [id, m] of this.threadMeshes) {
+      if (!ids.has(id)) {
+        this.scene.remove(m);
+        m.geometry.dispose();
+        this.threadMeshes.delete(id);
+      }
+    }
+    const faint = !this.isHunter && this.status === STATUS.ALIVE;
+    for (const t of list) {
+      let m = this.threadMeshes.get(t.id);
+      if (!m) {
+        m = makeThread(faint);
+        this.scene.add(m);
+        this.threadMeshes.set(t.id, m);
+      }
+      m.userData.setEnds(t.ax, t.az, t.bx, t.bz);
+    }
+  }
+
+  /** 닌자 분신: 주인과 똑같은 모습 (같은 편 생존자 화면에서는 살짝 투명) */
+  syncClones(list) {
+    const ids = new Set(list.map((c) => c.id));
+    for (const [id, a] of this.cloneAvatars) {
+      if (!ids.has(id)) {
+        this.scene.remove(a.group);
+        a.dispose();
+        this.cloneAvatars.delete(id);
+      }
+    }
+    for (const c of list) {
+      let a = this.cloneAvatars.get(c.id);
+      if (!a) {
+        const o = this.info.get(c.o);
+        a = new Avatar(ROLE.SURVIVOR, o?.index ?? 0, o?.name ?? '?', !this.isHunter, o?.scls);
+        a.setTarget(c.x, c.z, c.yaw, true);
+        if (!this.isHunter) a.setGhost(0.55);
+        this.scene.add(a.group);
+        this.cloneAvatars.set(c.id, a);
+      }
+      a.setTarget(c.x, c.z, c.yaw);
+    }
+  }
+
+  syncSmokes(list) {
+    const ids = new Set(list.map((s) => s.id));
+    for (const [id, m] of this.smokeMeshes) {
+      if (!ids.has(id)) {
+        this.scene.remove(m);
+        m.traverse((o) => o.geometry?.dispose());
+        m.userData.mat.dispose();
+        this.smokeMeshes.delete(id);
+      }
+    }
+    for (const sm of list) {
+      if (this.smokeMeshes.has(sm.id)) continue;
+      const m = makeSmoke(SOLDIER.RADIUS);
+      m.position.set(sm.x, 0, sm.z);
+      this.scene.add(m);
+      this.smokeMeshes.set(sm.id, m);
+    }
+  }
+
+  /** 엔지니어 로봇: 발전기 위에 붙어 있다 */
+  syncRobots(list) {
+    const ids = new Set(list.map((r) => r.id));
+    for (const [id, m] of this.robotMeshes) {
+      if (!ids.has(id)) {
+        this.scene.remove(m);
+        this.robotMeshes.delete(id);
+      }
+    }
+    for (const r of list) {
+      if (this.robotMeshes.has(r.id)) continue;
+      const g = this.gens.get(r.g);
+      if (!g) continue;
+      const m = makeRobot();
+      const n = [...this.robotMeshes.values()].filter((x) => x.userData.gen === r.g).length;
+      m.position.set(g.x + (n % 2 ? 0.3 : -0.2), 1.0, g.z);
+      m.rotation.y = g.rot;
+      m.userData.gen = r.g;
+      this.scene.add(m);
+      this.robotMeshes.set(r.id, m);
     }
   }
 
@@ -612,25 +799,32 @@ export class GameSession {
         break;
       case 'hit': {
         this.avatars.get(e.id)?.hitFlash();
+        const max = e.max ?? this.hitsToCatch;
         const far = e.far
           ? ` · ${e.dist}m 원거리 저격! -${e.dmg}칸`
           : e.wisp
             ? ' · 유도탄'
             : e.dash
               ? ' · 질주'
-              : e.dmg > 1
-                ? ` -${e.dmg}칸`
-                : '';
+              : e.ball
+                ? ' · 공 -반 칸'
+                : e.dmg > 1
+                  ? ` -${e.dmg}칸`
+                  : '';
+        const hp = `(${fmtHits(e.hits)}/${max})`;
         if (me) {
           sfx.hit();
           this.flash('hit');
-          this.shake = 0.35;
-          this.centerMsg(`맞았다! (${e.hits}/${this.hitsToCatch})${e.far ? ' 원거리 저격 -2칸' : ''}`, 1.5);
+          this.shake = e.ball ? 0.2 : 0.35;
+          this.centerMsg(
+            `맞았다! ${hp}${e.far ? ' 원거리 저격 -2칸' : e.ball ? ' 공 -반 칸' : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
+            1.5,
+          );
         } else if (e.by === this.myId) {
           sfx.hit();
           this.hitMarker();
-          this.feed(`${name(e.id)} 명중 (${e.hits}/${this.hitsToCatch})${far}`);
-        } else this.feed(`${name(e.id)}이(가) 맞았다 (${e.hits}/${this.hitsToCatch})${far}`);
+          this.feed(`${name(e.id)} 명중 ${hp}${far}`);
+        } else this.feed(`${name(e.id)}이(가) 맞았다 ${hp}${far}`);
         break;
       }
       case 'caught':
@@ -706,6 +900,93 @@ export class GameSession {
         }
         break;
       case 'trapPlaced':
+        break;
+      // ───── 광대 ─────
+      case 'ball':
+        this.onBall(e);
+        break;
+      case 'ballEnd': {
+        const b = this.balls.get(e.bid);
+        if (b) {
+          this.scene.remove(b.mesh);
+          this.balls.delete(e.bid);
+        }
+        if (!e.out) {
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, e.y, e.z), e.hit ? '#ff5a4a' : '#f2c230'));
+          sfx.ballBounce(Math.max(0.2, 1 - Math.hypot(e.x - this.pos.x, e.z - this.pos.z) / 30));
+        }
+        break;
+      }
+      case 'threadPlaced':
+        break;
+      case 'threadFail':
+        // 양쪽 벽이 없어 실을 못 침 (개수는 그대로)
+        this.charges = Math.min(this.trapMax, this.charges + 1);
+        this.lastTrapAt = 0;
+        this.centerMsg('🧵 좌우 양쪽 10m 안에 벽이 있어야 실을 칠 수 있어요', 2);
+        break;
+      case 'threaded':
+        sfx.threadTwang();
+        if (me) {
+          this.flash('stun');
+          this.centerMsg('🧵 실에 걸렸다! 몸이 빛나 술래에게 보이고 2초간 느려진다', 2);
+        }
+        this.feed(`🧵 ${name(e.id)}이(가) 광대 실에 걸렸다`, 'warn');
+        break;
+      // ───── 생존자 직업 ─────
+      case 'sskillFail':
+        this.sskillLeft = 0;
+        this.lastSSkillAt = 0;
+        this.centerMsg(e.reason === 'noGen' ? '🔧 발전기 가까이(1.5m 안)에서 써야 해요' : '🩺 회복할 다친 생존자가 없어요', 1.6);
+        break;
+      case 'healed':
+        sfx.heal();
+        if (e.target === this.myId) {
+          this.hits = e.hits;
+          this.centerMsg(e.id === this.myId ? '🩺 스스로 한 칸 회복했다' : `🩺 ${name(e.id)}이(가) 치료해 줬다! (${fmtHits(e.hits)}/${e.max})`, 2);
+        }
+        if (!this.isHunter || this.status !== STATUS.ALIVE) this.feed(`🩺 ${name(e.target)} 한 칸 회복 (${fmtHits(e.hits)}/${e.max})`, 'good');
+        break;
+      case 'taser':
+        this.onTaser(e);
+        break;
+      case 'taserEnd': {
+        const b = this.bolts.get(e.tid);
+        if (b) {
+          this.scene.remove(b.mesh);
+          this.bolts.delete(e.tid);
+        }
+        if (e.hit) {
+          sfx.zap();
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.2, e.z), '#7ad7ff'));
+          if (e.hit === this.myId) {
+            this.stunLeft = POLICE.STUN;
+            this.flash('stun');
+            this.controls.releaseAll();
+            this.centerMsg(`⚡ 테이저건에 맞았다! ${POLICE.STUN}초 동안 움직일 수 없다`, 2);
+          } else this.feed(`⚡ ${name(e.id)}의 테이저건이 술래를 맞혔다! (${POLICE.STUN}초 스턴)`, this.isHunter ? 'bad' : 'good');
+        }
+        break;
+      }
+      case 'smoke':
+        sfx.smoke(Math.max(0.2, 1 - this.distTo(e.id) / 30));
+        if (!this.isHunter && e.id !== this.myId) this.feed(`🪖 ${name(e.id)}이(가) 연막탄을 터뜨렸다`, 'good');
+        break;
+      case 'clone':
+        sfx.poof();
+        if (me) this.centerMsg('🌀 분신이 앞으로 걸어간다', 1.5);
+        break;
+      case 'cloneGone':
+        if (e.by) {
+          sfx.poof();
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.0, e.z), '#d8d8e8'));
+          if (e.by === this.myId) this.centerMsg('🌀 분신이었다!', 1.5);
+          else if (e.id === this.myId) this.feed('🌀 술래가 분신을 공격했다', 'good');
+        }
+        break;
+      case 'robot':
+        sfx.robot();
+        if (me) this.centerMsg('🤖 로봇이 발전기를 수리한다 (5초간 20%)', 1.8);
         break;
       case 'genFound':
         if (!this.isHunter) this.feed('🗺️ 발전기를 찾아 지도에 표시했다', 'good');
@@ -798,6 +1079,8 @@ export class GameSession {
     // 덫이 모두 보이도록 다시 그림
     for (const mesh of this.traps.values()) this.scene.remove(mesh);
     this.traps.clear();
+    for (const m of this.threadMeshes.values()) this.scene.remove(m);
+    this.threadMeshes.clear();
     this.cycleSpectate();
   }
 
@@ -869,7 +1152,8 @@ export class GameSession {
     const wantsRun = !this.isHunter && c.isHeld('action');
     this.wantsRun = wantsRun;
     this.interact = !this.isHunter && c.isHeld('main');
-    if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned, this.moving, dt);
+    // 감속(덫이 풀린 뒤·조준 저격·광대 실)과 달리기 불가는 서버가 알려 준 값으로 예측
+    if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned && !this.noRun, this.moving, dt, this.staminaMax);
     if (alive && this.moving) {
       const speed = speedFor(this.role, this.running, {
         cls: this.isHunter ? this.hunterClass : null,
@@ -877,6 +1161,8 @@ export class GameSession {
         invisible: this.isAssassin && this.invisLeft > 0,
         slowed: this.isAssassin && this.slowLeft > 0,
         disguised: this.disguised,
+        slowFactor: this.isHunter ? 1 : this.slowFactor,
+        noRun: this.noRun,
       });
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
@@ -889,6 +1175,7 @@ export class GameSession {
     }
 
     this.attackLeft = Math.max(0, this.attackLeft - dt);
+    this.sskillLeft = Math.max(0, this.sskillLeft - dt);
     if (this.hasClassSkill) this.skillLeft = Math.max(0, this.skillLeft - dt);
     if (this.isAssassin) {
       if (this.invisLeft > 0) this.invisLeft = Math.max(0, this.invisLeft - dt);
@@ -900,7 +1187,7 @@ export class GameSession {
       this.viewBat?.setGhost(invis);
     }
     this.matchTime = Math.min(RULES.MATCH_TIME, (this.matchTime || 0) + dt);
-    if (this.chargeLeft > 0 && this.charges < RULES.TRAP_MAX_CHARGES) this.chargeLeft = Math.max(0, this.chargeLeft - dt);
+    if (this.chargeLeft > 0 && this.charges < this.trapMax) this.chargeLeft = Math.max(0, this.chargeLeft - dt);
 
     // 서버로 입력 전송 (초당 20회)
     this.sendTimer -= dt;
@@ -923,6 +1210,8 @@ export class GameSession {
     for (const a of this.avatars.values()) a.update(dt);
     this.liveTracers = this.liveTracers.filter((t) => t.update(dt));
     for (const d of this.disguiseAvatars.values()) d.avatar.update(dt);
+    for (const a of this.cloneAvatars.values()) a.update(dt);
+    this.updateNewProjectiles(dt);
     this.updateProjectiles(dt);
     this.effects = this.effects.filter((fx) => fx(dt));
     for (const g of this.gens.values()) g.model.update(dt);
@@ -1020,10 +1309,16 @@ export class GameSession {
     }
     const alive = this.status === STATUS.ALIVE;
     if (!this.isHunter && alive) {
-      const st = this.stam.stamina / RULES.STAMINA_MAX;
+      const st = this.stam.stamina / this.staminaMax;
       $('stamina-fill').style.transform = `scaleX(${st})`;
       $('stamina').classList.toggle('low', st < 0.25);
-      $('hearts').innerHTML = '<b>♥</b>'.repeat(Math.max(0, this.hitsToCatch - this.hits)) + '<s>♥</s>'.repeat(Math.min(this.hitsToCatch, this.hits));
+      const heartsHtml = this.heartsHtml(this.maxHits, this.hits);
+      if (heartsHtml !== this.lastHeartsHtml) {
+        this.lastHeartsHtml = heartsHtml;
+        $('hearts').innerHTML = heartsHtml;
+        $('hearts').classList.toggle('many', this.maxHits > 5);
+      }
+      this.updateSurvivorSkill();
       const gen = this.nearestGen();
       $('btn-main').classList.toggle('ready', !!gen);
       const repairing = gen && this.interact;
@@ -1057,13 +1352,17 @@ export class GameSession {
       this.danger = Math.max(0, Math.min(1, (24 - d) / 16));
     }
     if (this.isHunter) this.updateHunterHud();
+    const screen = $('screen-game');
+    screen.classList.toggle('smoked', this.smoked && alive);
+    screen.classList.toggle('s-slowed', !this.isHunter && alive && this.slowFactor < 1);
+    screen.classList.toggle('no-run', !this.isHunter && alive && this.noRun);
     if (this.isHunter || !alive) this.danger = 0; // 술래와 관전자는 늘 보통 배경음악
     this.bgm.update(dt, this.danger);
 
     const stun = $('hud-stun');
     if (this.stunLeft > 0 && alive) {
       stun.classList.remove('hidden');
-      stun.textContent = `덫에 걸렸다! ${this.stunLeft.toFixed(1)}초`;
+      stun.textContent = this.isHunter ? `⚡ 테이저건 스턴! ${this.stunLeft.toFixed(1)}초` : `덫에 걸렸다! ${this.stunLeft.toFixed(1)}초`;
     } else stun.classList.add('hidden');
 
     if (this.exit) {
@@ -1197,10 +1496,10 @@ export class GameSession {
       return;
     }
     btnT.querySelector('.count').textContent = String(this.charges);
-    const frac = this.charges < RULES.TRAP_MAX_CHARGES ? this.chargeLeft / RULES.TRAP_COOLDOWN : 0;
+    const frac = this.charges < this.trapMax ? this.chargeLeft / this.trapCooldown : 0;
     btnT.style.setProperty('--cd', String(frac));
     btnT.classList.toggle('empty', this.charges <= 0);
-    btnT.querySelector('.timer').textContent = this.charges < RULES.TRAP_MAX_CHARGES ? `${Math.ceil(this.chargeLeft)}s` : '';
+    btnT.querySelector('.timer').textContent = this.charges < this.trapMax ? `${Math.ceil(this.chargeLeft)}s` : '';
   }
 
   updateGenHud() {
@@ -1221,7 +1520,10 @@ export class GameSession {
       else if (st === STATUS.CAUGHT) tag = '💀';
       else if (st === STATUS.ESCAPED) tag = '🏁';
       else if (st === 'left') tag = '🚪';
-      else tag = '♥'.repeat(Math.max(0, this.hitsToCatch - (p.hits || 0)));
+      else {
+        const left = Math.max(0, (p.mx ?? this.hitsToCatch) - (p.hits || 0));
+        tag = `${SURVIVOR_CLASS_INFO[p.scls]?.icon ?? ''}${'♥'.repeat(Math.floor(left + 1e-9))}${left % 1 > 0.01 ? '½' : ''}`;
+      }
       const meCls = p.id === this.myId ? ' me' : '';
       return `<li class="${st}${meCls}"><span class="n">${escapeHtml(p.name)}</span><span class="t">${tag}</span></li>`;
     });
@@ -1231,6 +1533,91 @@ export class GameSession {
       $('hud-players').classList.toggle('many', this.info.size > 5);
       this.lastListHtml = html;
     }
+  }
+
+  /** 체력 하트: 꽉 찬 칸, 반 칸, 잃은 칸 */
+  heartsHtml(max, hits) {
+    const left = Math.max(0, max - hits);
+    const full = Math.floor(left + 1e-9);
+    const half = left - full > 0.01 ? 1 : 0;
+    return '<b>♥</b>'.repeat(full) + (half ? '<i>♥</i>' : '') + '<s>♥</s>'.repeat(Math.max(0, max - full - half));
+  }
+
+  /** 생존자 직업 스킬 버튼과 PC 쿨타임 칸 */
+  updateSurvivorSkill() {
+    if (!this.hasSSkill) return;
+    const frac = Math.min(1, this.sskillLeft / this.sskillCooldown);
+    const text = this.sskillLeft > 0 ? `${Math.ceil(this.sskillLeft)}s` : '';
+    const btn = $('btn-sskill');
+    btn.style.setProperty('--cd', String(frac));
+    btn.classList.toggle('cooling', this.sskillLeft > 0);
+    btn.querySelector('.timer').textContent = text;
+    const slot = $('cd-sskill');
+    slot.style.setProperty('--cd', String(frac));
+    slot.classList.toggle('empty', this.sskillLeft > 0);
+    slot.classList.toggle('ready', this.sskillLeft <= 0);
+    slot.querySelector('.t').textContent = text;
+  }
+
+  /** 광대 공: 서버와 같은 포물선으로 날린다 (끝은 서버가 알려 줌) */
+  onBall(e) {
+    const mesh = makeBall();
+    mesh.position.set(e.x, e.y, e.z);
+    this.scene.add(mesh);
+    this.balls.set(e.bid, { mesh, v: new THREE.Vector3(e.vx, e.vy, e.vz), life: 3 });
+    if (e.id !== this.myId) {
+      this.avatars.get(e.id)?.playSwing();
+      sfx.ballThrow(Math.max(0.2, 1 - this.distTo(e.id) / 30));
+    }
+  }
+
+  onTaser(e) {
+    const mesh = makeTaserBolt();
+    mesh.position.set(e.x, 1.2, e.z);
+    this.scene.add(mesh);
+    this.bolts.set(e.tid, { mesh, dir: new THREE.Vector3(e.dx, 0, e.dz), traveled: 0 });
+    sfx.zap(e.id === this.myId ? 0.7 : Math.max(0.2, 1 - this.distTo(e.id) / 30));
+  }
+
+  updateNewProjectiles(dt) {
+    for (const [id, b] of this.balls) {
+      b.life -= dt;
+      b.v.y -= CLOWN.BALL_GRAVITY * dt;
+      b.mesh.position.addScaledVector(b.v, dt);
+      b.mesh.rotation.x += dt * 9;
+      if (b.mesh.position.y < 0.11) {
+        b.mesh.position.y = 0.11;
+        b.v.set(0, 0, 0);
+      }
+      if (b.life <= 0) {
+        this.scene.remove(b.mesh);
+        this.balls.delete(id);
+      }
+    }
+    for (const [id, b] of this.bolts) {
+      const step = POLICE.SPEED * dt;
+      b.mesh.position.addScaledVector(b.dir, step);
+      b.traveled += step;
+      b.mesh.scale.setScalar(0.8 + Math.random() * 0.5);
+      if (b.traveled > POLICE.RANGE + 2) {
+        this.scene.remove(b.mesh);
+        this.bolts.delete(id);
+      }
+    }
+    // 함정 듀오에서 움직이는 덫
+    const k = 1 - Math.exp(-dt * 12);
+    for (const m of this.traps.values()) {
+      const t = m.userData.target;
+      if (!t) continue;
+      m.position.x += (t.x - m.position.x) * k;
+      m.position.z += (t.z - m.position.z) * k;
+    }
+    const now = performance.now();
+    for (const m of this.robotMeshes.values()) {
+      m.userData.tip.visible = Math.floor(now / 250) % 2 === 0;
+      m.position.y = 1.0 + Math.abs(Math.sin(now / 90)) * 0.02;
+    }
+    for (const m of this.smokeMeshes.values()) m.rotation.y += dt * 0.3;
   }
 
   feed(text, cls = '') {
@@ -1289,7 +1676,7 @@ export class GameSession {
     });
     this.renderer.dispose();
     this.renderer.domElement.remove();
-    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor');
+    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 'smoked', 's-slowed', 'no-run', 'cls-clown');
   }
 }
 

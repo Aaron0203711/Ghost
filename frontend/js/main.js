@@ -2,7 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
-import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO } from '@shared/constants.js';
+import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats } from '@shared/constants.js';
 import { Voice } from './game/voice.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
@@ -96,8 +96,40 @@ function playerName() {
 
 nameInput.addEventListener('change', () => {
   saveSettings({ name: nameInput.value.trim().slice(0, 12) });
-  if (net.connected && playerName()) net.send({ t: 'hello', name: playerName() });
+  if (net.connected && playerName()) net.send({ t: 'hello', name: playerName(), scls: survivorClass() });
 });
+
+// 생존자 직업: 메인 화면에서 골라 두면 방에 들어갈 때 함께 보낸다 (술래가 되면 쓰이지 않음)
+function survivorClass() {
+  return validSurvivorClass(settings.scls);
+}
+
+function renderSurvivorClasses() {
+  const cur = survivorClass();
+  document.querySelectorAll('.scls-card').forEach((c) => c.classList.toggle('on', c.dataset.scls === cur));
+  const info = SURVIVOR_CLASS_INFO[cur];
+  $('scls-name').textContent = `${info.icon} ${info.name}`;
+  $('scls-desc').textContent = info.desc;
+}
+
+{
+  const list = $('scls-list');
+  for (const [id, c] of Object.entries(SURVIVOR_CLASS_INFO)) {
+    const card = document.createElement('button');
+    card.className = 'scls-card';
+    card.dataset.scls = id;
+    card.innerHTML = `<span class="ico">${c.icon}</span><span class="n"></span>`;
+    card.querySelector('.n').textContent = c.name;
+    card.title = c.desc;
+    list.appendChild(card);
+    tap(card, () => {
+      saveSettings({ scls: id });
+      renderSurvivorClasses();
+      if (net.connected) net.send({ t: 'hello', name: playerName() || undefined, scls: id });
+    });
+  }
+  renderSurvivorClasses();
+}
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     nameInput.blur();
@@ -123,7 +155,7 @@ document.querySelectorAll('[data-back]').forEach((b) => tap(b, () => show(b.data
 
 tap($('btn-create'), () => {
   waitFor($('btn-create'));
-  net.send({ t: 'create', name: playerName() });
+  net.send({ t: 'create', name: playerName(), scls: survivorClass() });
 });
 
 // 방 목록 (대기 중인 공개 방)
@@ -146,7 +178,7 @@ function renderRoomList(rooms) {
     btn.disabled = full;
     tap(btn, () => {
       waitFor(btn);
-      net.send({ t: 'join', code: r.code, name: playerName() });
+      net.send({ t: 'join', code: r.code, name: playerName(), scls: survivorClass() });
     });
     li.append(name, count, btn);
     list.appendChild(li);
@@ -161,7 +193,7 @@ tap($('btn-rooms-open'), () => {
 
 tap($('btn-rooms-create'), () => {
   waitFor($('btn-rooms-create'));
-  net.send({ t: 'create', name: playerName() });
+  net.send({ t: 'create', name: playerName(), scls: survivorClass() });
 });
 
 tap($('btn-join-open'), () => {
@@ -203,7 +235,7 @@ function joinRoom() {
   if (code.length !== 4 || Date.now() - lastJoinAt < 400) return;
   lastJoinAt = Date.now();
   waitFor($('btn-join'));
-  net.send({ t: 'join', code, name: playerName() });
+  net.send({ t: 'join', code, name: playerName(), scls: survivorClass() });
 }
 tap($('btn-join'), joinRoom);
 
@@ -248,7 +280,8 @@ function renderLobby() {
   const rules = matchRules(room.players.length);
   const n = room.players.length;
   const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : '';
-  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸${tag}`;
+  const ff = survivorStats('foodfighter', rules.hitsToCatch).maxHits;
+  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${tag}`;
   $('lobby-rules').classList.toggle('large', !!tag);
   const list = $('lobby-players');
   list.innerHTML = '';
@@ -258,6 +291,8 @@ function renderLobby() {
     name.className = 'n';
     name.textContent = p.name;
     li.appendChild(name);
+    const sc = SURVIVOR_CLASS_INFO[p.scls];
+    if (sc) li.insertAdjacentHTML('beforeend', `<span class="tag scls" title="생존자 직업: ${sc.name}">${sc.icon} ${sc.name}</span>`);
     if (p.mic) li.insertAdjacentHTML('beforeend', '<span class="tag mic" title="마이크 켜짐">🎤</span>');
     if (p.id === room.hostId) li.insertAdjacentHTML('beforeend', '<span class="tag host">👑 방장</span>');
     if (p.id === myId) {
@@ -546,7 +581,8 @@ function showResult(msg) {
     const t = document.createElement('span');
     t.className = 'tag';
     const cls = CLASS_INFO[p.cls || msg.hunterClass] || CLASS_INFO.maniac;
-    t.textContent = p.role === 'hunter' ? `${cls.icon} 술래 · ${cls.name}` : label[p.status] || p.status;
+    const sc = SURVIVOR_CLASS_INFO[p.scls];
+    t.textContent = p.role === 'hunter' ? `${cls.icon} 술래 · ${cls.name}` : `${sc ? `${sc.icon} ${sc.name} · ` : ''}${label[p.status] || p.status}`;
     li.appendChild(t);
     if (p.id === myId) li.classList.add('me');
     list.appendChild(li);
@@ -566,7 +602,7 @@ tap($('btn-result-lobby'), () => {
 net.on('_open', () => {
   $('conn-dot').className = 'on';
   $('conn-text').textContent = '서버 연결됨';
-  if (playerName()) net.send({ t: 'hello', name: playerName() });
+  if (playerName()) net.send({ t: 'hello', name: playerName(), scls: survivorClass() });
   if (voice.micOn) net.send({ t: 'mic', on: true }); // 다시 연결되면 마이크 상태를 다시 알린다
   if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: true }); // 다시 연결되면 목록을 다시 받는다
 });

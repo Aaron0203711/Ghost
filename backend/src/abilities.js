@@ -226,6 +226,7 @@ export function stepDashes(game, dt) {
         reason = 'hit';
         break;
       }
+      if (!reason && game.hitCloneNear(p.x, p.z, SPRINTER.HIT_RADIUS, p.id)) reason = 'clone'; // 닌자 분신에 부딪힘
     }
     if (!reason && p.dashT >= SPRINTER.DASH_TIME) reason = 'done';
     if (reason) endDash(game, p, reason);

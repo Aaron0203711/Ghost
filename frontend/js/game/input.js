@@ -26,6 +26,7 @@ export class Controls {
     this.mouseHeld = {};
     this.handlers = {}; // 버튼 이름 -> 눌렀을 때 콜백
     this.enabled = true;
+    this.isHunter = false; // 술래면 E가 스킬, 생존자면 E가 수리 (세션이 설정)
     this.joyRadius = 60;
     this.listeners = [];
 
@@ -52,6 +53,17 @@ export class Controls {
       this.look.dx += e.movementX * s;
       this.look.dy += e.movementY * s;
     });
+    // 마우스가 고정(포인터 잠금)되면 클릭은 캔버스로 가므로 문서 전체에서 받는다
+    on(document, 'mousedown', (e) => {
+      if (!this.enabled || document.pointerLockElement !== this.els.canvas) return;
+      if (e.target.closest?.('[data-ui]')) return;
+      const name = e.button === 2 ? 'action' : 'main';
+      this.mouseHeld[name] = true;
+      this.press(name);
+    });
+    on(document, 'contextmenu', (e) => {
+      if (document.pointerLockElement === this.els.canvas) e.preventDefault();
+    });
     on(document, 'pointerlockchange', () => {
       if (document.pointerLockElement !== this.els.canvas) this.mouseHeld = {};
     });
@@ -66,11 +78,16 @@ export class Controls {
     return !!this.held[name] || !!this.mouseHeld[name] || this.keyHeld(name);
   }
 
+  /**
+   * PC 키 배치
+   * - 공통: 마우스 좌클릭 = main(공격/발사, 생존자는 수리), Space = 점프
+   * - 생존자: Shift = 달리기(action), E 꾹 = 수리(main)
+   * - 술래: E = 스킬(action: 덫 / 투명화 / 누르고 있는 동안 조준)
+   */
   keyHeld(name) {
     const k = this.keys;
-    // action: 달리기(생존자) / 덫(술래), main: 상호작용(생존자) / 공격(술래)
-    if (name === 'action') return k.has('ShiftLeft') || k.has('ShiftRight');
-    if (name === 'main') return k.has('KeyE') || k.has('KeyF');
+    if (name === 'action') return this.isHunter ? k.has('KeyE') : k.has('ShiftLeft') || k.has('ShiftRight');
+    if (name === 'main') return !this.isHunter && k.has('KeyE');
     return false;
   }
 
@@ -192,15 +209,10 @@ export class Controls {
     base.style.bottom = '';
   }
 
-  onMouseDown(e) {
+  /** 마우스가 아직 고정되지 않았을 때의 첫 클릭: 고정만 한다 (고정된 뒤의 클릭은 document mousedown에서 처리) */
+  onMouseDown() {
     const canvas = this.els.canvas;
-    if (document.pointerLockElement !== canvas) {
-      canvas.requestPointerLock?.();
-      return;
-    }
-    const name = e.button === 2 ? 'action' : 'main';
-    this.mouseHeld[name] = true;
-    this.press(name);
+    if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
   }
 
   onKey(e, down) {
@@ -210,12 +222,11 @@ export class Controls {
     if (down) {
       if (this.keys.has(code)) return;
       this.keys.add(code);
-      if (code === 'KeyQ') this.press('action');
       if (code === 'Space') {
         e.preventDefault();
         this.press('jump'); // 스페이스바 = 점프
       }
-      if (code === 'KeyE' || code === 'KeyF') this.press('main');
+      if (code === 'KeyE' && this.isHunter) this.press('action'); // 술래 스킬
     } else {
       this.keys.delete(code);
     }

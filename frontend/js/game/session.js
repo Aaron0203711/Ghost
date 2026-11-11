@@ -228,6 +228,7 @@ export class GameSession {
       },
       () => this.settings.sensitivity,
     );
+    this.controls.isHunter = this.isHunter;
     this.gyro = new Gyro(() => ({
       enabled: this.settings.gyro,
       sensitivity: this.settings.gyroSensitivity,
@@ -259,6 +260,7 @@ export class GameSession {
   tryAttack() {
     if (this.status !== STATUS.ALIVE || this.attackLeft > 0) return;
     this.attackLeft = this.attackCooldown;
+    this.lastAttackAt = performance.now();
     this.viewBat?.playSwing();
     if (this.isSniper) {
       sfx.gunshot(1);
@@ -289,6 +291,7 @@ export class GameSession {
   trySkill() {
     if (this.status !== STATUS.ALIVE || this.invisLeft > 0 || this.skillLeft > 0) return;
     this.invisLeft = ASSASSIN.INVIS_TIME;
+    this.lastSkillAt = performance.now();
     sfx.invisOn();
     this.net.send({ t: 'skill' });
     this.updateHunterHud();
@@ -297,6 +300,7 @@ export class GameSession {
   tryTrap() {
     if (this.status !== STATUS.ALIVE || this.charges <= 0) return;
     this.charges--;
+    this.lastTrapAt = performance.now();
     if (this.chargeLeft <= 0) this.chargeLeft = RULES.TRAP_COOLDOWN;
     sfx.trapPlace();
     this.net.send({ t: 'trap' });
@@ -361,10 +365,15 @@ export class GameSession {
     }
     if (s.me) {
       if (Math.abs(s.me.stamina - this.stam.stamina) > 0.6) this.stam.stamina = s.me.stamina;
-      this.charges = s.me.charges;
-      this.chargeLeft = s.me.chargeLeft;
-      if (Math.abs(s.me.attackLeft - this.attackLeft) > 0.25) this.attackLeft = s.me.attackLeft;
-      if (this.isAssassin) {
+      // 내가 방금 누른 동작은 서버가 아직 처리하기 전일 수 있으므로 잠깐은 서버 값으로 덮어쓰지 않는다
+      const now = performance.now();
+      const fresh = (t) => now - (t || 0) < 400;
+      if (!fresh(this.lastTrapAt)) {
+        this.charges = s.me.charges;
+        this.chargeLeft = s.me.chargeLeft;
+      }
+      if (!fresh(this.lastAttackAt) && Math.abs(s.me.attackLeft - this.attackLeft) > 0.25) this.attackLeft = s.me.attackLeft;
+      if (this.isAssassin && !fresh(this.lastSkillAt)) {
         this.invisLeft = s.me.invisLeft ?? 0;
         this.skillLeft = s.me.skillLeft ?? 0;
         this.slowLeft = s.me.slowLeft ?? 0;

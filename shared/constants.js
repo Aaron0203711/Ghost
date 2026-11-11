@@ -11,6 +11,11 @@ export const RULES = Object.freeze({
   PLAYER_RADIUS: 0.35,
   EYE_HEIGHT: 1.6,
 
+  // 점프 (술래·생존자 공통). 담장·물건은 넘을 수 없고, 공중에서는 덫만 피한다
+  JUMP_HEIGHT: 0.6,
+  JUMP_TIME: 0.5, // 공중에 떠 있는 시간(초). 착지하면 바로 다시 뛸 수 있음
+  JUMP_STAMINA: 1, // 생존자는 점프마다 스태미나 1초분 사용 (부족하면 점프 불가)
+
   // 스태미나 (초 단위)
   STAMINA_MAX: 10, // 10초 동안 달릴 수 있음
   STAMINA_REGEN_DELAY: 1, // 달리기를 멈추고 1초 뒤부터 회복
@@ -145,4 +150,11 @@ export const CLASS_INFO = Object.freeze({
 export function aimDirection(yaw, pitch) {
   const c = Math.cos(pitch);
   return { x: -Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c };
+}
+
+/** 점프 시작 후 t초일 때 높이 (포물선, 0 ~ JUMP_HEIGHT) */
+export function jumpHeight(t) {
+  if (t <= 0 || t >= RULES.JUMP_TIME) return 0;
+  const k = t / RULES.JUMP_TIME;
+  return 4 * RULES.JUMP_HEIGHT * k * (1 - k);
 }

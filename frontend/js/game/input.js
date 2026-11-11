@@ -211,7 +211,11 @@ export class Controls {
       if (this.keys.has(code)) return;
       this.keys.add(code);
       if (code === 'KeyQ') this.press('action');
-      if (code === 'Space' || code === 'KeyE' || code === 'KeyF') this.press('main');
+      if (code === 'Space') {
+        e.preventDefault();
+        this.press('jump'); // 스페이스바 = 점프
+      }
+      if (code === 'KeyE' || code === 'KeyF') this.press('main');
     } else {
       this.keys.delete(code);
     }

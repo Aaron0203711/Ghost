@@ -776,3 +776,57 @@ test('백룸 맵으로 8인 게임: 모든 시작 위치와 발전기가 비어 
     }
   }
 });
+
+// ───────────── 점프 ─────────────
+
+test('점프: 술래·생존자 모두 가능, 공중에서는 다시 못 뛰고 착지하면 바로 다시', () => {
+  const { game, hunter, s1 } = makeGame();
+  for (const p of [hunter, s1]) {
+    game.handleJump(p.id);
+    assert.ok(game.isAirborne(p));
+    const until = p.jumpUntil;
+    game.handleJump(p.id);
+    assert.equal(p.jumpUntil, until, '공중에서는 무시');
+  }
+  run(game, RULES.JUMP_TIME + 0.05);
+  assert.ok(!game.isAirborne(s1));
+  game.handleJump('p2');
+  assert.ok(game.isAirborne(s1), '착지 직후 바로 점프 (쿨타임 없음)');
+});
+
+test('점프: 생존자는 스태미나 1초분 사용, 부족하면 못 뜀', () => {
+  const { game, s1 } = makeGame();
+  game.handleJump('p2');
+  assert.equal(s1.stamina, RULES.STAMINA_MAX - 1);
+  run(game, RULES.JUMP_TIME + 0.05);
+  s1.stamina = 0.9;
+  game.handleJump('p2');
+  assert.ok(!game.isAirborne(s1));
+  assert.equal(s1.stamina, 0.9);
+});
+
+test('점프: 공중에서는 덫을 밟지 않고, 착지하면 걸린다', () => {
+  const { game, hunter, s1 } = makeGame();
+  faceOff(game, hunter, s1, 4);
+  game.handleTrap('p1');
+  const trap = game.traps[0];
+  game.handleJump('p2');
+  s1.x = trap.x;
+  s1.z = trap.z;
+  game.tick(DT);
+  assert.equal(game.traps.length, 1, '공중에서는 안 걸림');
+  assert.ok(!game.isStunned(s1));
+  run(game, RULES.JUMP_TIME);
+  assert.equal(game.traps.length, 0, '착지하면 걸림');
+  assert.ok(game.isStunned(s1));
+  game.handleJump('p2');
+  assert.ok(!game.isAirborne(s1), '덫에 걸린 동안은 점프 불가');
+});
+
+test('점프: 공중에서도 방망이에는 맞는다', () => {
+  const { game, hunter, s1 } = makeGame();
+  faceOff(game, hunter, s1);
+  game.handleJump('p2');
+  game.handleAttack('p1', { yaw: 0, pitch: 0 });
+  assert.equal(s1.hits, 1);
+});

@@ -1711,3 +1711,41 @@ body.touch #pc-hint {
   background: rgba(210, 195, 116, 0.25);
   color: #f2e39a;
 }
+
+/* 점프: 오른쪽 아래(달리기/스킬) 버튼 위 */
+.ctl-btn.jump {
+  right: calc(44px + var(--safe-r));
+  bottom: calc(136px + var(--safe-b));
+  width: 64px;
+  height: 64px;
+}
+
+.ctl-btn.jump .ico {
+  font-size: 24px;
+}
+
+.ctl-btn.jump .lbl {
+  font-size: 11px;
+}
+
+/* 낮은 화면(휴대폰 가로): 공격/수리 버튼을 점프 버튼 위로 쌓는다 */
+@media (max-height: 520px) {
+  .ctl-btn.main {
+    top: auto;
+    translate: none;
+    margin-top: 0;
+    bottom: calc(212px + var(--safe-b));
+  }
+}
+
+@media (max-height: 430px) {
+  .ctl-btn.jump {
+    right: calc(40px + var(--safe-r));
+    bottom: calc(122px + var(--safe-b));
+    width: 58px;
+    height: 58px;
+  }
+  .ctl-btn.main {
+    bottom: calc(190px + var(--safe-b));
+  }
+}

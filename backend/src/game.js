@@ -82,6 +82,7 @@ export class Game {
         invisUntil: 0, // 암살자 투명화 끝나는 시각
         skillReadyAt: 0,
         slowUntil: 0, // 기습 후 감속 끝나는 시각
+        jumpUntil: 0, // 점프 착지 시각
         cls: role === ROLE.HUNTER ? hunterCls.get(p.id) : null,
       });
     };
@@ -222,6 +223,23 @@ export class Game {
     for (const q of this.players.values()) {
       if (q.role !== ROLE.SURVIVOR || q.status !== STATUS.ALIVE) this.emit(q.id, msg);
     }
+  }
+
+  isAirborne(p) {
+    return this.time < p.jumpUntil;
+  }
+
+  /** 점프: 땅에 있을 때만. 생존자는 스태미나 1초분이 있어야 한다. 덫에 걸린 동안은 못 뜀 */
+  handleJump(id) {
+    const p = this.players.get(id);
+    if (!p || this.ended || p.status !== STATUS.ALIVE) return;
+    if (this.isAirborne(p) || this.isStunned(p)) return;
+    if (p.role === ROLE.SURVIVOR) {
+      if (p.stamina < RULES.JUMP_STAMINA) return;
+      p.stamina -= RULES.JUMP_STAMINA;
+      p.regenWait = RULES.STAMINA_REGEN_DELAY;
+    }
+    p.jumpUntil = this.time + RULES.JUMP_TIME;
   }
 
   /** 스킬 키: 암살자 투명화 (15초, 끝난 뒤 쿨타임 8초) */
@@ -402,6 +420,7 @@ export class Game {
     // 덫 밟기
     for (const s of this.players.values()) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
+      if (this.isAirborne(s)) continue; // 공중에서는 덫을 밟지 않는다
       const idx = this.traps.findIndex(
         (t) => Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS,
       );
@@ -545,6 +564,7 @@ export class Game {
           rep: p.repairing ? 1 : 0,
           aim: p.aiming ? 1 : 0,
           invis: invis ? 1 : 0,
+          jmp: this.isAirborne(p) ? r2(RULES.JUMP_TIME - (p.jumpUntil - this.time)) : 0, // 점프 경과 시간
         };
       }),
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),

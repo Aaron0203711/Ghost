@@ -1,6 +1,7 @@
 // 캐릭터, 방망이, 발전기, 덫, 탈출구 모델 (기본 도형으로 구성)
 import * as THREE from 'three';
 import { labelTexture, generatorPanel } from './textures.js';
+import { RULES, jumpHeight } from '@shared/constants.js';
 
 const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 
@@ -248,6 +249,12 @@ export class Avatar {
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     this.yaw += dy * k;
     this.group.position.copy(this.pos);
+    // 점프 (서버 기준 경과 시간에서 이어서 진행)
+    if (this.jumpT != null) {
+      this.jumpT += dt;
+      this.group.position.y = jumpHeight(this.jumpT);
+      if (this.jumpT >= RULES.JUMP_TIME) this.jumpT = null;
+    }
     this.group.rotation.y = this.yaw;
 
     const moved = prev.distanceTo(this.pos) / Math.max(dt, 1e-3);

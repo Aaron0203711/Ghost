@@ -77,6 +77,9 @@ export class RoomManager {
       case 'trap':
         if (client.room?.game) client.room.game.handleTrap(client.id);
         break;
+      case 'jump':
+        if (client.room?.game) client.room.game.handleJump(client.id);
+        break;
       case 'skill':
         if (client.room?.game) client.room.game.handleSkill(client.id);
         break;

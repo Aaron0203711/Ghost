@@ -1,7 +1,7 @@
 // 한 판의 게임 클라이언트: 렌더링, 내 이동 예측, 서버 상태 반영, HUD, 관전.
 import * as THREE from 'three';
 import { CollisionWorld } from '@shared/collision.js';
-import { RULES, ROLE, STATUS, stepStamina, speedFor, HUNTER_CLASS, SNIPER, ASSASSIN, CLASS_INFO } from '@shared/constants.js';
+import { RULES, ROLE, STATUS, stepStamina, speedFor, jumpHeight, HUNTER_CLASS, SNIPER, ASSASSIN, CLASS_INFO } from '@shared/constants.js';
 import { buildWorld, buildSky } from './world.js';
 import { Avatar, BatViewModel, RifleViewModel, KunaiViewModel, GeneratorModel, makeTrap, makeExit, Tracer, makeImpact } from './models.js';
 import { Controls } from './input.js';
@@ -33,6 +33,7 @@ export class GameSession {
     this.isSniper = this.isHunter && this.hunterClass === HUNTER_CLASS.SNIPER;
     this.isAssassin = this.isHunter && this.hunterClass === HUNTER_CLASS.ASSASSIN;
     this.attackCooldown = this.isSniper ? SNIPER.SHOT_COOLDOWN : this.isAssassin ? ASSASSIN.ATTACK_COOLDOWN : RULES.ATTACK_COOLDOWN;
+    this.jumpT = null; // 점프 경과 시간 (땅이면 null)
     this.invisLeft = 0; // 암살자 내 투명화 남은 시간
     this.skillLeft = 0; // 암살자 스킬 쿨타임
     this.slowLeft = 0; // 암살자 기습 후 감속
@@ -220,7 +221,7 @@ export class GameSession {
         joy: $('joy'),
         knob: $('joy-knob'),
         canvas: this.renderer.domElement,
-        buttons: { main: $('btn-main'), action: $('btn-action') },
+        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump') },
       },
       () => this.settings.sensitivity,
     );
@@ -233,6 +234,10 @@ export class GameSession {
     this.controls.onPress('main', () => {
       unlockAudio();
       if (this.isHunter) this.tryAttack();
+    });
+    this.controls.onPress('jump', () => {
+      unlockAudio();
+      this.tryJump();
     });
     this.controls.onPress('action', () => {
       unlockAudio();
@@ -258,6 +263,23 @@ export class GameSession {
     } else sfx.swing();
     // 누른 순간의 시점으로 판정하도록 방향을 함께 보낸다
     this.net.send({ t: 'attack', yaw: this.yaw, pitch: this.pitch });
+  }
+
+  /** 점프: 땅에 있을 때만, 생존자는 스태미나 1초분 필요. 덫에 걸리면 못 뜀 */
+  tryJump() {
+    if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0) return;
+    if (!this.isHunter) {
+      if (this.stam.stamina < RULES.JUMP_STAMINA) {
+        this.centerMsg('스태미나가 부족해 점프할 수 없어요', 1);
+        return;
+      }
+      this.stam.stamina -= RULES.JUMP_STAMINA;
+      this.stam.regenWait = RULES.STAMINA_REGEN_DELAY;
+    }
+    this.jumpT = 0;
+    this.jumpStart = performance.now();
+    sfx.jump();
+    this.net.send({ t: 'jump' });
   }
 
   /** 암살자 투명화 */
@@ -321,6 +343,8 @@ export class GameSession {
       a.pitch = p.pitch;
       a.stunned = p.stun > 0;
       a.repairing = !!p.rep;
+      // 점프: 서버가 알려 준 경과 시간에서 이어서 높이를 계산
+      if (p.jmp > 0 && (a.jumpT == null || Math.abs(a.jumpT - p.jmp) > 0.15)) a.jumpT = p.jmp;
       a.aiming = !!p.aim;
       a.group.visible = p.st === STATUS.ALIVE && p.id !== this.spectateId;
     }
@@ -654,7 +678,7 @@ export class GameSession {
       if (!a || (info?.status ?? STATUS.ALIVE) !== STATUS.ALIVE) {
         this.cycleSpectate();
       } else {
-        cam.position.set(a.pos.x, RULES.EYE_HEIGHT, a.pos.z);
+        cam.position.set(a.pos.x, RULES.EYE_HEIGHT + a.group.position.y, a.pos.z);
         cam.rotation.set(a.pitch ?? 0, a.yaw, 0);
         if (cam.fov !== 75) {
           cam.fov = 75;
@@ -674,7 +698,18 @@ export class GameSession {
       sx = (Math.random() - 0.5) * this.shake * 0.2;
       sy = (Math.random() - 0.5) * this.shake * 0.2;
     }
-    const eye = this.stunLeft > 0 ? RULES.EYE_HEIGHT - 0.25 : RULES.EYE_HEIGHT;
+    // 내 점프 높이
+    let jy = 0;
+    if (this.jumpT !== null) {
+      // 프레임이 느려도 서버와 같은 0.5초가 되도록 실제 시계로 잰다
+      this.jumpT = (performance.now() - this.jumpStart) / 1000;
+      jy = jumpHeight(this.jumpT);
+      if (this.jumpT >= RULES.JUMP_TIME) {
+        this.jumpT = null;
+        sfx.land();
+      }
+    }
+    const eye = (this.stunLeft > 0 ? RULES.EYE_HEIGHT - 0.25 : RULES.EYE_HEIGHT) + jy;
     cam.position.set(this.pos.x + sx, eye + bob + sy, this.pos.z);
     cam.rotation.set(this.pitch, this.yaw, 0);
     const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running ? 82 : 75;

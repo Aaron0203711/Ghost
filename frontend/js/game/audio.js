@@ -58,12 +58,25 @@ export function stopHum() {
   hum = null;
 }
 
+let speechPrimed = false;
 export function unlockAudio() {
   try {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === 'suspended') ctx.resume();
   } catch {
     ctx = null;
+  }
+  // iPhone/iPad는 사용자가 누른 순간에 한 번 말해 두어야 나중에 음성 안내가 나온다
+  if (!speechPrimed && window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined') {
+    speechPrimed = true;
+    try {
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+      window.speechSynthesis.getVoices(); // 목소리 목록을 미리 불러 둔다
+    } catch {
+      /* 지원하지 않음 */
+    }
   }
 }
 

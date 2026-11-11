@@ -79,14 +79,18 @@ export function stepStamina(s, wantsRun, moving, dt) {
 }
 
 /**
- * aiming: 저격수 조준 중이면 절반 속도, invisible: 암살자 투명화 중이면 1.5배,
- * slowed: 암살자가 기습으로 투명화가 풀린 직후면 절반 속도
+ * 이동 속도 (m/s). 술래는 직업과 상태에 따라 달라진다.
+ * mods: { cls, aiming(저격수 조준 → 절반), invisible(암살자 투명 → 1.5배),
+ *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도) }
+ * 질주자는 기본 10% 빠르다.
  */
-export function speedFor(role, running, aiming = false, invisible = false, slowed = false) {
+export function speedFor(role, running, mods = {}) {
   if (role === ROLE.HUNTER) {
-    if (aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
-    if (slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
-    if (invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
+    if (mods.aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
+    if (mods.slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
+    if (mods.invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
+    if (mods.disguised) return RULES.SURVIVOR_WALK_SPEED;
+    if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
     return RULES.HUNTER_SPEED;
   }
   return running ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
@@ -111,7 +115,60 @@ export function matchRules(playerCount) {
 
 // ───────────── 술래 직업 ─────────────
 
-export const HUNTER_CLASS = Object.freeze({ MANIAC: 'maniac', SNIPER: 'sniper', ASSASSIN: 'assassin' });
+export const HUNTER_CLASS = Object.freeze({
+  MANIAC: 'maniac',
+  SNIPER: 'sniper',
+  ASSASSIN: 'assassin',
+  CAPTAIN: 'captain',
+  GHOST: 'ghost',
+  SKINWALKER: 'skinwalker',
+  SPRINTER: 'sprinter',
+});
+
+/** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
+export const MELEE = Object.freeze({
+  maniac: { range: 2.0, cooldown: 1 }, // 방망이
+  assassin: { range: 2.0, cooldown: 1.5 }, // 쿠나이
+  captain: { range: 2.0, cooldown: 0.5 }, // 후크
+  ghost: { range: 2.0, cooldown: 0.5 }, // 할퀴기
+  skinwalker: { range: 3.0, cooldown: 1.5 }, // 갈고리
+  sprinter: { range: 3.0, cooldown: 1 }, // 발차기
+});
+
+/** 선장: 닻을 던져 맞은 생존자를 1.5초 동안 자기 앞까지 끌고 온다 (피해 없음) */
+export const CAPTAIN = Object.freeze({
+  ANCHOR_SPEED: 25,
+  ANCHOR_RANGE: 20,
+  ANCHOR_RADIUS: 0.5,
+  PULL_TIME: 1.5,
+  SKILL_COOLDOWN: 7.5,
+});
+
+/** 유령: 담장·벽 통과. 스킬로 보이는 생존자마다 작은 유령 유도탄 (5초, 맞으면 1칸) */
+export const GHOST = Object.freeze({
+  PASS_KINDS: ['wall', 'stonewall'], // 통과할 수 있는 장애물 종류
+  WISP_SPEED: 5,
+  WISP_LIFE: 5,
+  WISP_RADIUS: 0.6,
+  VIEW_RANGE: 75,
+  VIEW_HALF_ANGLE: (60 * Math.PI) / 180,
+  SKILL_COOLDOWN: 7,
+});
+
+/** 살가죽을 뒤집어 쓴 자: 생존자로 변장 (공격하면 바로 풀림, 풀린 뒤 5초 쿨타임) */
+export const SKINWALKER = Object.freeze({
+  SKILL_COOLDOWN: 5,
+});
+
+/** 질주자: 이동 속도 +10%, 0.5초 대기 후 1초 동안 30m 질주. 처음 부딪힌 생존자 1칸 */
+export const SPRINTER = Object.freeze({
+  SPEED_FACTOR: 1.1,
+  WINDUP: 0.5,
+  DASH_TIME: 1,
+  DASH_DISTANCE: 30,
+  HIT_RADIUS: 0.9,
+  SKILL_COOLDOWN: 15,
+});
 
 /** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
 export const CLASS_PICK_TIME = 15;
@@ -144,6 +201,10 @@ export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
   assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 근접 공격 (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
+  captain: { name: '선장', icon: '⚓', desc: '후크 (쿨타임 0.5초) · 닻을 던져 생존자를 끌고 옴 (쿨타임 7.5초)' },
+  ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과 · 할퀴기 (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
+  skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 3m (쿨타임 1.5초) · 생존자로 변장, 공격하면 풀림 (쿨타임 5초)' },
+  sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 3m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
 });
 
 /** 총알 방향 (yaw=0, pitch=0이면 -z) */

@@ -115,6 +115,28 @@ function noiseBurst(dur = 0.12, vol = 0.25, freq = 1200) {
 export const sfx = {
   swing: () => noiseBurst(0.18, 0.2, 700),
   jump: () => noiseBurst(0.08, 0.12, 500),
+  throwAnchor: () => {
+    noiseBurst(0.3, 0.25, 600);
+    tone({ freq: 300, to: 120, dur: 0.3, type: 'sawtooth', vol: 0.08 });
+  },
+  clank: () => {
+    tone({ freq: 1400, to: 900, dur: 0.15, type: 'square', vol: 0.12 });
+    tone({ freq: 1900, to: 1200, dur: 0.2, type: 'triangle', vol: 0.1, delay: 0.05 });
+    noiseBurst(0.12, 0.3, 3000);
+  },
+  wisp: () => {
+    for (let i = 0; i < 3; i++) tone({ freq: 700 + i * 260, to: 1400 + i * 300, dur: 0.6, type: 'sine', vol: 0.06, delay: i * 0.08 });
+  },
+  disguise: () => {
+    noiseBurst(0.4, 0.15, 900);
+    tone({ freq: 180, to: 90, dur: 0.5, type: 'sine', vol: 0.12 });
+  },
+  reveal: () => {
+    tone({ freq: 520, to: 260, dur: 0.5, type: 'sawtooth', vol: 0.14 });
+    tone({ freq: 555, to: 270, dur: 0.5, type: 'sawtooth', vol: 0.1 });
+  },
+  dashCharge: (vol = 1) => tone({ freq: 120, to: 480, dur: 0.5, type: 'sawtooth', vol: 0.12 * vol }),
+  dashWhoosh: (vol = 1) => noiseBurst(0.6, 0.5 * vol, 800),
   land: () => tone({ freq: 90, to: 50, dur: 0.1, type: 'sine', vol: 0.18 }),
   gunshot: (vol = 1) => {
     noiseBurst(0.35, 0.7 * vol, 900);

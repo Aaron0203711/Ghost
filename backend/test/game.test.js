@@ -830,3 +830,238 @@ test('점프: 공중에서도 방망이에는 맞는다', () => {
   game.handleAttack('p1', { yaw: 0, pitch: 0 });
   assert.equal(s1.hits, 1);
 });
+
+// ───────────── 새 직업: 선장 · 유령 · 살가죽 · 질주자 ─────────────
+
+/** 장애물 없는 들판에서 술래를 (0,0)에 -z를 보게 세우고 나머지 생존자는 멀리 */
+function field(cls, n = 3) {
+  const g = makeGame(n, 7, cls);
+  openField(g.game);
+  g.game.ghostWorld = new CollisionWorld([]);
+  g.hunter.x = 0;
+  g.hunter.z = 0;
+  g.hunter.yaw = 0;
+  for (const p of g.game.players.values()) if (p !== g.hunter) p.x = p.z = 500 + Math.random();
+  return g;
+}
+
+test('근접 공격 사거리·쿨타임: 선장 2m/0.5초, 유령 2m/0.5초, 살가죽 3m/1.5초, 질주자 3m/1초', () => {
+  for (const [cls, range, cd] of [
+    ['captain', 2, 0.5],
+    ['ghost', 2, 0.5],
+    ['skinwalker', 3, 1.5],
+    ['sprinter', 3, 1],
+  ]) {
+    const { game, hunter, s1 } = field(cls);
+    s1.x = 0;
+    s1.z = -(range + 0.3); // 사거리 안 (몸 반경 포함)
+    game.handleAttack('p1', { yaw: 0 });
+    assert.equal(s1.hits, 1, `${cls} 사거리 안`);
+    assert.ok(Math.abs(hunter.attackReadyAt - game.time - cd) < 1e-9, `${cls} 쿨타임 ${cd}`);
+    run(game, 3);
+    s1.z = -(range + 0.5); // 사거리 밖
+    game.handleAttack('p1', { yaw: 0 });
+    assert.equal(s1.hits, 1, `${cls} 사거리 밖`);
+  }
+});
+
+test('선장: 닻이 날아가 맞은 생존자를 피해 없이 1.5초 동안 선장 앞까지 끌고 옴', () => {
+  const { game, hunter, s1 } = field('captain');
+  s1.x = 0;
+  s1.z = -12;
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.anchors.length, 1);
+  game.tick(DT); // 날아가는 중 (초속 25m)
+  assert.ok(!s1.pulledBy);
+  run(game, 0.5);
+  assert.equal(s1.pulledBy, 'p1', '맞으면 끌려옴');
+  assert.equal(s1.hits, 0, '피해 없음');
+  // 끌려오는 동안 생존자 입력은 무시
+  game.handleInput('p2', { x: s1.x + 3, z: s1.z, moving: true, corr: s1.corr });
+  run(game, 1.6);
+  assert.ok(!s1.pulledBy, '1.5초 뒤 끝남');
+  assert.ok(Math.hypot(s1.x - 0, s1.z - -1.3) < 0.3, `선장 앞 (${s1.x.toFixed(2)}, ${s1.z.toFixed(2)})`);
+  // 쿨타임 7.5초
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.anchorSeq, 1, '쿨타임 중');
+  run(game, 6);
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.anchorSeq, 2, '7.5초 뒤 다시');
+});
+
+test('선장: 닻은 최대 20m, 벽에 막힘. 끌려오다 벽에 막히면 멈춤', () => {
+  {
+    const { game, s1 } = field('captain');
+    s1.x = 0;
+    s1.z = -22;
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 1.5);
+    assert.ok(!s1.pulledBy, '20m 밖은 안 닿음');
+    assert.equal(game.anchors.length, 0);
+  }
+  {
+    const { game, s1 } = field('captain');
+    s1.x = 0;
+    s1.z = -10;
+    game.world.add({ x: 0, z: -5, w: 4, d: 0.3, h: 1.9 });
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 1);
+    assert.ok(!s1.pulledBy, '벽에 막힘');
+  }
+  {
+    const { game, s1 } = field('captain');
+    s1.x = 0;
+    s1.z = -10;
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 0.45);
+    assert.equal(s1.pulledBy, 'p1');
+    game.world.add({ x: 0, z: s1.z + 1.2, w: 4, d: 0.3, h: 1.9 }); // 끌려오는 길에 벽
+    run(game, 1.5);
+    assert.ok(!s1.pulledBy);
+    assert.ok(s1.z < -5, `벽 앞에서 멈춤 (${s1.z.toFixed(2)})`);
+  }
+});
+
+test('유령: 담장·벽은 통과하지만 집·바깥 경계는 못 지나감', () => {
+  const { game, hunter } = makeGame(3, 7, 'ghost');
+  const wall = game.map.boxes.find((b) => b.kind === 'wall' && b.w > 3);
+  const house = game.map.boxes.find((b) => b.kind === 'house');
+  const tryCross = (b) => {
+    // 상자 한쪽에서 반대쪽으로 이동 시도
+    const along = b.w > b.d;
+    hunter.x = along ? b.x : b.x - b.w / 2 - 0.6;
+    hunter.z = along ? b.z - b.d / 2 - 0.6 : b.z;
+    hunter.budget = 99;
+    const tx = along ? b.x : b.x + b.w / 2 + 0.6;
+    const tz = along ? b.z + b.d / 2 + 0.6 : b.z;
+    game.handleInput('p1', { x: tx, z: tz, moving: true, corr: hunter.corr });
+    return Math.hypot(hunter.x - tx, hunter.z - tz) < 0.05;
+  };
+  assert.ok(tryCross(wall), '담장 통과');
+  assert.ok(!tryCross(house), '집은 막힘');
+  hunter.x = 74;
+  hunter.z = 0;
+  hunter.budget = 99;
+  game.handleInput('p1', { x: 78, z: 0, moving: true, corr: hunter.corr });
+  assert.ok(hunter.x < 75, '맵 밖으로 못 나감');
+  // 다른 직업은 담장 통과 불가
+  const other = makeGame(3, 7, 'maniac');
+  const h2 = other.hunter;
+  h2.x = wall.w > wall.d ? wall.x : wall.x - wall.w / 2 - 0.6;
+  h2.z = wall.w > wall.d ? wall.z - wall.d / 2 - 0.6 : wall.z;
+  h2.budget = 99;
+  const tx = wall.w > wall.d ? wall.x : wall.x + wall.w / 2 + 0.6;
+  const tz = wall.w > wall.d ? wall.z + wall.d / 2 + 0.6 : wall.z;
+  other.game.handleInput('p1', { x: tx, z: tz, moving: true, corr: h2.corr });
+  assert.ok(Math.hypot(h2.x - tx, h2.z - tz) > 0.3, '미치광이는 막힘');
+});
+
+test('유령: 할퀴기는 벽 너머로는 안 됨', () => {
+  const { game, s1 } = field('ghost');
+  s1.x = 0;
+  s1.z = -1.5;
+  game.world.add({ x: 0, z: -0.7, w: 3, d: 0.3, h: 1.9 });
+  game.handleAttack('p1', { yaw: 0 });
+  assert.equal(s1.hits, 0);
+});
+
+test('유령: 보이는 생존자에게만 유도탄, 초속 5m로 벽을 통과해 따라가 1칸, 5초 뒤 사라짐', () => {
+  const { game, s1, s2 } = field('ghost', 4);
+  const s3 = game.players.get('p4');
+  s1.x = 0;
+  s1.z = -8; // 정면, 보임
+  s2.x = 0;
+  s2.z = 8; // 등 뒤
+  s3.x = 3;
+  s3.z = -15; // 정면이지만 벽 뒤
+  game.world.add({ x: 3, z: -12, w: 3, d: 0.3, h: 1.9 });
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.wisps.length, 1, '보이는 1명에게만');
+  assert.equal(game.wisps[0].target, 'p2');
+  // 대상과 유도탄 사이에 벽이 생겨도 통과해서 따라간다
+  game.world.add({ x: 0, z: -4, w: 3, d: 0.3, h: 1.9 });
+  run(game, 1);
+  assert.ok(Math.abs(game.wisps[0].z - -5) < 0.3, `초속 5m (${game.wisps[0].z})`);
+  run(game, 0.6);
+  assert.equal(s1.hits, 1, '맞으면 1칸');
+  assert.equal(game.wisps.length, 0);
+  // 달려서 5초 동안 도망치면 사라짐 (시야를 가리던 벽은 치운다)
+  game.world = new CollisionWorld([]);
+  run(game, 7);
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.wisps.filter((w) => w.target === 'p2').length, 1, '다시 보이는 생존자에게 발사');
+  for (let i = 0; i < 120; i++) {
+    s1.z -= RULES.SURVIVOR_RUN_SPEED * DT;
+    game.tick(DT);
+  }
+  assert.equal(game.wisps.filter((w) => w.target === 'p2').length, 0, '5초 뒤 사라짐');
+  assert.equal(s1.hits, 1, '달리면 따돌림');
+});
+
+test('살가죽: 무작위 생존자로 변장 (생존자에게는 그 모습으로만 전달), 16km/h, 공격 키를 누르면 바로 풀림', () => {
+  const { game, hunter, s1, events } = field('skinwalker');
+  game.handleSkill('p1', {});
+  assert.ok(['p2', 'p3'].includes(hunter.disguiseAs));
+  const forSurvivor = game.snapshotFor('p2').players.find((p) => p.id === 'p1');
+  assert.equal(forSurvivor.look, hunter.disguiseAs);
+  assert.equal(forSurvivor.disg, undefined);
+  assert.ok(!events.some((e) => e.msg.kind === 'disguise' && e.msg.on && (e.to === 'p2' || e.to === null)), '생존자에게 알리지 않음');
+  run(game, 2);
+  assert.ok(Math.abs(hunter.budget - RULES.SURVIVOR_WALK_SPEED * 0.6) < 0.01, '생존자 걷기 속도');
+  // 빗나가도 공격 키를 누르면 풀림
+  s1.x = 0;
+  s1.z = 30;
+  game.handleAttack('p1', { yaw: 0 });
+  assert.equal(hunter.disguiseAs, null);
+  assert.ok(Math.abs(hunter.skillReadyAt - (game.time + 5)) < 1e-9, '풀린 뒤 5초 쿨타임');
+  game.handleSkill('p1', {});
+  assert.equal(hunter.disguiseAs, null, '쿨타임 중');
+  run(game, 5.05);
+  game.handleSkill('p1', {});
+  assert.ok(hunter.disguiseAs, '5초 뒤 다시');
+});
+
+test('질주자: 평소 22km/h, 0.5초 대기 후 보던 방향으로 1초에 30m, 첫 생존자에게 1칸 주고 멈춤', () => {
+  {
+    const { game, hunter } = field('sprinter');
+    run(game, 2);
+    assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 1.1 * 0.6) < 0.01, '+10%');
+    game.handleSkill('p1', { yaw: 0 });
+    hunter.yaw = Math.PI / 2; // 대기 중에 돌아봐도 방향은 고정
+    run(game, 0.45);
+    assert.equal(hunter.dashPhase, 'windup');
+    assert.ok(Math.abs(hunter.z) < 1e-6, '대기 중 정지');
+    run(game, 1.1);
+    assert.equal(hunter.dashPhase, null);
+    assert.ok(Math.abs(hunter.z - -30) < 0.8 && Math.abs(hunter.x) < 0.01, `30m 질주 (${hunter.z.toFixed(2)})`);
+    assert.ok(Math.abs(hunter.skillReadyAt - game.time - 15) < 0.06, '쿨타임 15초');
+  }
+  {
+    const { game, hunter, s1, s2 } = field('sprinter');
+    s1.x = 0;
+    s1.z = -10;
+    s2.x = 0;
+    s2.z = -15;
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 1.6);
+    assert.equal(s1.hits, 1, '첫 생존자 1칸');
+    assert.equal(s2.hits, 0, '멈춰서 다음 생존자는 안 맞음');
+    assert.ok(hunter.z > -11, `부딪힌 곳에서 멈춤 (${hunter.z.toFixed(2)})`);
+  }
+  {
+    const { game, hunter } = field('sprinter');
+    game.world.add({ x: 0, z: -8, w: 4, d: 0.3, h: 1.9 });
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 1.6);
+    assert.ok(hunter.z > -8, `벽에 막혀 멈춤 (${hunter.z.toFixed(2)})`);
+    assert.equal(hunter.dashPhase, null);
+  }
+});
+
+test('유령: 보이는 생존자가 없어도 스킬 쿨타임은 소모됨', () => {
+  const { game, hunter, events } = field('ghost');
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.wisps.length, 0);
+  assert.ok(Math.abs(hunter.skillReadyAt - game.time - 7) < 1e-9);
+  assert.equal(events.find((e) => e.msg.kind === 'wisps').msg.count, 0);
+});

@@ -98,23 +98,7 @@
           <div class="select-timer"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" /><circle id="select-ring" cx="18" cy="18" r="16" /></svg><b id="select-time">15</b></div>
           <div id="select-hunter">
             <h2>당신은 술래! 직업을 고르세요</h2>
-            <div class="class-list">
-              <button class="class-card" data-cls="maniac">
-                <span class="cls-icon">👹</span>
-                <strong>미치광이</strong>
-                <span class="cls-desc">방망이 근접 공격 · 쿨타임 1초<br />덫 3개 (30초마다 1개 충전)</span>
-              </button>
-              <button class="class-card" data-cls="assassin">
-                <span class="cls-icon">🥷</span>
-                <strong>암살자</strong>
-                <span class="cls-desc">쿠나이 근접 공격 · 쿨타임 1.5초<br />15초 투명화 · 이동 속도 +50%<br />명중하면 풀리고 3.5초 감속 (쿨타임 8초)</span>
-              </button>
-              <button class="class-card" data-cls="sniper">
-                <span class="cls-icon">🎯</span>
-                <strong>저격수</strong>
-                <span class="cls-desc">저격총 원거리 공격 · 쿨타임 2초<br />조준 확대 · 30m 밖 명중 시 2칸</span>
-              </button>
-            </div>
+            <div class="class-list" id="class-list"><!-- 직업 카드는 main.js가 CLASS_INFO로 만든다 --></div>
             <p class="mate" id="select-mate"></p>
             <p class="hint" id="select-status"></p>
             <p class="hint">시간 안에 고르지 않으면 무작위로 정해져요. 두 술래가 같은 직업을 골라도 돼요.</p>
@@ -123,7 +107,7 @@
             <h2 id="select-wait-title">술래가 정해졌어요</h2>
             <p class="wait-name"><b id="select-hunter-name"></b> 님이 직업을 고르는 중…</p>
             <div class="wait-dots"><i></i><i></i><i></i></div>
-            <p class="hint">술래 직업은 <b>미치광이</b>(방망이·덫), <b>암살자</b>(쿠나이·투명화), <b>저격수</b>(저격총) 중 하나예요.</p>
+            <p class="hint">술래 직업은 미치광이·암살자·저격수·선장·유령·살가죽을 뒤집어 쓴 자·질주자 중 하나예요.</p>
           </div>
         </div>
       </section>
@@ -160,7 +144,7 @@
           <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
           <div id="btn-jump" class="ctl-btn jump"><span class="ico">⤒</span><span class="lbl">점프</span></div>
           <div id="btn-action" class="ctl-btn action"><span class="ico"></span><span class="lbl"></span><span class="count"></span><span class="timer"></span></div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span> · Esc 커서 해제</p>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>

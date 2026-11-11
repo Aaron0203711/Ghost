@@ -1749,3 +1749,67 @@ body.touch #pc-hint {
     bottom: calc(190px + var(--safe-b));
   }
 }
+
+/* 직업 7개: 넓은 화면 4열, 좁으면 2열, 낮은 화면은 작게 */
+.class-list {
+  grid-template-columns: repeat(4, 1fr);
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+#screen-select .menu-card.wide {
+  width: min(860px, calc(100vw - 24px));
+}
+
+.class-card .cls-desc {
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .class-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-height: 520px) {
+  .class-list {
+    grid-template-columns: repeat(4, 1fr);
+    max-height: 62vh;
+    gap: 6px;
+  }
+  .class-card {
+    padding: 6px;
+    gap: 2px;
+  }
+  .class-card .cls-icon {
+    font-size: 24px;
+  }
+  .class-card strong {
+    font-size: 14px;
+  }
+  .class-card .cls-desc {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .select-card h2 {
+    margin: 0;
+  }
+}
+
+.cls-skill .ctl-btn .count,
+.cls-skill .m-only {
+  display: none;
+}
+
+.cls-skill .ctl-btn .timer {
+  display: block;
+}
+
+#screen-game.disguised .badge.hunter::after {
+  content: ' · 🎭 변장 중';
+  color: #ffd0b0;
+}
+
+#screen-game:not(.cls-skill) .sk-only {
+  display: none;
+}

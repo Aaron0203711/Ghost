@@ -128,7 +128,7 @@ test('게임이 끝나면 같은 방 대기실로 돌아간다', () => {
   mgr.handle(b, { t: 'join', code: room.code });
   mgr.handle(a, { t: 'start' });
   mgr.selectTimeout(room); // 15초 동안 고르지 않음 → 무작위 직업
-  assert.ok(['maniac', 'sniper', 'assassin'].includes(room.game.hunterClass));
+  assert.ok(['maniac', 'sniper', 'assassin', 'captain', 'ghost', 'skinwalker', 'sprinter'].includes(room.game.hunterClass));
   assert.equal(a.last('start').autoPicked, true);
   const hunterId = room.game.hunterId;
   const survivor = hunterId === a.id ? b : a;
@@ -276,7 +276,7 @@ test('술래 2명 중 1명만 고르고 시간이 지나면 나머지는 무작�
   mgr.selectTimeout(room);
   assert.equal(room.state, 'playing');
   assert.equal(room.game.players.get(id1).cls, 'maniac');
-  assert.ok(['maniac', 'sniper', 'assassin'].includes(room.game.players.get(id2).cls));
+  assert.ok(['maniac', 'sniper', 'assassin', 'captain', 'ghost', 'skinwalker', 'sprinter'].includes(room.game.players.get(id2).cls));
   assert.equal(h1.last('start').autoPicked, false);
   assert.equal(h2.last('start').autoPicked, true);
 });

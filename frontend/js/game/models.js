@@ -29,6 +29,104 @@ export function makeBat() {
   return g;
 }
 
+/** 선장 후크: 손잡이가 원점, 갈고리가 +y 끝에서 휘어짐 */
+export function makeHook() {
+  const g = new THREE.Group();
+  const steel = mat('#c9cdd2');
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.12, 10), mat('#5a3b22'));
+  cuff.position.y = 0.04;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.22, 8), steel);
+  shaft.position.y = 0.2;
+  const curve = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.014, 6, 16, Math.PI * 1.25), steel);
+  curve.position.set(0.07, 0.31, 0);
+  curve.rotation.z = Math.PI * 0.95;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.016, 0.05, 6), steel);
+  tip.position.set(0.14, 0.27, 0);
+  tip.rotation.z = Math.PI;
+  g.add(cuff, shaft, curve, tip);
+  return g;
+}
+
+/** 유령 손톱: 손가락 끝에 길고 하얀 손톱 세 개 (+y 방향) */
+export function makeClaws() {
+  const g = new THREE.Group();
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.05), mat('#e8eef4', { emissive: '#3a4a5a' }));
+  palm.position.y = 0.03;
+  g.add(palm);
+  for (const x of [-0.035, 0, 0.035]) {
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.22, 5), mat('#f4f8ff', { emissive: '#4a6a8a' }));
+    claw.position.set(x, 0.17, 0);
+    claw.rotation.z = -x * 2;
+    g.add(claw);
+  }
+  return g;
+}
+
+/** 살가죽 갈고리: 쇠사슬 끝에 매달린 녹슨 갈고리 (+y 방향) */
+export function makeChainHook() {
+  const g = new THREE.Group();
+  const iron = mat('#6f5a48');
+  for (let i = 0; i < 5; i++) {
+    const link = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.007, 4, 10), iron);
+    link.position.y = 0.03 + i * 0.045;
+    link.rotation.y = i % 2 ? Math.PI / 2 : 0;
+    g.add(link);
+  }
+  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.016, 6, 16, Math.PI * 1.3), mat('#8a6b52'));
+  hook.position.set(0.06, 0.33, 0);
+  hook.rotation.z = Math.PI * 0.9;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 6), mat('#8a6b52'));
+  tip.position.set(0.15, 0.29, 0);
+  tip.rotation.z = Math.PI;
+  g.add(hook, tip);
+  return g;
+}
+
+/** 선장의 닻 (날아가는 모양) */
+export function makeAnchor() {
+  const g = new THREE.Group();
+  const iron = mat('#4a4f57', { emissive: '#111' });
+  const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 8), iron);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 6, 14), iron);
+  ring.position.y = 0.52;
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.06), iron);
+  stock.position.y = 0.38;
+  const arms = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.045, 6, 18, Math.PI), iron);
+  arms.rotation.z = Math.PI;
+  arms.position.y = -0.12;
+  for (const s of [-1, 1]) {
+    const fluke = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 4), iron);
+    fluke.position.set(0.32 * s, -0.08, 0);
+    g.add(fluke);
+  }
+  g.add(shank, ring, stock, arms);
+  g.scale.setScalar(0.9);
+  return g;
+}
+
+/** 유령의 작은 유도탄: 빛나는 꼬마 유령 */
+export function makeWisp() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 12, 10),
+    new THREE.MeshBasicMaterial({ color: '#d9f2ff', transparent: true, opacity: 0.85 }),
+  );
+  const tail = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2, 0.45, 10),
+    new THREE.MeshBasicMaterial({ color: '#9fd8ff', transparent: true, opacity: 0.5 }),
+  );
+  tail.position.y = -0.3;
+  tail.rotation.x = Math.PI;
+  for (const s of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), new THREE.MeshBasicMaterial({ color: '#0b0f1a' }));
+    eye.position.set(0.07 * s, 0.04, 0.19);
+    g.add(eye);
+  }
+  const light = new THREE.PointLight('#9fd8ff', 2.5, 5, 1.6);
+  g.add(body, tail, light);
+  return g;
+}
+
 /** 쿠나이: 손잡이 끝(고리)이 원점, 날이 +y 방향 */
 export function makeKunai() {
   const g = new THREE.Group();
@@ -89,14 +187,25 @@ export class Avatar {
     const isHunter = role === 'hunter';
     const sniper = this.cls === 'sniper';
     const assassin = this.cls === 'assassin';
+    const captain = this.cls === 'captain';
+    const ghost = this.cls === 'ghost';
+    const skin_ = this.cls === 'skinwalker';
+    const sprinter = this.cls === 'sprinter';
+    // 새 직업 색: [윗옷, 바지, 피부]
+    const palette = {
+      captain: ['#1f2f5a', '#2b2420', '#d7b089'],
+      ghost: ['#dfe6ee', '#dfe6ee', '#eef3f8'],
+      skinwalker: ['#c79a86', '#7a4f3f', '#d9a58e'],
+      sprinter: ['#c8282d', '#1c1c22', '#e3b98f'],
+    }[this.cls];
     const scale = isHunter ? 1.12 : 1;
     const body = new THREE.Group();
     body.scale.setScalar(scale);
     this.group.add(body);
 
-    const shirt = assassin ? '#1c2230' : sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
-    const pants = assassin ? '#141822' : sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
-    const skin = assassin ? '#d9b38f' : sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
+    const shirt = palette ? palette[0] : assassin ? '#1c2230' : sniper ? '#3e4a33' : isHunter ? '#2a2326' : SURVIVOR_COLORS[colorIndex % SURVIVOR_COLORS.length];
+    const pants = palette ? palette[1] : assassin ? '#141822' : sniper ? '#2c3326' : isHunter ? '#1a1718' : '#3b3f4a';
+    const skin = palette ? palette[2] : assassin ? '#d9b38f' : sniper ? '#26292c' : isHunter ? '#b8342c' : '#e9c6a1';
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.26), mat(shirt));
     torso.position.y = 1.15;
@@ -104,7 +213,58 @@ export class Avatar {
     head.position.y = 1.62;
     body.add(torso, head);
 
-    if (assassin) {
+    if (captain) {
+      // 선장: 삼각 모자 + 수염
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.03, 3), mat('#15151a'));
+      brim.position.y = 1.76;
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.14, 12), mat('#15151a'));
+      crown.position.y = 1.84;
+      const beard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.12), mat('#3a2a1e'));
+      beard.position.set(0, 1.52, -0.11);
+      const patch = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.02), mat('#111'));
+      patch.position.set(0.06, 1.65, -0.16);
+      body.add(brim, crown, beard, patch);
+    } else if (ghost) {
+      // 유령: 텅 빈 검은 눈과 입
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), new THREE.MeshBasicMaterial({ color: '#05070c' }));
+        eye.position.set(0.06 * s, 1.65, -0.14);
+        eye.scale.set(1, 1.5, 0.6);
+        body.add(eye);
+      }
+      const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({ color: '#05070c' }));
+      mouth.position.set(0, 1.55, -0.15);
+      mouth.scale.set(0.8, 1.6, 0.5);
+      // 아래로 흘러내리는 천 자락
+      const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.1, 12, 1, true), mat('#dfe6ee', { side: THREE.DoubleSide }));
+      cloak.position.y = 0.62;
+      body.add(mouth, cloak);
+    } else if (skin_) {
+      // 살가죽: 꿰맨 자국과 짝짝이 눈
+      for (const [x, y, rz] of [
+        [-0.05, 1.68, 0.3],
+        [0.07, 1.58, -0.4],
+        [0, 1.72, 1.4],
+      ]) {
+        const stitch = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.012, 0.01), mat('#3a1a14'));
+        stitch.position.set(x, y, -0.165);
+        stitch.rotation.z = rz;
+        body.add(stitch);
+      }
+      const eyeA = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({ color: '#f2efe4' }));
+      eyeA.position.set(0.06, 1.64, -0.15);
+      const eyeB = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), new THREE.MeshBasicMaterial({ color: '#111' }));
+      eyeB.position.set(-0.06, 1.63, -0.16);
+      body.add(eyeA, eyeB);
+    } else if (sprinter) {
+      // 질주자: 흰 머리띠 + 짧은 머리
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.176, 0.02, 6, 20), mat('#f2f2f2'));
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 1.68;
+      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.175, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), mat('#1b1410'));
+      hair.position.y = 1.65;
+      body.add(band, hair);
+    } else if (assassin) {
       // 암살자: 두건 + 입을 가린 복면 + 빨간 머리띠
       const hood = new THREE.Mesh(new THREE.SphereGeometry(0.182, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.9), mat('#1c2230'));
       hood.position.y = 1.63;
@@ -162,6 +322,18 @@ export class Avatar {
     this.armR.position.set(0.3, 1.42, 0); // 오른손 (+x)
     body.add(this.legL, this.legR, this.armL, this.armR);
 
+    if (captain || ghost || skin_) {
+      // 오른손 무기: 후크 / 손톱 / 쇠사슬 갈고리
+      this.weapon = captain ? makeHook() : ghost ? makeClaws() : makeChainHook();
+      this.weapon.position.set(0, -0.58, 0);
+      this.weapon.rotation.x = Math.PI;
+      this.armR.add(this.weapon);
+    }
+    if (ghost) {
+      // 다리 없이 떠다닌다
+      this.legL.visible = false;
+      this.legR.visible = false;
+    }
     if (assassin) {
       this.kunai = makeKunai();
       this.kunai.position.set(0, -0.6, 0);
@@ -201,6 +373,9 @@ export class Avatar {
     this.flash = 0;
     this.materials = [];
     this.group.traverse((o) => o.material && this.materials.push(o.material));
+    this.baseAlpha = ghost ? 0.55 : 1; // 유령은 늘 반투명
+    this.ghost = null;
+    this.setGhost(1);
   }
 
   setTarget(x, z, yaw, snap = false) {
@@ -221,10 +396,11 @@ export class Avatar {
   setGhost(alpha) {
     if (this.ghost === alpha) return;
     this.ghost = alpha;
+    const a = alpha * this.baseAlpha;
     for (const m of this.materials) {
-      m.transparent = alpha < 1;
-      m.opacity = alpha;
-      m.depthWrite = alpha >= 1;
+      m.transparent = a < 1;
+      m.opacity = a;
+      m.depthWrite = a >= 1;
       m.needsUpdate = true;
     }
   }
@@ -271,6 +447,11 @@ export class Avatar {
       // 앞으로 팔을 뻗어 수리
       this.armL.rotation.x = 1.2 + Math.sin(performance.now() / 120) * 0.15;
       this.armR.rotation.x = 1.2 - Math.sin(performance.now() / 120) * 0.15;
+    } else if (this.cls === 'sprinter' && this.swing > 0) {
+      // 오른발 앞차기
+      this.swing = Math.max(0, this.swing - dt * 4);
+      const t = 1 - this.swing;
+      this.legR.rotation.x = t < 0.3 ? -(t / 0.3) * 1.6 : -1.6 + Math.min(1, (t - 0.3) / 0.5) * 1.6;
     } else if (this.cls === 'assassin' && this.swing > 0) {
       // 앞으로 찌르기
       this.swing = Math.max(0, this.swing - dt * 4);
@@ -295,6 +476,21 @@ export class Avatar {
       this.legL.rotation.x = 0.2;
       this.legR.rotation.x = -0.1;
     }
+    if (this.dash === 'windup') {
+      // 질주 대기: 몸을 낮추고 웅크림
+      this.legL.rotation.x = 0.8;
+      this.legR.rotation.x = -0.6;
+      this.armL.rotation.x = -0.8;
+      this.armR.rotation.x = -0.8;
+    } else if (this.dash === 'dash') {
+      this.armL.rotation.x = -1.4;
+      this.armR.rotation.x = -1.4;
+      this.legL.rotation.x = Math.sin(performance.now() / 40) * 0.9;
+      this.legR.rotation.x = -this.legL.rotation.x;
+    }
+    if (this.cls === 'ghost') this.group.position.y += 0.15 + Math.sin(performance.now() / 500) * 0.08;
+    if (this.pulled) this.group.rotation.z = Math.sin(performance.now() / 60) * 0.08; // 끌려가며 버둥거림
+    else this.group.rotation.z = 0;
 
     if (this.flash > 0) {
       this.flash -= dt;
@@ -316,17 +512,29 @@ export class Avatar {
 
 /** 1인칭 시점에서 화면 오른쪽 아래에 보이는 방망이 (오른손) */
 export class BatViewModel {
-  constructor(camera) {
+  /**
+   * 1인칭 근접 무기 (오른손). 기본은 미치광이 방망이.
+   * opts: weapon(모델), arm/fist(색), speed(휘두르기 빠르기), scale
+   */
+  constructor(camera, opts = {}) {
     this.root = new THREE.Group();
     this.hand = new THREE.Group();
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.42), mat('#2a2326'));
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.42), mat(opts.arm || '#2a2326'));
     arm.position.set(0, -0.03, 0.2);
-    const fist = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), mat('#b8342c'));
-    this.bat = makeBat();
+    const fist = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), mat(opts.fist || '#b8342c'));
+    this.bat = opts.weapon || makeBat();
     this.bat.position.set(0, -0.02, 0);
     this.hand.add(arm, fist, this.bat);
     this.root.add(this.hand);
-    this.root.scale.setScalar(0.55);
+    this.speed = opts.speed || 3.5;
+    if (opts.alpha) {
+      this.root.traverse((o) => {
+        if (!o.material) return;
+        o.material.transparent = true;
+        o.material.opacity = opts.alpha;
+      });
+    }
+    this.root.scale.setScalar(opts.scale || 0.55);
     this.root.position.set(0.3, -0.3, -0.5);
     camera.add(this.root);
     this.swing = 0;
@@ -348,7 +556,7 @@ export class BatViewModel {
     const by = Math.sin(this.bob) * (moving ? 0.015 : 0.004);
     const bx = Math.cos(this.bob * 0.5) * (moving ? 0.012 : 0.002);
     if (this.swing > 0) {
-      this.swing = Math.max(0, this.swing - dt * 3.5);
+      this.swing = Math.max(0, this.swing - dt * this.speed);
       const t = 1 - this.swing;
       // 들어올렸다가 화면 가운데로 내려친다
       const up = t < 0.25 ? t / 0.25 : 1 - Math.min(1, (t - 0.25) / 0.3);
@@ -636,5 +844,59 @@ export class KunaiViewModel {
     // 평소에는 살짝 비스듬히, 공격하면 화면 가운데로 찌른다
     this.hand.rotation.set(0.15 - thrust * 0.1, 0.25 - thrust * 0.3, -0.2);
     this.root.position.set(0.28 + bx - thrust * 0.12, -0.27 + by + thrust * 0.05, -0.45 - thrust * 0.22);
+  }
+}
+
+/** 1인칭 무기 고르기: 직업별 손에 든 것 */
+export function makeViewModel(camera, cls) {
+  switch (cls) {
+    case 'captain':
+      return new BatViewModel(camera, { weapon: makeHook(), arm: '#1f2f5a', fist: '#d7b089', speed: 6, scale: 0.75 });
+    case 'ghost':
+      return new BatViewModel(camera, { weapon: makeClaws(), arm: '#dfe6ee', fist: '#eef3f8', speed: 6, scale: 0.8, alpha: 0.6 });
+    case 'skinwalker':
+      return new BatViewModel(camera, { weapon: makeChainHook(), arm: '#c79a86', fist: '#d9a58e', speed: 3, scale: 0.75 });
+    case 'sprinter':
+      return new KickViewModel(camera);
+    case 'sniper':
+      return new RifleViewModel(camera);
+    case 'assassin':
+      return new KunaiViewModel(camera);
+    default:
+      return new BatViewModel(camera);
+  }
+}
+
+/** 질주자 1인칭: 평소엔 빈손, 공격하면 화면 아래에서 발이 튀어나와 찬다 */
+export class KickViewModel {
+  constructor(camera) {
+    this.root = new THREE.Group();
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.7), mat('#1c1c22'));
+    leg.position.z = 0.3;
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.14, 0.28), mat('#f2f2f2'));
+    shoe.position.set(0, -0.02, -0.08);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.3), mat('#c8282d'));
+    sole.position.set(0, -0.1, -0.08);
+    this.root.add(leg, shoe, sole);
+    this.root.visible = false;
+    camera.add(this.root);
+    this.swing = 0;
+  }
+
+  playSwing() {
+    this.swing = 1;
+  }
+
+  update(dt) {
+    if (this.swing <= 0) {
+      this.root.visible = false;
+      return;
+    }
+    this.swing = Math.max(0, this.swing - dt * 4);
+    const t = 1 - this.swing;
+    const out = t < 0.35 ? t / 0.35 : 1 - (t - 0.35) / 0.65;
+    this.root.visible = true;
+    this.root.position.set(0.05, -0.75 + out * 0.45, -0.55 - out * 0.35);
+    this.root.rotation.set(0.5 - out * 0.4, 0, 0);
   }
 }

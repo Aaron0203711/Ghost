@@ -527,6 +527,20 @@ function showClassSelect(m) {
   show('screen-select');
 }
 
+// 직업 카드: 공통 규칙(CLASS_INFO)에서 만든다
+{
+  const list = $('class-list');
+  for (const [id, c] of Object.entries(CLASS_INFO)) {
+    const card = document.createElement('button');
+    card.className = 'class-card';
+    card.dataset.cls = id;
+    card.innerHTML = `<span class="cls-icon">${c.icon}</span><strong></strong><span class="cls-desc"></span>`;
+    card.querySelector('strong').textContent = c.name;
+    card.querySelector('.cls-desc').textContent = c.desc;
+    list.appendChild(card);
+  }
+}
+
 document.querySelectorAll('.class-card').forEach((card) =>
   tap(card, () => {
     document.querySelectorAll('.class-card').forEach((c) => {

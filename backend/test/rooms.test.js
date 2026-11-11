@@ -388,3 +388,40 @@ test('음성: 연결 신호는 같은 방 사람에게만 전달되고, 마이�
   mgr.handle(b, { t: 'mic', on: false });
   assert.equal(a.last('room').players.find((p) => p.id === b.id).mic, false);
 });
+
+test('맵 선택: 기본은 랜덤, 방장만 맵을 정할 수 있고 정한 맵으로만 시작', () => {
+  const { mgr, members, room } = fullRoom(2);
+  const [host, other] = members;
+  assert.equal(other.last('room').map, 'random');
+  assert.deepEqual(other.last('room').maps.map((m) => m.id), ['village', 'mine', 'backrooms']);
+
+  mgr.handle(other, { t: 'setMap', map: 'mine' });
+  assert.equal(other.last('error').code, 'notHost');
+  assert.equal(host.last('room').map, 'random');
+
+  mgr.handle(host, { t: 'setMap', map: 'nope' });
+  assert.equal(host.last('room').map, 'random', '없는 맵은 무시');
+
+  mgr.handle(host, { t: 'setMap', map: 'backrooms' });
+  assert.equal(other.last('room').map, 'backrooms');
+  for (let k = 0; k < 6; k++) {
+    mgr.handle(host, { t: 'start' });
+    assert.equal(other.last('classSelect').map.id, 'backrooms');
+    mgr.handle(host, { t: 'setMap', map: 'village' });
+    assert.equal(room.map, 'backrooms', '게임 중에는 바꿀 수 없음');
+    mgr.selectTimeout(room);
+    assert.equal(other.last('start').map.theme, 'backrooms');
+    mgr.endGame(room);
+  }
+  assert.equal(other.last('room').map, 'backrooms', '다음 판에도 유지');
+
+  mgr.handle(host, { t: 'setMap', map: 'random' });
+  const seen = new Set();
+  for (let k = 0; k < 24; k++) {
+    mgr.handle(host, { t: 'start' });
+    seen.add(other.last('classSelect').map.id);
+    mgr.selectTimeout(room);
+    mgr.endGame(room);
+  }
+  assert.equal(seen.size, 3, '랜덤으로 되돌리면 세 맵 모두 나옴');
+});

@@ -209,6 +209,31 @@ tap($('btn-join'), joinRoom);
 
 // ───────────────────────── 대기실 ─────────────────────────
 
+// 맵 선택: 방장만 고를 수 있고, 다른 사람은 정해진 맵을 본다
+function renderLobbyMaps(isHost) {
+  const box = $('lobby-maps');
+  const options = [{ id: 'random', name: '랜덤', icon: '🎲' }, ...(room.maps || [])];
+  const current = room.map || 'random';
+  box.classList.toggle('readonly', !isHost);
+  box.innerHTML = '';
+  for (const m of options) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'map-choice';
+    b.dataset.map = m.id;
+    b.disabled = !isHost;
+    b.setAttribute('aria-pressed', String(m.id === current));
+    b.classList.toggle('on', m.id === current);
+    b.textContent = `${m.icon} ${m.name}`;
+    box.appendChild(b);
+  }
+}
+$('lobby-maps').addEventListener('click', (e) => {
+  const b = e.target.closest('.map-choice');
+  if (!b || b.disabled || !room || room.hostId !== myId || b.dataset.map === room.map) return;
+  net.send({ t: 'setMap', map: b.dataset.map });
+});
+
 function renderLobby() {
   if (!room) return;
   const isHost = room.hostId === myId;
@@ -219,6 +244,7 @@ function renderLobby() {
   $('input-private').checked = !!room.private;
   $('lobby-private-tag').classList.toggle('hidden', isHost);
   $('lobby-private-tag').textContent = room.private ? '🔒 비공개 방' : '🔓 공개 방';
+  renderLobbyMaps(isHost);
   const rules = matchRules(room.players.length);
   const n = room.players.length;
   const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : '';

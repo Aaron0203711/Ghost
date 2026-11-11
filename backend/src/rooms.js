@@ -66,6 +66,9 @@ export class RoomManager {
       case 'setPrivate':
         this.setPrivate(client, msg.on);
         break;
+      case 'setMap':
+        this.setMap(client, msg.map);
+        break;
       case 'join':
         this.join(client, msg.code, msg.name);
         break;
@@ -132,7 +135,7 @@ export class RoomManager {
     do code = randomCode(this.rand);
     while (this.rooms.has(code));
     // 새 방은 기본 공개(방 목록에 보임). 비공개 방은 목록에 안 나오고 코드로만 들어온다
-    const room = { code, hostId: client.id, members: [client], state: 'lobby', private: isPrivate === true, game: null, timer: null, select: null };
+    const room = { code, hostId: client.id, members: [client], state: 'lobby', private: isPrivate === true, map: 'random', game: null, timer: null, select: null };
     this.rooms.set(code, room);
     client.room = room;
     this.watchers.delete(client);
@@ -163,6 +166,17 @@ export class RoomManager {
     if (!room) return;
     if (room.hostId !== client.id) return this.error(client, 'notHost', '방장만 공개 설정을 바꿀 수 있어요.');
     room.private = on === true;
+    this.broadcastRoom(room);
+  }
+
+  /** 방장이 맵을 정한다: 'random'(판마다 무작위) 또는 맵 id */
+  setMap(client, map) {
+    const room = client.room;
+    if (!room) return;
+    if (room.hostId !== client.id) return this.error(client, 'notHost', '방장만 맵을 정할 수 있어요.');
+    if (room.state !== 'lobby') return;
+    if (map !== 'random' && !Object.hasOwn(MAP_THEMES, map)) return;
+    room.map = map;
     this.broadcastRoom(room);
   }
 
@@ -236,9 +250,10 @@ export class RoomManager {
     const hunters = [];
     while (hunters.length < count) hunters.push(pool.splice(Math.floor(this.rand() * pool.length), 1)[0]);
     room.state = 'selecting';
-    // 맵은 술래가 직업을 고르는 동안 무작위로 정해진다
+    // 맵: 방장이 정한 맵, '랜덤'이면 술래가 직업을 고르는 동안 무작위로 정해진다
     const themes = Object.keys(MAP_THEMES);
-    const theme = this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
+    const theme =
+      room.map !== 'random' && MAP_THEMES[room.map] ? room.map : this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
     room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null, theme };
     const msg = {
       t: 'classSelect',
@@ -349,6 +364,8 @@ export class RoomManager {
       hostId: room.hostId,
       state: room.state,
       private: room.private,
+      map: room.map,
+      maps: Object.values(MAP_THEMES),
       maxPlayers: RULES.MAX_PLAYERS,
       minPlayers: RULES.MIN_PLAYERS,
       players: room.members.map((m) => ({ id: m.id, name: m.name, mic: m.mic === true })),

@@ -5,7 +5,7 @@ import { Batch, texturedBox, place, gableRoof, groundPlane, lambert } from './wo
 import { canvasTexture, noise, wood as woodTex } from './textures.js';
 
 export const MINE_CEILING = 11;
-export const MINE_FOG = { color: '#17120f', near: 6, far: 60 };
+export const MINE_FOG = { color: '#2a221c', near: 8, far: 60 };
 
 // ───────────── 텍스처 ─────────────
 

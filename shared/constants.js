@@ -99,8 +99,8 @@ export function speedFor(role, running, mods = {}) {
 /** 딱 5명(술래 포함)이면 발전기 5개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
 export const LARGE_MATCH = Object.freeze({ PLAYERS: 5, GENERATORS: 5, HITS_TO_CATCH: 2 });
 
-/** 6명 이상이면 술래 2명, 발전기 3개, 생존자 체력 3칸 */
-export const DUO_MATCH = Object.freeze({ PLAYERS: 6, HUNTERS: 2, GENERATORS: 3, HITS_TO_CATCH: 3 });
+/** 6명 이상이면 술래 2명, 발전기 5개(모두 켜야 탈출구가 열림), 생존자 체력 3칸 */
+export const DUO_MATCH = Object.freeze({ PLAYERS: 6, HUNTERS: 2, GENERATORS: 5, HITS_TO_CATCH: 3 });
 
 /** 인원 수에 따라 달라지는 한 판의 규칙 */
 export function matchRules(playerCount) {

@@ -253,8 +253,8 @@ test('6명 이상: 술래 2명이 각자 직업을 고르고, 둘 다 고르면 
     const hunters = start.players.filter((p) => p.role === 'hunter');
     assert.equal(hunters.length, 2);
     assert.deepEqual(hunters.map((h) => h.cls), ['sniper', 'sniper']);
-    assert.deepEqual(start.rules, { hunters: 2, generators: 3, hitsToCatch: 3 });
-    assert.equal(start.generators.length, 3);
+    assert.deepEqual(start.rules, { hunters: 2, generators: 5, hitsToCatch: 3 });
+    assert.equal(start.generators.length, 5);
   }
 });
 

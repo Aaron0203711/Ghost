@@ -472,11 +472,11 @@ function duoGame(n = 6, classes = ['maniac', 'sniper'], seed = 5) {
   return { game, events };
 }
 
-test('6명 이상 규칙: 술래 2명, 발전기 3개, 체력 3칸', () => {
+test('6명 이상 규칙: 술래 2명, 발전기 5개, 체력 3칸', () => {
   for (const n of [6, 8]) {
     const { game } = duoGame(n);
     assert.equal([...game.players.values()].filter((p) => p.role === 'hunter').length, 2);
-    assert.equal(game.gens.length, 3);
+    assert.equal(game.gens.length, 5);
     assert.equal(game.rules.hitsToCatch, 3);
     const [h1, h2] = [game.players.get('p1'), game.players.get('p2')];
     assert.ok(Math.hypot(h1.x - h2.x, h1.z - h2.z) > 5, '두 술래는 다른 곳에서 시작');

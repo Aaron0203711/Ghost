@@ -146,12 +146,12 @@ export class GameSession {
 
     if (this.isMine) {
       // 갱도: 어둑한 주황빛 환경광 + 내 헤드램프
-      scene.add(new THREE.HemisphereLight('#c9a27a', '#2a2018', 1.15));
-      scene.add(new THREE.AmbientLight('#6b5848', 0.55));
+      scene.add(new THREE.HemisphereLight('#d6b48e', '#3a2d22', 1.8));
+      scene.add(new THREE.AmbientLight('#7d6a58', 0.9));
       // 벽에 붙어도 하얗게 타지 않도록: 램프를 머리 뒤쪽에 두고, 밝은 부분은 톤 매핑으로 부드럽게
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.25;
-      const lamp = new THREE.SpotLight('#ffe2b0', 26, 32, 0.6, 0.55, 1.25);
+      renderer.toneMappingExposure = 1.45;
+      const lamp = new THREE.SpotLight('#ffe2b0', 32, 36, 0.65, 0.55, 1.25);
       lamp.position.set(0.15, 0.1, 0.7);
       lamp.target.position.set(0, -0.15, -1);
       camera.add(lamp, lamp.target);

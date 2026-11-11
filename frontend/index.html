@@ -104,6 +104,7 @@
           <p class="hint" id="lobby-hint"></p>
           <button id="btn-lobby-start" class="btn primary big">게임 시작</button>
           <div class="row">
+            <button id="btn-mic-lobby" class="btn mic-btn" aria-pressed="false">🔇 마이크 끔</button>
             <button id="btn-settings-lobby" class="btn">⚙ 설정</button>
             <button id="btn-leave" class="btn danger">나가기</button>
           </div>
@@ -140,6 +141,7 @@
             <span id="hud-role" class="badge"></span>
             <div class="gens"><span>발전기</span><span id="hud-gens"></span><b id="hud-gen-count">0/3</b><span class="sep"></span><b id="hud-timer">7:00</b></div>
             <div class="top-btns">
+              <button id="btn-mic-game" class="icon-btn" data-ui aria-label="마이크">🔇</button>
               <button id="btn-map" class="icon-btn" data-ui aria-label="지도">🗺️</button>
               <button id="btn-game-settings" class="icon-btn" data-ui aria-label="설정">⚙</button>
             </div>
@@ -180,7 +182,7 @@
             <div class="cd-slot" id="cd-main"><span class="ico"></span><span class="t"></span><kbd>좌클릭</kbd></div>
             <div class="cd-slot" id="cd-action"><span class="ico"></span><span class="count"></span><span class="t"></span><kbd>E</kbd></div>
           </div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · Esc 커서 해제</p>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span> · V 마이크 · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>

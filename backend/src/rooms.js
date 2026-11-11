@@ -97,12 +97,28 @@ export class RoomManager {
       case 'skill':
         if (client.room?.game) client.room.game.handleSkill(client.id, msg);
         break;
+      case 'rtc':
+        this.relayRtc(client, msg);
+        break;
+      case 'mic':
+        client.mic = msg.on === true;
+        if (client.room) this.broadcastRoom(client.room);
+        break;
       case 'ping':
         client.send({ t: 'pong', at: msg.at });
         break;
       default:
         break;
     }
+  }
+
+  /** 음성 채팅 연결(WebRTC) 신호를 같은 방 사람에게만 전달한다. 소리 자체는 서버를 거치지 않는다 */
+  relayRtc(client, msg) {
+    const room = client.room;
+    if (!room || !msg.sig || typeof msg.sig !== 'object') return;
+    const target = room.members.find((m) => m.id === msg.to);
+    if (!target || target === client) return;
+    target.send({ t: 'rtc', from: client.id, sig: msg.sig });
   }
 
   error(client, code, message) {
@@ -335,7 +351,7 @@ export class RoomManager {
       private: room.private,
       maxPlayers: RULES.MAX_PLAYERS,
       minPlayers: RULES.MIN_PLAYERS,
-      players: room.members.map((m) => ({ id: m.id, name: m.name })),
+      players: room.members.map((m) => ({ id: m.id, name: m.name, mic: m.mic === true })),
     };
     for (const m of room.members) m.send(msg);
     this.pushRoomList();

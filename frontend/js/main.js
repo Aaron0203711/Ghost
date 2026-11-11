@@ -3,10 +3,12 @@ import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
 import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO } from '@shared/constants.js';
+import { Voice } from './game/voice.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
 const $ = (id) => document.getElementById(id);
 const net = new Net();
+const voice = new Voice(net);
 
 let myId = null;
 let room = null;
@@ -75,6 +77,7 @@ function tap(el, fn) {
     e.preventDefault();
     if (el.disabled) return;
     unlockAudio();
+    voice.unlock();
     // iPad/iPhone은 버튼을 누른 순간에만 자이로 권한을 물을 수 있다
     if (settings.gyro) requestGyroPermission().then(syncGyroUi);
     fn(e);
@@ -229,6 +232,7 @@ function renderLobby() {
     name.className = 'n';
     name.textContent = p.name;
     li.appendChild(name);
+    if (p.mic) li.insertAdjacentHTML('beforeend', '<span class="tag mic" title="마이크 켜짐">🎤</span>');
     if (p.id === room.hostId) li.insertAdjacentHTML('beforeend', '<span class="tag host">👑 방장</span>');
     if (p.id === myId) {
       li.classList.add('me');
@@ -282,6 +286,7 @@ $('input-private').addEventListener('change', (e) => {
 
 tap($('btn-leave'), () => {
   net.send({ t: 'leave' });
+  voice.leave();
   room = null;
   show('screen-play');
 });
@@ -398,6 +403,7 @@ $('modal-settings').addEventListener('click', (e) => {
 tap($('btn-quit-game'), () => {
   closeSettings();
   net.send({ t: 'leave' });
+  voice.leave();
   endSession();
   room = null;
   show('screen-play');
@@ -406,6 +412,45 @@ tap($('btn-quit-game'), () => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('modal-settings').classList.contains('hidden')) closeSettings();
 });
+
+// ───────────────────────── 마이크 ─────────────────────────
+
+function syncMicUi() {
+  for (const id of ['btn-mic-lobby', 'btn-mic-game']) {
+    const b = $(id);
+    b.classList.toggle('on', voice.micOn);
+    b.setAttribute('aria-pressed', voice.micOn ? 'true' : 'false');
+  }
+  $('btn-mic-lobby').textContent = voice.micOn ? '🎤 마이크 켬' : '🔇 마이크 끔';
+  $('btn-mic-game').textContent = voice.micOn ? '🎤' : '🔇';
+}
+
+let micBusy = false;
+async function toggleMic() {
+  if (micBusy) return;
+  if (!voice.supported) {
+    toast(window.isSecureContext ? '이 브라우저는 음성 채팅을 지원하지 않아요' : '마이크는 https:// 주소(또는 localhost)에서만 쓸 수 있어요', 'bad');
+    return;
+  }
+  micBusy = true;
+  const want = !voice.micOn;
+  const ok = await voice.setMic(want);
+  micBusy = false;
+  if (!ok) toast('마이크를 쓸 수 없어요. 브라우저에서 마이크 권한을 허용해 주세요.', 'bad');
+  else toast(want ? '🎤 마이크 켜짐 · 게임 중에는 가까운 사람에게 크게 들려요' : '🔇 마이크 꺼짐');
+  syncMicUi();
+}
+tap($('btn-mic-lobby'), toggleMic);
+tap($('btn-mic-game'), toggleMic);
+window.addEventListener('keydown', (e) => {
+  // PC: 게임 중 V 키로 마이크 켜고 끄기
+  if (e.code === 'KeyV' && !e.repeat && currentScreen === 'screen-game' && !(e.target instanceof HTMLInputElement)) {
+    unlockAudio();
+    voice.unlock();
+    toggleMic();
+  }
+});
+syncMicUi();
 
 // ───────────────────────── 게임 ─────────────────────────
 
@@ -496,6 +541,7 @@ net.on('_open', () => {
   $('conn-dot').className = 'on';
   $('conn-text').textContent = '서버 연결됨';
   if (playerName()) net.send({ t: 'hello', name: playerName() });
+  if (voice.micOn) net.send({ t: 'mic', on: true }); // 다시 연결되면 마이크 상태를 다시 알린다
   if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: true }); // 다시 연결되면 목록을 다시 받는다
 });
 
@@ -507,6 +553,7 @@ net.on('_close', () => {
   $('conn-dot').className = 'off';
   $('conn-text').textContent = '연결이 끊겼어요. 다시 연결 중…';
   done();
+  voice.leave();
   if (room || session) {
     endSession();
     room = null;
@@ -520,6 +567,7 @@ net.on('welcome', (m) => (myId = m.id));
 net.on('room', (m) => {
   done();
   room = m;
+  voice.setMembers(myId, m.players.map((p) => p.id));
   if (session) return; // 게임 중에는 결과 화면 뒤에 대기실로
   if (currentScreen === 'screen-result') return;
   renderLobby();
@@ -536,6 +584,7 @@ net.on('error', (m) => {
 });
 
 net.on('kicked', () => {
+  voice.leave();
   endSession();
   room = null;
   show('screen-main');
@@ -544,6 +593,7 @@ net.on('kicked', () => {
 
 net.on('left', () => {
   room = null;
+  voice.leave();
 });
 
 // ───────────────────────── 술래 직업 선택 ─────────────────────────
@@ -630,12 +680,15 @@ net.on('start', (m) => {
     toast(`시간이 지나 직업이 무작위로 정해졌어요: ${(CLASS_INFO[m.hunterClass] || CLASS_INFO.maniac).name}`);
   }
   done();
+  voice.setGains({}); // 게임 중 목소리 크기는 서버가 정해 준다 (첫 상태가 오기 전에는 무음)
   startSession(m);
 });
 
 for (const t of ['state', 'event', 'correct']) net.on(t, (m) => session?.handle(m));
+net.on('state', (m) => voice.setGains(m.voice || {}));
 
 net.on('end', (m) => {
+  voice.setGains(null); // 게임이 끝나면 다시 모두 같은 크기로
   // 마지막 장면을 잠깐 보여준 뒤 결과 화면
   const s = session;
   setTimeout(() => {
@@ -652,3 +705,4 @@ if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch'
 window.addEventListener('touchstart', () => document.body.classList.add('touch'), { once: true, passive: true });
 // 디버그/자동 테스트용: 현재 게임 세션 확인
 window.__ghostSession = () => session;
+window.__ghostVoice = voice;

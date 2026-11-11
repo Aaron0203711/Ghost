@@ -2083,3 +2083,24 @@ body.touch #pc-cd,
     padding: 12px;
   }
 }
+
+/* ───────────── 음성 채팅 ───────────── */
+
+.btn.mic-btn.on {
+  background: rgba(110, 200, 120, 0.25);
+  border-color: var(--good);
+}
+
+#btn-mic-game.on {
+  background: rgba(110, 200, 120, 0.6);
+  border-color: var(--good);
+}
+
+.tag.mic {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.btn.mic-btn {
+  white-space: nowrap;
+}

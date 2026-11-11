@@ -16,6 +16,8 @@ import {
   MELEE,
   GHOST,
   aimDirection,
+  VOICE,
+  voiceGain,
 } from '../../shared/constants.js';
 import {
   isForced,
@@ -600,6 +602,39 @@ export class Game {
     this.emit(null, this.result);
   }
 
+  /**
+   * 듣는 사람(listenerId) 기준으로 다른 사람 목소리 크기를 정한다. { 말하는사람id: [크기 0~1, 벽너머 0/1] }
+   * - 살아 있는 사람끼리: 거리에 따라 (2m 최대 → 35m 무음), 벽에 가리면 70% + 먹먹하게
+   * - 투명화 중인 암살자는 살아 있는 생존자에게 들리지 않는다
+   * - 잡히거나 탈출한 사람(관전자)끼리는 거리 상관없이 최대 크기, 살아 있는 사람과는 서로 안 들린다
+   */
+  voiceFor(listenerId) {
+    const me = this.players.get(listenerId);
+    const out = {};
+    if (!me) return out;
+    const meAlive = me.status === STATUS.ALIVE;
+    for (const p of this.players.values()) {
+      if (p.id === listenerId) continue;
+      const alive = p.status === STATUS.ALIVE;
+      if (!meAlive || !alive) {
+        out[p.id] = [!meAlive && !alive ? 1 : 0, 0];
+        continue;
+      }
+      if (me.role === ROLE.SURVIVOR && this.isInvisible(p)) {
+        out[p.id] = [0, 0];
+        continue;
+      }
+      let g = voiceGain(Math.hypot(p.x - me.x, p.z - me.z));
+      let m = 0;
+      if (g > 0 && this.world.segmentBlocked(me.x, me.z, p.x, p.z)) {
+        g *= VOICE.WALL_FACTOR;
+        m = 1;
+      }
+      out[p.id] = [r2(g), m];
+    }
+    return out;
+  }
+
   snapshotFor(id) {
     const me = this.players.get(id);
     const spectator = !me || me.status !== STATUS.ALIVE;
@@ -641,6 +676,7 @@ export class Game {
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),
       traps,
       exit: this.exit,
+      voice: this.voiceFor(id),
     };
     if (me) {
       snap.me = {

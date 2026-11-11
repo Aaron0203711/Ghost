@@ -370,3 +370,21 @@ test('비공개 방: 목록에 안 보이고 코드로만 참가, 방장만 바�
   assert.equal(c.last('room').private, true);
   assert.equal(viewer.last('roomList').rooms.length, 1);
 });
+
+test('음성: 연결 신호는 같은 방 사람에게만 전달되고, 마이크 상태가 대기실에 보인다', () => {
+  const { mgr, mk } = setup();
+  const a = mk('A');
+  const b = mk('B');
+  const c = mk('C');
+  mgr.handle(a, { t: 'create' });
+  const code = a.last('room').code;
+  mgr.handle(b, { t: 'join', code });
+  mgr.handle(a, { t: 'rtc', to: b.id, sig: { sdp: 'x' } });
+  assert.deepEqual(b.last('rtc'), { t: 'rtc', from: a.id, sig: { sdp: 'x' } });
+  mgr.handle(a, { t: 'rtc', to: c.id, sig: { sdp: 'y' } });
+  assert.equal(c.last('rtc'), undefined, '다른 방(방 밖) 사람에게는 전달 안 됨');
+  mgr.handle(b, { t: 'mic', on: true });
+  assert.equal(a.last('room').players.find((p) => p.id === b.id).mic, true);
+  mgr.handle(b, { t: 'mic', on: false });
+  assert.equal(a.last('room').players.find((p) => p.id === b.id).mic, false);
+});

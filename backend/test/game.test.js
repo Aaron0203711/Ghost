@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { mulberry32 } from '../src/mapgen.js';
-import { RULES, STATUS, matchRules } from '../../shared/constants.js';
+import { RULES, STATUS, matchRules, VOICE, voiceGain } from '../../shared/constants.js';
 import { CollisionWorld } from '../../shared/collision.js';
 
 const DT = 1 / 20;
@@ -1151,4 +1151,67 @@ test('지도: 생존자가 잡힌 자리가 기록됨', () => {
   assert.equal(deaths.length, 1);
   assert.ok(Math.abs(deaths[0].x - at.x) < 0.01 && Math.abs(deaths[0].z - at.z) < 0.01);
   assert.equal(game.snapshotFor('p2').map.deaths.length, 1, '잡힌 본인(관전)도 봄');
+});
+
+test('음성: 2m 안은 최대, 35m부터 무음, 그 사이는 멀수록 작아진다', () => {
+  assert.equal(voiceGain(0), 1);
+  assert.equal(voiceGain(2), 1);
+  assert.equal(voiceGain(35), 0);
+  assert.equal(voiceGain(50), 0);
+  assert.ok(voiceGain(10) > voiceGain(20) && voiceGain(20) > 0);
+  const { game, hunter, s1 } = makeGame();
+  faceOff(game, hunter, s1, 1.5);
+  assert.deepEqual(game.voiceFor('p2').p1, [1, 0]);
+  assert.deepEqual(game.snapshotFor('p1').voice.p2, [1, 0]);
+  faceOff(game, hunter, s1, 10);
+  const [g] = game.voiceFor('p2').p1;
+  assert.ok(g > 0 && g < 1);
+  s1.x = hunter.x + 40;
+  assert.equal(game.voiceFor('p2').p1[0], 0, '35m 밖');
+});
+
+test('음성: 벽 너머면 70% 크기 + 먹먹하게', () => {
+  const { game, hunter, s1 } = makeGame();
+  faceOff(game, hunter, s1, 1.5);
+  game.world.add({ x: hunter.x, z: hunter.z - 0.75, w: 3, d: 0.2 });
+  assert.deepEqual(game.voiceFor('p2').p1, [VOICE.WALL_FACTOR, 1]);
+  assert.deepEqual(game.voiceFor('p1').p2, [VOICE.WALL_FACTOR, 1]);
+});
+
+test('음성: 관전자끼리만 들리고, 살아 있는 사람과는 서로 안 들린다', () => {
+  const { game, hunter, s1, s2 } = makeGame(4);
+  faceOff(game, hunter, s1, 1.5);
+  s2.x = s1.x;
+  s2.z = s1.z;
+  s1.status = STATUS.CAUGHT;
+  game.players.get('p4').status = STATUS.ESCAPED;
+  assert.deepEqual(game.voiceFor('p2').p4, [1, 0], '관전자끼리는 거리 상관없이 최대');
+  assert.equal(game.voiceFor('p2').p1[0], 0, '관전자는 살아 있는 술래 목소리를 못 들음');
+  assert.equal(game.voiceFor('p1').p2[0], 0, '살아 있는 술래는 관전자 목소리를 못 들음');
+  assert.equal(game.voiceFor('p3').p2[0], 0);
+  assert.equal(game.voiceFor('p3').p1[0], 1, '살아 있는 사람끼리는 들림');
+});
+
+test('음성: 투명화 중인 암살자는 생존자에게 안 들리고 동료 술래에게는 들린다', () => {
+  const roster = Array.from({ length: 6 }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const game = new Game(roster, {
+    seed: 7,
+    hunters: [
+      { id: 'p1', cls: 'assassin' },
+      { id: 'p2', cls: 'maniac' },
+    ],
+    rand: mulberry32(7),
+    emit: () => {},
+  });
+  const a = game.players.get('p1');
+  for (const id of ['p2', 'p3']) {
+    const q = game.players.get(id);
+    q.x = a.x + 1;
+    q.z = a.z;
+  }
+  game.handleSkill('p1', {});
+  assert.ok(game.isInvisible(a));
+  assert.equal(game.voiceFor('p3').p1[0], 0, '생존자에게 안 들림');
+  assert.ok(game.voiceFor('p2').p1[0] > 0, '동료 술래에게는 들림');
+  assert.ok(game.voiceFor('p1').p3[0] > 0, '암살자는 생존자 목소리를 들음');
 });

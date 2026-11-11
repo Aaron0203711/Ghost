@@ -220,3 +220,18 @@ export function jumpHeight(t) {
   const k = t / RULES.JUMP_TIME;
   return 4 * RULES.JUMP_HEIGHT * k * (1 - k);
 }
+
+// 음성 채팅 (거리에 따라 크기가 달라짐). 소리 크기는 서버가 정해서 각자에게 보낸다
+export const VOICE = Object.freeze({
+  FULL_RANGE: 2, // 2m 안은 최대 크기
+  MAX_RANGE: 35, // 35m부터는 안 들림
+  WALL_FACTOR: 0.7, // 벽·담장·건물 너머는 70% 크기 + 먹먹하게
+});
+
+/** 거리에 따른 목소리 크기 (0~1): 2m까지 1, 35m에서 0, 그 사이는 부드럽게 줄어든다 */
+export function voiceGain(dist) {
+  if (dist <= VOICE.FULL_RANGE) return 1;
+  if (dist >= VOICE.MAX_RANGE) return 0;
+  const t = (dist - VOICE.FULL_RANGE) / (VOICE.MAX_RANGE - VOICE.FULL_RANGE);
+  return (1 - t) * (1 - t);
+}

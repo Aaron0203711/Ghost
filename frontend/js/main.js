@@ -1,7 +1,7 @@
 // 화면 흐름: 메인 → 시작하기(방 만들기/방 참가) → 대기실 → 게임 → 결과 → 대기실
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
-import { setSoundEnabled, unlockAudio } from './game/audio.js';
+import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
 import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO } from '@shared/constants.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
@@ -255,6 +255,8 @@ function syncSettingsUi() {
   sens.value = String(settings.sensitivity);
   $('sens-value').textContent = Number(settings.sensitivity).toFixed(1);
   $('input-sound').checked = settings.sound;
+  $('input-bgm').checked = settings.bgm;
+  setBgmEnabled(settings.bgm);
   setSoundEnabled(settings.sound);
   syncGyroUi();
 }
@@ -295,6 +297,10 @@ $('input-gyro-sens').addEventListener('input', (e) => {
 });
 $('input-gyro-inv-x').addEventListener('change', (e) => saveSettings({ gyroInvertX: e.target.checked }));
 $('input-gyro-inv-y').addEventListener('change', (e) => saveSettings({ gyroInvertY: e.target.checked }));
+$('input-bgm').addEventListener('change', (e) => {
+  saveSettings({ bgm: e.target.checked });
+  setBgmEnabled(settings.bgm);
+});
 $('input-sound').addEventListener('change', (e) => {
   saveSettings({ sound: e.target.checked });
   setSoundEnabled(settings.sound);

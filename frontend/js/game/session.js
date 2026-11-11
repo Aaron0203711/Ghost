@@ -7,6 +7,7 @@ import { Avatar, BatViewModel, RifleViewModel, KunaiViewModel, GeneratorModel, m
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
 import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
+import { Bgm } from './bgm.js';
 import { Gyro } from './gyro.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 
@@ -68,6 +69,8 @@ export class GameSession {
     this.exitMesh = null;
     this.spectateId = null;
     this.heartbeatT = 0;
+    this.danger = 0; // 술래가 가까운 정도 (배경음악 먹먹함)
+    this.bgm = new Bgm(start.map.theme);
     this.disposed = false;
 
     this.setupThree(start);
@@ -787,8 +790,12 @@ export class GameSession {
         }
       }
       $('screen-game').classList.toggle('danger', d < 12);
+      // 배경음악: 24m부터 먹먹해지기 시작해서 8m 안이면 거의 심장 소리만
+      this.danger = Math.max(0, Math.min(1, (24 - d) / 16));
     }
     if (this.isHunter) this.updateHunterHud();
+    if (this.isHunter || !alive) this.danger = 0; // 술래와 관전자는 늘 보통 배경음악
+    this.bgm.update(dt, this.danger);
 
     const stun = $('hud-stun');
     if (this.stunLeft > 0 && alive) {
@@ -905,6 +912,7 @@ export class GameSession {
     this.controls.dispose();
     this.gyro.dispose();
     stopHum();
+    this.bgm.stop();
     window.removeEventListener('resize', this.onResize);
     $('btn-game-settings').removeEventListener('click', this.onSettingsClick);
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);

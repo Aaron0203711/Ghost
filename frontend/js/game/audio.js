@@ -7,6 +7,19 @@ export function setSoundEnabled(v) {
   if (!v) stopHum();
 }
 
+/** 배경음악(bgm.js)이 같은 오디오 컨텍스트를 쓰도록 */
+export function audioContext() {
+  return ctx && ctx.state === 'running' ? ctx : null;
+}
+
+let bgmEnabled = true;
+export function setBgmEnabled(v) {
+  bgmEnabled = v;
+}
+export function isBgmEnabled() {
+  return bgmEnabled;
+}
+
 // 백룸 형광등 소리: 낮게 웅웅거리는 소리를 계속 낸다
 let hum = null;
 export function ensureHum() {

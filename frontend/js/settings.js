@@ -5,6 +5,7 @@ const KEY = 'ghost.settings.v1';
 const DEFAULTS = {
   sensitivity: 1.0,
   sound: true,
+  bgm: true, // 인게임 배경음악
   name: '',
   gyro: true,
   gyroSensitivity: 1.0,

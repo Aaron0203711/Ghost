@@ -486,3 +486,40 @@ test('생존자 직업: 대기실에서 받은 직업이 게임에 들어가고,
   const c = mk('C', 'hacker');
   assert.equal(c.scls, 'doctor');
 });
+
+// ───────────── 밸런스 조정 2 ─────────────
+
+test('유령: 벽을 빠져나온 순간부터 1초 동안 이동 속도 50% 감소 (벽 옆을 걸을 때는 그대로)', () => {
+  const { game, p } = makeGame({ hunters: [{ id: 'p1', cls: 'ghost' }] });
+  const g = p('p1');
+  clearSpot(game, [g]);
+  const wall = { kind: 'wall', x: 500, z: 500, w: 6, d: 0.2, h: 1.9 };
+  game.world.add(wall);
+  game.ghostWallWorld.add(wall);
+  const move = (x, z) => {
+    g.budget = 10;
+    game.handleInput('p1', { x, z, corr: g.corr, moving: true });
+  };
+  const speed = () => speedFor('hunter', false, { cls: 'ghost', wallSlowed: game.time < g.wallSlowUntil });
+  g.x = 500;
+  g.z = 501;
+  // 벽 옆을 따라 걷기: 감속 없음
+  move(501, 500.5);
+  move(502, 500.5);
+  assert.equal(speed(), RULES.HUNTER_SPEED);
+  // 벽 안으로 들어감: 아직 감속 없음
+  g.x = 500;
+  g.z = 500.5;
+  move(500, 500);
+  assert.ok(g.inWall);
+  assert.equal(speed(), RULES.HUNTER_SPEED, '벽 안을 지나는 동안은 보통 속도');
+  move(500, 499.5); // 빠져나옴
+  assert.equal(speed(), RULES.HUNTER_SPEED * 0.5);
+  run(game, 0.95);
+  assert.equal(speed(), RULES.HUNTER_SPEED * 0.5);
+  run(game, 0.1);
+  assert.equal(speed(), RULES.HUNTER_SPEED, '1초 뒤 원래대로');
+  // 한 번에 얇은 벽을 건너뛰어도(입력 간격 사이) 넘은 것으로 친다
+  move(500, 500.4);
+  assert.ok(game.time < g.wallSlowUntil);
+});

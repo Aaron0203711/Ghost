@@ -24,6 +24,7 @@ import {
   synergiesFor,
   validSurvivorClass,
   survivorStats,
+  ghostWallExit,
 } from '../../shared/constants.js';
 import {
   isForced,
@@ -73,6 +74,8 @@ export class Game {
     this.world = new CollisionWorld(this.map.boxes);
     // 유령 전용: 담장·벽을 뺀 충돌 세계
     this.ghostWorld = new CollisionWorld(this.map.boxes.filter((b) => !GHOST.PASS_KINDS.includes(b.kind)));
+    // 유령이 통과하는 담장·벽만: 빠져나오는 순간을 감지해 1초 감속
+    this.ghostWallWorld = new CollisionWorld(this.map.boxes.filter((b) => GHOST.PASS_KINDS.includes(b.kind)));
     this.gens = plan.generators.map((g) => ({ ...g, progress: 0, done: false, repairers: 0 }));
     for (const g of this.gens) {
       this.world.add(generatorBox(g));
@@ -115,6 +118,8 @@ export class Game {
         invisUntil: 0, // 암살자 투명화 끝나는 시각
         skillReadyAt: 0,
         slowUntil: 0, // 기습 후 감속 끝나는 시각
+        wallSlowUntil: 0, // 유령: 벽을 빠져나온 뒤 감속 끝나는 시각
+        inWall: false, // 유령: 벽을 지나는 중
         jumpUntil: 0, // 점프 착지 시각
         pullUntil: 0, // 선장 닻에 끌려오는 중
         pulledBy: null,
@@ -260,6 +265,10 @@ export class Game {
     }
     const res = worldFor(this, p).move(p.x, p.z, tx - p.x, tz - p.z, RULES.PLAYER_RADIUS);
     p.budget = Math.max(0, p.budget - Math.hypot(res.x - p.x, res.z - p.z));
+    if (p.cls === HUNTER_CLASS.GHOST && ghostWallExit(p, this.ghostWallWorld, p.x, p.z, res.x, res.z)) {
+      p.wallSlowUntil = this.time + GHOST.WALL_SLOW_TIME;
+      p.budget = Math.min(p.budget, RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR * 0.6);
+    }
     p.x = res.x;
     p.z = res.z;
     if (clamped || Math.hypot(res.x - msg.x, res.z - msg.z) > 0.15) this.correct(p);
@@ -547,6 +556,7 @@ export class Game {
         aiming: p.aiming,
         invisible: this.isInvisible(p),
         slowed: this.time < p.slowUntil,
+        wallSlowed: this.time < p.wallSlowUntil,
         disguised: !!p.disguiseAs,
         slowFactor: slow.factor,
         noRun: slow.noRun,

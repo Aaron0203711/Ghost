@@ -24,6 +24,7 @@ import {
   SURVIVOR_CLASS_INFO,
   trapChargesFor,
   survivorSkillCooldown,
+  ghostWallExit,
 } from '@shared/constants.js';
 import { buildWorld, buildSky } from './world.js';
 import {
@@ -123,6 +124,8 @@ export class GameSession {
     this.invisLeft = 0; // 암살자 내 투명화 남은 시간
     this.skillLeft = 0; // 암살자 스킬 쿨타임
     this.slowLeft = 0; // 암살자 기습 후 감속
+    this.wallSlowLeft = 0; // 유령: 벽을 빠져나온 뒤 감속
+    this.wallState = { inWall: false };
     this.aiming = false;
     this.tracers = new Map(); // 서버 총알 id → 궤적 (끝 위치를 받기 전)
     this.liveTracers = []; // 화면에 그리는 중인 궤적
@@ -226,6 +229,7 @@ export class GameSession {
     this.collision = new CollisionWorld(
       this.isGhost ? start.map.boxes.filter((b) => !GHOST.PASS_KINDS.includes(b.kind)) : start.map.boxes,
     );
+    if (this.isGhost) this.wallWorld = new CollisionWorld(start.map.boxes.filter((b) => GHOST.PASS_KINDS.includes(b.kind)));
     for (const g of start.generators) {
       this.collision.add(genBox(g));
       const model = new GeneratorModel(g);
@@ -1160,6 +1164,7 @@ export class GameSession {
         aiming: this.aiming,
         invisible: this.isAssassin && this.invisLeft > 0,
         slowed: this.isAssassin && this.slowLeft > 0,
+        wallSlowed: this.isGhost && this.wallSlowLeft > 0,
         disguised: this.disguised,
         slowFactor: this.isHunter ? 1 : this.slowFactor,
         noRun: this.noRun,
@@ -1170,8 +1175,14 @@ export class GameSession {
       const dx = (-sin * mv.y + cos * mv.x) * speed * dt;
       const dz = (-cos * mv.y - sin * mv.x) * speed * dt;
       const p = this.collision.move(this.pos.x, this.pos.z, dx, dz, RULES.PLAYER_RADIUS);
+      // 유령: 벽을 빠져나온 순간부터 1초 동안 느려진다 (서버와 같은 판정)
+      if (this.isGhost && ghostWallExit(this.wallState, this.wallWorld, this.pos.x, this.pos.z, p.x, p.z)) this.wallSlowLeft = GHOST.WALL_SLOW_TIME;
       this.pos.x = p.x;
       this.pos.z = p.z;
+    }
+    if (this.isGhost) {
+      this.wallSlowLeft = Math.max(0, this.wallSlowLeft - dt);
+      $('screen-game').classList.toggle('slowed', this.wallSlowLeft > 0 && alive);
     }
 
     this.attackLeft = Math.max(0, this.attackLeft - dt);

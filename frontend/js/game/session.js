@@ -248,6 +248,8 @@ export class GameSession {
     $('btn-main').querySelector('.lbl').textContent = labels.main[1];
     $('btn-action').querySelector('.ico').textContent = labels.action[0];
     $('btn-action').querySelector('.lbl').textContent = labels.action[1];
+    $('cd-main').querySelector('.ico').textContent = labels.main[0];
+    $('cd-action').querySelector('.ico').textContent = labels.action[0];
     $('hud-feed').innerHTML = '';
     $('hud-exit').classList.add('hidden');
     $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : this.isBackrooms ? '🚪 EXIT' : '⛩ 탈출구';
@@ -316,7 +318,20 @@ export class GameSession {
     if (!this.isHunter) this.minimap = new MiniMap(this.startMap, this.gens, this.theme);
     $('btn-map').classList.toggle('hidden', this.isHunter);
     $('map-overlay').classList.add('hidden');
-    this.onMapClick = () => this.toggleMap();
+    // 터치: 다른 손가락으로 조이스틱을 잡고 있으면 click이 안 오는 기기가 있어서
+    // 손가락이 닿는 순간(pointerdown)에 바로 켜고 끈다. 마우스는 click으로.
+    this.mapTouchAt = 0;
+    this.onMapDown = (e) => {
+      if (e.pointerType === 'mouse') return;
+      e.preventDefault();
+      this.mapTouchAt = performance.now();
+      this.toggleMap();
+    };
+    this.onMapClick = () => {
+      if (performance.now() - this.mapTouchAt < 700) return; // 방금 터치로 처리함
+      this.toggleMap();
+    };
+    $('btn-map').addEventListener('pointerdown', this.onMapDown);
     $('btn-map').addEventListener('click', this.onMapClick);
     this.onMapKey = (e) => {
       if (e.code === 'KeyM' && !(e.target instanceof HTMLInputElement) && !e.repeat) this.toggleMap();
@@ -1124,6 +1139,31 @@ export class GameSession {
   }
 
   updateHunterHud() {
+    this.updateHunterButtons();
+    this.updatePcCooldowns();
+  }
+
+  /** PC: 화면 아래 가운데에 공격(좌클릭)·스킬(E) 쿨타임을 터치 버튼과 같은 모양으로 보여 준다 */
+  updatePcCooldowns() {
+    const slot = (dst, frac, text, flags, count = '') => {
+      dst.style.setProperty('--cd', String(Math.max(0, Math.min(1, frac || 0))));
+      for (const f of ['empty', 'aiming', 'ready']) dst.classList.toggle(f, !!flags[f]);
+      dst.querySelector('.t').textContent = text;
+      const c = dst.querySelector('.count');
+      if (c) c.textContent = count;
+    };
+    const atk = this.attackLeft > 0;
+    slot($('cd-main'), this.attackLeft / this.attackCooldown, atk ? `${this.attackLeft.toFixed(1)}s` : '', { empty: atk, ready: !atk });
+    const btnT = $('btn-action');
+    const frac = parseFloat(btnT.style.getPropertyValue('--cd')) || 0;
+    const text = btnT.querySelector('.timer').textContent;
+    const aiming = btnT.classList.contains('aiming');
+    const empty = btnT.classList.contains('empty');
+    const isTrap = !this.hasClassSkill && !this.isAssassin && !this.isSniper;
+    slot($('cd-action'), frac, text, { aiming, empty, ready: !aiming && !empty && !text }, isTrap ? String(this.charges) : '');
+  }
+
+  updateHunterButtons() {
     const btnA = $('btn-main');
     const btnT = $('btn-action');
     btnA.style.setProperty('--cd', String(this.attackLeft / this.attackCooldown));
@@ -1232,6 +1272,7 @@ export class GameSession {
     window.removeEventListener('resize', this.onResize);
     $('btn-game-settings').removeEventListener('click', this.onSettingsClick);
     $('btn-map').removeEventListener('click', this.onMapClick);
+    $('btn-map').removeEventListener('pointerdown', this.onMapDown);
     window.removeEventListener('keydown', this.onMapKey);
     $('map-overlay').classList.add('hidden');
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);

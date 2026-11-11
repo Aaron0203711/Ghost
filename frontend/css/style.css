@@ -1923,3 +1923,101 @@ body.touch #pc-hint {
     height: min(72vh, 70vw);
   }
 }
+
+/* ───────────── PC 술래 쿨타임 ───────────── */
+
+#pc-cd {
+  position: absolute;
+  left: 50%;
+  bottom: calc(26px + var(--safe-b));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  pointer-events: none;
+}
+
+body.touch #pc-cd,
+.spectating #pc-cd {
+  display: none !important;
+}
+
+.cd-slot {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  font-weight: 800;
+  --cd: 0;
+}
+
+.cd-slot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(rgba(0, 0, 0, 0.65) calc(var(--cd) * 360deg), transparent 0);
+}
+
+.cd-slot.ready {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.cd-slot.aiming {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 12px rgba(242, 166, 90, 0.6);
+}
+
+.cd-slot .ico {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.cd-slot.empty .ico {
+  opacity: 0.4;
+}
+
+.cd-slot .t {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  text-shadow: 0 1px 3px #000, 0 0 6px #000;
+  z-index: 1;
+}
+
+.cd-slot .count {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  z-index: 1;
+}
+
+.cd-slot .count:empty {
+  display: none;
+}
+
+.cd-slot kbd {
+  position: absolute;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 700 9px system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.75);
+  z-index: 1;
+}

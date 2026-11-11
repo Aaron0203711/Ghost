@@ -1,4 +1,4 @@
-// 화면 흐름: 메인 → 시작하기(방 만들기/방 참가) → 대기실 → 게임 → 결과 → 대기실
+// 화면 흐름: 메인 → 시작하기(방 만들기/방 목록/코드로 참가) → 대기실 → 게임 → 결과 → 대기실
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
@@ -23,6 +23,9 @@ const gameModule = import('./game/session.js').then((m) => (GameSessionClass = m
 function show(id) {
   if (currentScreen === id) return;
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+  // 방 목록 화면에 있는 동안만 서버가 목록을 보내 준다
+  if (id === 'screen-rooms') net.send({ t: 'rooms', watch: true });
+  else if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: false });
   currentScreen = id;
   document.body.dataset.screen = id;
   if (id === 'screen-join') {
@@ -120,6 +123,44 @@ tap($('btn-create'), () => {
   net.send({ t: 'create', name: playerName() });
 });
 
+// 방 목록 (대기 중인 공개 방)
+function renderRoomList(rooms) {
+  const list = $('room-list');
+  list.innerHTML = '';
+  $('rooms-empty').classList.toggle('hidden', rooms.length > 0);
+  for (const r of rooms) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'n';
+    name.textContent = `${r.host}의 방`;
+    const count = document.createElement('span');
+    const full = r.count >= r.max;
+    count.className = `tag${full ? ' full' : ''}`;
+    count.textContent = `${r.count} / ${r.max}명`;
+    const btn = document.createElement('button');
+    btn.className = 'btn small primary';
+    btn.textContent = full ? '가득 참' : '참가';
+    btn.disabled = full;
+    tap(btn, () => {
+      waitFor(btn);
+      net.send({ t: 'join', code: r.code, name: playerName() });
+    });
+    li.append(name, count, btn);
+    list.appendChild(li);
+  }
+}
+
+tap($('btn-rooms-open'), () => {
+  renderRoomList([]);
+  $('rooms-empty').classList.add('hidden'); // 목록을 받기 전에는 '없어요'를 띄우지 않는다
+  show('screen-rooms');
+});
+
+tap($('btn-rooms-create'), () => {
+  waitFor($('btn-rooms-create'));
+  net.send({ t: 'create', name: playerName() });
+});
+
 tap($('btn-join-open'), () => {
   setCode('');
   show('screen-join');
@@ -170,6 +211,11 @@ function renderLobby() {
   const isHost = room.hostId === myId;
   $('lobby-code').textContent = room.code;
   $('lobby-count').textContent = `${room.players.length} / ${room.maxPlayers}명`;
+  // 공개/비공개: 방장은 스위치로 바꾸고, 다른 사람은 표시만 본다
+  $('lobby-private-toggle').classList.toggle('hidden', !isHost);
+  $('input-private').checked = !!room.private;
+  $('lobby-private-tag').classList.toggle('hidden', isHost);
+  $('lobby-private-tag').textContent = room.private ? '🔒 비공개 방' : '🔓 공개 방';
   const rules = matchRules(room.players.length);
   const n = room.players.length;
   const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : '';
@@ -227,6 +273,11 @@ function renderLobby() {
 tap($('btn-lobby-start'), () => {
   waitFor($('btn-lobby-start'));
   net.send({ t: 'start' });
+});
+
+$('input-private').addEventListener('change', (e) => {
+  net.send({ t: 'setPrivate', on: e.target.checked });
+  toast(e.target.checked ? '비공개 방: 참가 코드로만 들어올 수 있어요' : '공개 방: 방 목록에 보여요');
 });
 
 tap($('btn-leave'), () => {
@@ -445,6 +496,11 @@ net.on('_open', () => {
   $('conn-dot').className = 'on';
   $('conn-text').textContent = '서버 연결됨';
   if (playerName()) net.send({ t: 'hello', name: playerName() });
+  if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: true }); // 다시 연결되면 목록을 다시 받는다
+});
+
+net.on('roomList', (m) => {
+  if (currentScreen === 'screen-rooms') renderRoomList(m.rooms || []);
 });
 
 net.on('_close', () => {
@@ -475,6 +531,7 @@ net.on('error', (m) => {
   toast(m.message || '오류가 발생했어요', 'bad');
   if (m.code === 'notFound' || m.code === 'badCode' || m.code === 'full' || m.code === 'inGame') {
     if (currentScreen === 'screen-join') setCode('');
+    if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: true }); // 그 사이 바뀐 목록으로 새로 고침
   }
 });
 

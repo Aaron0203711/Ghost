@@ -2021,3 +2021,65 @@ body.touch #pc-cd,
   color: rgba(255, 255, 255, 0.75);
   z-index: 1;
 }
+
+/* ───────────── 방 목록 · 비공개 방 ───────────── */
+
+.room-list {
+  max-height: min(46vh, 320px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.room-list .btn.small {
+  flex: none;
+  min-width: 68px;
+}
+
+.tag.full {
+  color: #ff9c8a;
+  background: rgba(224, 85, 58, 0.18);
+}
+
+.rooms-empty {
+  margin: 0;
+  padding: 22px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.lobby-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.lobby-meta .hint {
+  margin: 0;
+}
+
+.lobby-meta .toggle {
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.lobby-meta .toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-height: 460px) {
+  #screen-rooms h2 {
+    display: none;
+  }
+  .room-list {
+    max-height: 44vh;
+  }
+  .rooms-empty {
+    padding: 12px;
+  }
+}

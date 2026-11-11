@@ -42,8 +42,24 @@
         <div class="menu-card">
           <h2>게임 시작</h2>
           <button id="btn-create" class="btn primary big">🏠 방 만들기</button>
-          <button id="btn-join-open" class="btn big">🔑 방 참가</button>
+          <button id="btn-rooms-open" class="btn big">📋 방 목록</button>
+          <button id="btn-join-open" class="btn big">🔑 코드로 참가</button>
           <button class="btn ghost" data-back="screen-main">← 뒤로</button>
+        </div>
+      </section>
+
+      <!-- 방 목록: 대기 중인 공개 방 -->
+      <section id="screen-rooms" class="screen">
+        <div class="menu-bg"></div>
+        <div class="menu-card wide">
+          <h2>방 목록</h2>
+          <p class="hint" id="rooms-hint">대기 중인 공개 방이에요. 비공개 방은 참가 코드로 들어가세요.</p>
+          <ul id="room-list" class="player-list room-list"></ul>
+          <p class="rooms-empty hidden" id="rooms-empty">지금 열려 있는 공개 방이 없어요.<br />방을 직접 만들어 보세요!</p>
+          <div class="row">
+            <button class="btn ghost" data-back="screen-play">← 뒤로</button>
+            <button id="btn-rooms-create" class="btn primary">🏠 방 만들기</button>
+          </div>
         </div>
       </section>
 
@@ -78,7 +94,11 @@
             <strong id="lobby-code">----</strong>
             <button id="btn-copy-code" class="btn small">복사</button>
           </div>
-          <p class="hint" id="lobby-count">0 / 8명</p>
+          <div class="lobby-meta">
+            <p class="hint" id="lobby-count">0 / 8명</p>
+            <label class="toggle" id="lobby-private-toggle"><input id="input-private" type="checkbox" /> <span>🔒 비공개 방</span></label>
+            <span class="tag" id="lobby-private-tag"></span>
+          </div>
           <p class="rules" id="lobby-rules"></p>
           <ul id="lobby-players" class="player-list"></ul>
           <p class="hint" id="lobby-hint"></p>

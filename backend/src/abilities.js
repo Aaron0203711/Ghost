@@ -31,9 +31,26 @@ function skillCaptain(game, p) {
   game.emit(null, { t: 'event', kind: 'anchor', id: p.id, aid: a.id, x: r2(a.x), z: r2(a.z), dx: r2(dir.x), dz: r2(dir.z) });
 }
 
+/** 점 (px,pz)에서 선분 a→b 위 가장 가까운 점 */
+function closestOnSegment(px, pz, ax, az, bx, bz) {
+  const vx = bx - ax;
+  const vz = bz - az;
+  const len2 = vx * vx + vz * vz;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * vx + (pz - az) * vz) / len2)) : 0;
+  return { x: ax + vx * t, z: az + vz * t };
+}
+
+function startPull(game, t, ownerId) {
+  // 피해 없이 1.5초 동안 선장 앞까지 끌려온다
+  t.pullUntil = game.time + CAPTAIN.PULL_TIME;
+  t.pulledBy = ownerId;
+  t.budget = 0;
+}
+
 export function stepAnchors(game, dt) {
   const STEP = 0.25;
   for (const a of [...game.anchors]) {
+    const owner = game.players.get(a.owner);
     let remain = CAPTAIN.ANCHOR_SPEED * dt;
     let end = null;
     while (remain > 0 && !end) {
@@ -43,13 +60,19 @@ export function stepAnchors(game, dt) {
       a.z += a.dir.z * s;
       a.traveled += s;
       for (const t of survivors(game)) {
-        if (Math.hypot(t.x - a.x, t.z - a.z) > CAPTAIN.ANCHOR_RADIUS + RULES.PLAYER_RADIUS) continue;
-        // 맞으면 피해 없이 1.5초 동안 선장 앞까지 끌려온다
-        t.pullUntil = game.time + CAPTAIN.PULL_TIME;
-        t.pulledBy = a.owner;
-        t.budget = 0;
-        end = { hit: t.id };
-        break;
+        // 닻에 직접 맞으면 닻이 거기서 멈춘다
+        if (Math.hypot(t.x - a.x, t.z - a.z) <= CAPTAIN.ANCHOR_RADIUS + RULES.PLAYER_RADIUS) {
+          startPull(game, t, a.owner);
+          end = { hit: t.id };
+          break;
+        }
+        // 선장과 닻 사이 밧줄에 닿아도 끌려온다 (닻은 계속 날아감, 여러 명 가능)
+        if (!owner || t.pulledBy) continue;
+        const c = closestOnSegment(t.x, t.z, owner.x, owner.z, a.x, a.z);
+        if (Math.hypot(t.x - c.x, t.z - c.z) > CAPTAIN.ROPE_RADIUS + RULES.PLAYER_RADIUS) continue;
+        if (game.world.segmentBlocked(owner.x, owner.z, c.x, c.z)) continue; // 밧줄이 벽에 가린 부분은 무효
+        startPull(game, t, a.owner);
+        game.emit(null, { t: 'event', kind: 'ropeHit', aid: a.id, id: a.owner, hit: t.id });
       }
       if (!end && game.world.pointBlocked(a.x, 1.0, a.z)) end = { hit: null };
       if (!end && a.traveled >= CAPTAIN.ANCHOR_RANGE) end = { hit: null };

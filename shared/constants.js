@@ -140,6 +140,7 @@ export const CAPTAIN = Object.freeze({
   ANCHOR_SPEED: 25,
   ANCHOR_RANGE: 20,
   ANCHOR_RADIUS: 0.5,
+  ROPE_RADIUS: 0.15, // 날아가는 닻과 선장 사이 밧줄. 닿아도 끌려온다
   PULL_TIME: 1.5,
   SKILL_COOLDOWN: 7.5,
 });
@@ -201,7 +202,7 @@ export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 근접 공격 (쿨타임 1초) · 덫 3개' },
   assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 근접 공격 (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
-  captain: { name: '선장', icon: '⚓', desc: '후크 (쿨타임 0.5초) · 닻을 던져 생존자를 끌고 옴 (쿨타임 7.5초)' },
+  captain: { name: '선장', icon: '⚓', desc: '후크 (쿨타임 0.5초) · 닻이나 밧줄에 닿은 생존자를 끌고 옴 (쿨타임 7.5초)' },
   ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과 · 할퀴기 (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
   skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 3m (쿨타임 1.5초) · 생존자로 변장, 공격하면 풀림 (쿨타임 5초)' },
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 3m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },

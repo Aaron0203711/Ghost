@@ -675,6 +675,10 @@ export class GameSession {
           if (e.hit !== this.myId) this.feed(`⚓ ${name(e.hit)}이(가) 닻에 걸렸다`, 'warn');
         }
         break;
+      case 'ropeHit':
+        sfx.clank();
+        if (e.hit !== this.myId) this.feed(`⚓ ${name(e.hit)}이(가) 닻 밧줄에 걸렸다`, 'warn');
+        break;
       case 'wisps':
         // 보이는 생존자가 없으면 헛방 (쿨타임은 소모됨)
         if (me) {

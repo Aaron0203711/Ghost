@@ -1,4 +1,4 @@
-// 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 강퇴, 호스트 위임, 게임 시작/종료.
+// 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 공개 방 목록·비공개 설정, 강퇴, 호스트 위임, 게임 시작/종료.
 
 import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules } from '../../shared/constants.js';
 import { Game } from './game.js';
@@ -25,6 +25,8 @@ export class RoomManager {
     this.forceTheme = MAP_THEMES[opts.theme] ? opts.theme : null; // 개발용: 맵 고정
     this.rooms = new Map();
     this.clients = new Map(); // id -> client
+    this.watchers = new Set(); // 방 목록 화면을 보고 있는 클라이언트
+    this.lastListJson = '';
     this.seq = 0;
   }
 
@@ -38,6 +40,7 @@ export class RoomManager {
   }
 
   disconnect(client) {
+    this.watchers.delete(client);
     this.leaveRoom(client);
     this.clients.delete(client.id);
   }
@@ -50,7 +53,18 @@ export class RoomManager {
         if (client.room) this.broadcastRoom(client.room);
         break;
       case 'create':
-        this.create(client, msg.name);
+        this.create(client, msg.name, msg.private);
+        break;
+      case 'rooms':
+        // 방 목록 보기 시작(watch: true, 기본) / 그만 보기(watch: false)
+        if (msg.watch === false) this.watchers.delete(client);
+        else {
+          this.watchers.add(client);
+          client.send({ t: 'roomList', rooms: this.roomList() });
+        }
+        break;
+      case 'setPrivate':
+        this.setPrivate(client, msg.on);
         break;
       case 'join':
         this.join(client, msg.code, msg.name);
@@ -95,15 +109,17 @@ export class RoomManager {
     client.send({ t: 'error', code, message });
   }
 
-  create(client, name) {
+  create(client, name, isPrivate = false) {
     if (name !== undefined) client.name = sanitizeName(name, client.name);
     this.leaveRoom(client);
     let code;
     do code = randomCode(this.rand);
     while (this.rooms.has(code));
-    const room = { code, hostId: client.id, members: [client], state: 'lobby', game: null, timer: null, select: null };
+    // 새 방은 기본 공개(방 목록에 보임). 비공개 방은 목록에 안 나오고 코드로만 들어온다
+    const room = { code, hostId: client.id, members: [client], state: 'lobby', private: isPrivate === true, game: null, timer: null, select: null };
     this.rooms.set(code, room);
     client.room = room;
+    this.watchers.delete(client);
     this.broadcastRoom(room);
     return room;
   }
@@ -121,7 +137,41 @@ export class RoomManager {
     this.leaveRoom(client);
     room.members.push(client);
     client.room = room;
+    this.watchers.delete(client);
     this.broadcastRoom(room);
+  }
+
+  /** 방장이 공개/비공개를 바꾼다 */
+  setPrivate(client, on) {
+    const room = client.room;
+    if (!room) return;
+    if (room.hostId !== client.id) return this.error(client, 'notHost', '방장만 공개 설정을 바꿀 수 있어요.');
+    room.private = on === true;
+    this.broadcastRoom(room);
+  }
+
+  /** 방 목록: 대기 중인 공개 방만 (게임 중·비공개 방은 제외) */
+  roomList() {
+    const list = [];
+    for (const room of this.rooms.values()) {
+      if (room.private || room.state !== 'lobby') continue;
+      const host = room.members.find((m) => m.id === room.hostId);
+      list.push({ code: room.code, host: host?.name ?? '', count: room.members.length, max: RULES.MAX_PLAYERS });
+    }
+    return list;
+  }
+
+  /** 목록이 바뀌었으면 보고 있는 사람들에게 보낸다 */
+  pushRoomList() {
+    if (this.watchers.size === 0) {
+      this.lastListJson = '';
+      return;
+    }
+    const rooms = this.roomList();
+    const json = JSON.stringify(rooms);
+    if (json === this.lastListJson) return;
+    this.lastListJson = json;
+    for (const w of this.watchers) w.send({ t: 'roomList', rooms });
   }
 
   leaveRoom(client) {
@@ -273,6 +323,7 @@ export class RoomManager {
     room.timer = null;
     room.game = null;
     this.rooms.delete(room.code);
+    this.pushRoomList();
   }
 
   broadcastRoom(room) {
@@ -281,10 +332,12 @@ export class RoomManager {
       code: room.code,
       hostId: room.hostId,
       state: room.state,
+      private: room.private,
       maxPlayers: RULES.MAX_PLAYERS,
       minPlayers: RULES.MIN_PLAYERS,
       players: room.members.map((m) => ({ id: m.id, name: m.name })),
     };
     for (const m of room.members) m.send(msg);
+    this.pushRoomList();
   }
 }

@@ -310,3 +310,63 @@ test('맵은 직업 선택 단계에서 무작위로 정해지고 그 맵으로 
   }
   assert.equal(seen.size, 3, '세 맵 모두 나올 수 있음');
 });
+
+test('방 목록: 대기 중인 공개 방만 보이고, 바뀌면 보고 있는 사람에게 다시 보냄', () => {
+  const { mgr, mk } = setup();
+  const a = mk('철수');
+  const b = mk('영희');
+  const viewer = mk('구경');
+  mgr.handle(viewer, { t: 'rooms' });
+  assert.deepEqual(viewer.last('roomList').rooms, []);
+  mgr.handle(a, { t: 'create' });
+  const code = a.last('room').code;
+  assert.equal(a.last('room').private, false, '새 방은 기본 공개');
+  assert.deepEqual(viewer.last('roomList').rooms, [{ code, host: '철수', count: 1, max: 8 }]);
+  mgr.handle(b, { t: 'join', code });
+  assert.equal(viewer.last('roomList').rooms[0].count, 2);
+  // 게임이 시작되면 목록에서 빠지고, 끝나면 다시 보인다
+  mgr.handle(a, { t: 'start' });
+  assert.deepEqual(viewer.last('roomList').rooms, []);
+  const room = mgr.rooms.get(code);
+  mgr.handle(room.members.find((m) => m.id === room.select.hunterIds[0]), { t: 'pickClass', cls: 'maniac' });
+  assert.equal(room.state, 'playing');
+  room.game.timeUp();
+  mgr.step(room, 1 / 20);
+  assert.equal(viewer.last('roomList').rooms.length, 1);
+  // 모두 나가면 방이 사라진다
+  mgr.handle(a, { t: 'leave' });
+  mgr.handle(b, { t: 'leave' });
+  assert.deepEqual(viewer.last('roomList').rooms, []);
+  // 그만 보면 더 이상 받지 않는다
+  mgr.handle(viewer, { t: 'rooms', watch: false });
+  const before = viewer.inbox.length;
+  mgr.handle(a, { t: 'create' });
+  assert.equal(viewer.inbox.length, before);
+});
+
+test('비공개 방: 목록에 안 보이고 코드로만 참가, 방장만 바꿀 수 있음', () => {
+  const { mgr, mk } = setup();
+  const a = mk('A');
+  const b = mk('B');
+  const viewer = mk('V');
+  mgr.handle(a, { t: 'create' });
+  const code = a.last('room').code;
+  mgr.handle(viewer, { t: 'rooms' });
+  assert.equal(viewer.last('roomList').rooms.length, 1);
+  mgr.handle(a, { t: 'setPrivate', on: true });
+  assert.equal(a.last('room').private, true);
+  assert.deepEqual(viewer.last('roomList').rooms, [], '비공개로 바꾸면 목록에서 사라짐');
+  mgr.handle(b, { t: 'join', code });
+  assert.equal(b.last('room').players.length, 2, '코드로는 들어올 수 있음');
+  assert.equal(b.last('room').private, true);
+  mgr.handle(b, { t: 'setPrivate', on: false });
+  assert.equal(b.last('error').code, 'notHost');
+  assert.equal(mgr.rooms.get(code).private, true);
+  mgr.handle(a, { t: 'setPrivate', on: false });
+  assert.equal(viewer.last('roomList').rooms.length, 1, '다시 공개하면 목록에 보임');
+  // 만들 때부터 비공개로 만들 수도 있다
+  const c = mk('C');
+  mgr.handle(c, { t: 'create', private: true });
+  assert.equal(c.last('room').private, true);
+  assert.equal(viewer.last('roomList').rooms.length, 1);
+});

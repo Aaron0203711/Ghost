@@ -922,6 +922,59 @@ test('선장: 닻은 최대 20m, 벽에 막힘. 끌려오다 벽에 막히면 �
   }
 });
 
+test('선장: 날아가는 닻의 밧줄에 닿아도 끌려옴 (닻은 계속 날아가고 여러 명 가능, 벽에 가린 밧줄은 무효)', () => {
+  {
+    const { game, events, s1, s2 } = field('captain');
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 0.3); // 닻이 약 8m 날아감
+    assert.equal(game.anchors.length, 1);
+    const az = game.anchors[0].z;
+    assert.ok(az < -6, `닻 위치 ${az.toFixed(2)}`);
+    // 닻이 이미 지나간 자리로 두 생존자가 들어와 밧줄을 건드림
+    s1.x = 0.3;
+    s1.z = -3;
+    s2.x = -0.4;
+    s2.z = -5;
+    game.tick(DT);
+    assert.equal(s1.pulledBy, 'p1', '밧줄에 닿아 끌려옴');
+    assert.equal(s2.pulledBy, 'p1', '여러 명도 끌려옴');
+    assert.equal(s1.hits, 0, '피해 없음');
+    assert.equal(game.anchors.length, 1, '닻은 계속 날아감');
+    assert.equal(events.filter((e) => e.msg.kind === 'ropeHit').length, 2);
+    run(game, 1.6);
+    assert.ok(!s1.pulledBy && !s2.pulledBy, '1.5초 뒤 끝남');
+    assert.ok(Math.hypot(s1.x, s1.z + 1.3) < 0.6, `선장 앞 (${s1.x.toFixed(2)}, ${s1.z.toFixed(2)})`);
+    assert.equal(game.anchors.length, 0, '20m 날아가면 닻과 밧줄이 사라짐');
+    // 밧줄이 사라진 뒤에는 그 자리에 있어도 안 끌려옴
+    s1.x = 0;
+    s1.z = -6;
+    run(game, 0.2);
+    assert.ok(!s1.pulledBy, '닻이 사라진 뒤에는 무효');
+  }
+  {
+    const { game, s1 } = field('captain');
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 0.3);
+    s1.x = 1.2; // 밧줄에서 1.2m 옆: 안 닿음
+    s1.z = -4;
+    game.tick(DT);
+    assert.ok(!s1.pulledBy, '밧줄에서 떨어져 있으면 안 끌려옴');
+  }
+  {
+    const { game, hunter, s1 } = field('captain');
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 0.3);
+    // 선장이 옆으로 비켜서 밧줄이 벽 너머를 지나게 됨
+    hunter.x = 6;
+    game.world.add({ x: 4, z: -1.5, w: 0.3, d: 6, h: 1.9 });
+    const a = game.anchors[0];
+    s1.x = (hunter.x + a.x) / 2;
+    s1.z = (hunter.z + a.z) / 2;
+    game.tick(DT);
+    assert.ok(!s1.pulledBy, '벽에 가린 밧줄에는 안 걸림');
+  }
+});
+
 test('유령: 담장·벽은 통과하지만 집·바깥 경계는 못 지나감', () => {
   const { game, hunter } = makeGame(3, 7, 'ghost');
   const wall = game.map.boxes.find((b) => b.kind === 'wall' && b.w > 3);

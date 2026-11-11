@@ -191,6 +191,8 @@ export class Avatar {
     const h = buildHumanoid(spec);
     if (isHunter) dressHunter(this.cls, h);
     this.body = h.root;
+    this.glowEyes = h.glow || []; // 술래 눈빛
+    this.eyesLit = true;
     this.body.scale.setScalar(isHunter ? 1.08 : 1);
     this.group.add(this.body);
     const P = h.parts;
@@ -271,6 +273,7 @@ export class Avatar {
     this.ghost = alpha;
     const a = alpha * this.baseAlpha;
     for (const m of this.materials) {
+      if (m.userData.keepOpacity) continue; // 눈빛 번짐은 그대로
       m.transparent = a < 1;
       m.opacity = a;
       m.depthWrite = a >= 1;
@@ -405,6 +408,16 @@ export class Avatar {
       this.armL.rotation.x = 0.9 + Math.sin(now / 700) * 0.1; // 팔을 앞으로 내민 채 떠다님
       if (this.swing <= 0) this.armR.rotation.x = 0.9 - Math.sin(now / 700) * 0.1;
     }
+    // 술래 눈빛: 은은하게 깜빡이듯 숨쉬고, 저격수는 조준하는 동안 꺼진다
+    const lit = !(this.cls === 'sniper' && this.aiming);
+    if (lit !== this.eyesLit) {
+      this.eyesLit = lit;
+      for (const g of this.glowEyes) {
+        g.mesh.material.color.copy(lit ? g.on : g.off);
+        if (g.halo) g.halo.visible = lit;
+      }
+    }
+    if (lit) for (const g of this.glowEyes) if (g.halo) g.halo.material.opacity = 0.45 + Math.sin(now / 400) * 0.12;
     if (this.pulled) this.group.rotation.z = Math.sin(now / 60) * 0.08; // 끌려가며 버둥거림
     else this.group.rotation.z = 0;
 

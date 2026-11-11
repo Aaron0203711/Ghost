@@ -25,7 +25,6 @@ const fabricTex = () =>
 const cloth = (color, rough = 0.9) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0, map: fabricTex() });
 const skinMat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0 });
 const solid = (color, rough = 0.6, metal = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
-const glow = (color) => new THREE.MeshBasicMaterial({ color });
 
 const capsule = (r, len, seg = 8) => new THREE.CapsuleGeometry(r, len, 4, seg);
 const mesh = (geo, mat, x = 0, y = 0, z = 0) => {
@@ -269,6 +268,51 @@ function addTopDetails(root, spec, top) {
   }
 }
 
+// ───────────── 술래 눈빛 ─────────────
+
+const eyeHalo = () =>
+  canvasTexture(
+    'eye-halo',
+    32,
+    32,
+    (g, w, h) => {
+      const grd = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+      grd.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, w, h);
+    },
+    { repeat: false },
+  );
+
+/**
+ * 살짝 빛나는 눈: 빛나는 눈동자 + 작은 빛 번짐.
+ * h.glow 목록에 넣어 두면 아바타가 켜고 끈다 (저격수는 조준하는 동안 끔).
+ * points: 머리 기준 [x, y, z] 목록, size: 눈동자 반지름
+ */
+function addGlowEyes(h, points, color, size = 0.011) {
+  h.glow = h.glow || [];
+  const on = new THREE.Color(color);
+  for (const [x, y, z] of points) {
+    const pupil = mesh(new THREE.SphereGeometry(size, 8, 6), new THREE.MeshBasicMaterial({ color: on }), x, y, z);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: eyeHalo(), color: on, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    halo.material.userData.keepOpacity = true; // 반투명 처리(setGhost)에서 제외
+    halo.position.set(x, y, z - 0.004);
+    halo.scale.setScalar(size * 7);
+    h.parts.head.add(pupil, halo);
+    h.glow.push({ mesh: pupil, halo, on, off: new THREE.Color('#1a1a1a') });
+  }
+}
+
+// 얼굴이 있는 직업의 눈 위치 (흰자 바로 앞)
+const FACE_EYES = [
+  [-0.037, 0.105, -0.104],
+  [0.037, 0.105, -0.104],
+];
+
 // ───────────── 직업별 술래 의상 ─────────────
 
 const HUNTER_SPECS = {
@@ -300,11 +344,14 @@ export function dressHunter(cls, h) {
       for (const s of [-1, 1]) {
         const horn = mesh(new THREE.ConeGeometry(0.022, 0.12, 8), solid('#e8dcc0', 0.4), 0.055 * s, 0.22, -0.01);
         horn.rotation.z = -0.35 * s;
-        const eye = mesh(new THREE.SphereGeometry(0.017, 8, 6), glow('#ffd23a'), 0.038 * s, 0.11, -0.112);
         const fang = mesh(new THREE.ConeGeometry(0.008, 0.03, 5), solid('#f4efe0', 0.3), 0.022 * s, 0.03, -0.108);
         fang.rotation.x = Math.PI;
-        head.add(horn, eye, fang);
+        head.add(horn, fang);
       }
+      addGlowEyes(h, [
+        [-0.038, 0.11, -0.113],
+        [0.038, 0.11, -0.113],
+      ], '#ffd23a', 0.016);
       const brows = mesh(new THREE.BoxGeometry(0.1, 0.02, 0.02), solid('#2a0a08'), 0, 0.14, -0.11);
       const hair = mesh(new THREE.SphereGeometry(0.11, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2.2), solid('#141010', 0.9), 0, 0.12, 0.02);
       head.add(brows, hair);
@@ -323,6 +370,7 @@ export function dressHunter(cls, h) {
       const tail = mesh(new THREE.BoxGeometry(0.03, 0.18, 0.01), cloth('#b3262b'), 0.03, 0.08, 0.12);
       tail.rotation.z = 0.3;
       head.add(hood, maskM, band, tail);
+      addGlowEyes(h, FACE_EYES, '#ff4a4a');
       // 허리 띠와 쿠나이 주머니
       root.add(mesh(new THREE.BoxGeometry(0.09, 0.07, 0.04), cloth('#2a2f3c'), 0.12, 0.96, -0.1));
       break;
@@ -332,8 +380,13 @@ export function dressHunter(cls, h) {
       const capM = mesh(new THREE.SphereGeometry(0.114, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), olive, 0, 0.13, 0);
       const balaclava = mesh(new THREE.SphereGeometry(0.108, 14, 10), olive, 0, 0.07, 0.004);
       balaclava.scale.set(0.95, 0.9, 1.0);
-      const goggles = mesh(new THREE.BoxGeometry(0.17, 0.035, 0.03), glow('#ff3b2f'), 0, 0.11, -0.1);
+      const goggles = mesh(new THREE.BoxGeometry(0.17, 0.035, 0.03), new THREE.MeshBasicMaterial({ color: '#ff3b2f' }), 0, 0.11, -0.1);
       head.add(capM, balaclava, goggles);
+      addGlowEyes(h, [
+        [-0.04, 0.11, -0.117],
+        [0.04, 0.11, -0.117],
+      ], '#ff3b2f', 0.012);
+      h.glow.push({ mesh: goggles, on: new THREE.Color('#ff3b2f'), off: new THREE.Color('#2a1210') });
       // 전술 조끼와 탄약 주머니
       root.add(mesh(new THREE.BoxGeometry(0.34, 0.3, 0.06), cloth('#3a4430'), 0, 1.22, -0.1));
       for (const x of [-0.1, 0, 0.1]) root.add(mesh(new THREE.BoxGeometry(0.07, 0.08, 0.04), cloth('#2a3022'), x, 1.12, -0.14));
@@ -351,6 +404,7 @@ export function dressHunter(cls, h) {
       const strap = mesh(new THREE.TorusGeometry(0.1, 0.004, 4, 20), solid('#111'), 0, 0.12, 0);
       strap.rotation.set(Math.PI / 2, 0.4, 0);
       head.add(brim, crown, trimHat, beard, patch, strap);
+      addGlowEyes(h, [FACE_EYES[0]], '#ffb347'); // 안대 없는 왼쪽 눈만
       // 코트 자락, 금 단추, 견장
       const gold = solid('#c9a23a', 0.3, 0.8);
       for (let i = 0; i < 5; i++) for (const s of [-1, 1]) root.add(mesh(new THREE.SphereGeometry(0.01, 6, 4), gold, 0.05 * s, 1.38 - i * 0.08, -0.13));
@@ -367,6 +421,7 @@ export function dressHunter(cls, h) {
       const hole = solid('#05070c', 1);
       for (const s of [-1, 1]) {
         const e = mesh(new THREE.SphereGeometry(0.028, 10, 8), hole, 0.04 * s, 0.11, -0.092);
+        addGlowEyes(h, [[0.04 * s, 0.11, -0.112]], '#a8e4ff', 0.01); // 눈구멍 속 창백한 빛
         e.scale.set(1, 1.5, 0.6);
         head.add(e);
       }
@@ -403,6 +458,10 @@ export function dressHunter(cls, h) {
       head.add(mesh(new THREE.SphereGeometry(0.026, 10, 8), solid('#f2efe4', 0.2), 0.038, 0.105, -0.092));
       head.add(mesh(new THREE.SphereGeometry(0.008, 6, 4), solid('#111'), 0.038, 0.105, -0.117));
       head.add(mesh(new THREE.SphereGeometry(0.013, 8, 6), solid('#111'), -0.036, 0.1, -0.1));
+      addGlowEyes(h, [
+        [0.038, 0.105, -0.118],
+        [-0.036, 0.1, -0.112],
+      ], '#9dff6a', 0.009); // 짝짝이 눈에 병든 초록빛
       const mouth = mesh(new THREE.BoxGeometry(0.08, 0.01, 0.01), solid('#4a0e0a'), 0.01, 0.035, -0.1);
       mouth.rotation.z = 0.15;
       head.add(mouth);
@@ -419,6 +478,7 @@ export function dressHunter(cls, h) {
       const band = mesh(new THREE.TorusGeometry(0.106, 0.012, 6, 20), cloth('#f2f2f2'), 0, 0.15, 0);
       band.rotation.x = Math.PI / 2;
       head.add(band);
+      addGlowEyes(h, FACE_EYES, '#ff9a3c');
       // 운동복 흰 줄
       for (const s of [-1, 1]) {
         root.add(mesh(new THREE.BoxGeometry(0.012, 0.45, 0.012), cloth('#f2f2f2'), 0.19 * s, 1.2, 0));

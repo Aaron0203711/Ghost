@@ -101,17 +101,17 @@ export class MiniMap {
       const x = this.px(gen.x);
       const y = this.py(gen.z);
       g.beginPath();
-      g.arc(x, y, 11, 0, Math.PI * 2);
+      g.arc(x, y, 13, 0, Math.PI * 2);
       g.fillStyle = gen.done ? '#3cff6a' : '#ff5a3a';
       g.fill();
       g.lineWidth = 3;
       g.strokeStyle = '#111';
       g.stroke();
       g.fillStyle = '#111';
-      g.font = 'bold 14px system-ui, sans-serif';
+      g.font = '17px system-ui, sans-serif';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText('⚡', x, y + 1);
+      g.fillText('💡', x, y + 1);
     }
 
     // 생존자가 잡힌 자리

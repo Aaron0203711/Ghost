@@ -672,7 +672,7 @@ input[type='range'] {
   padding: 6px 12px;
   border-radius: 999px;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 13px;
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid var(--line);
 }
@@ -717,13 +717,13 @@ input[type='range'] {
 }
 
 .icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  font-size: 20px;
+  font-size: 17px;
   cursor: pointer;
 }
 
@@ -884,25 +884,24 @@ input[type='range'] {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 16px 6px 8px;
-  border-radius: 16px;
-  background: rgba(20, 55, 65, 0.78);
-  border: 2px solid rgba(160, 230, 255, 0.7);
-  color: #e6faff;
-  font-weight: 800;
-  font-size: 14px;
+  gap: 6px;
+  padding: 4px 12px 4px 6px;
+  border-radius: 999px;
+  background: rgba(30, 60, 70, 0.7);
+  border: 1px solid rgba(160, 230, 255, 0.5);
+  color: #c8f2ff;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 0 18px rgba(120, 220, 255, 0.35);
 }
 
 /* 탈출구 방향 화살표 (위 = 정면) */
 #exit-arrow {
-  width: 42px;
-  height: 42px;
+  width: 20px;
+  height: 20px;
   flex: none;
   transition: transform 0.08s linear;
-  filter: drop-shadow(0 0 6px rgba(140, 230, 255, 0.9));
 }
 
 #exit-arrow path {
@@ -914,23 +913,20 @@ input[type='range'] {
 
 #hud-exit .exit-text {
   display: flex;
-  flex-direction: column;
-  line-height: 1.25;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.2;
 }
 
 #exit-label {
   font-style: normal;
-  font-size: 12px;
-  opacity: 0.85;
 }
 
 #exit-dir {
-  font-size: 16px;
   color: #ffffff;
 }
 
 #exit-dist {
-  font-size: 16px;
   color: #7fe3ff;
 }
 
@@ -940,7 +936,7 @@ input[type='range'] {
 
 @keyframes exitPulse {
   50% {
-    box-shadow: 0 0 28px rgba(120, 220, 255, 0.85);
+    box-shadow: 0 0 12px rgba(120, 220, 255, 0.7);
   }
 }
 
@@ -1078,8 +1074,8 @@ input[type='range'] {
   position: absolute;
   left: calc(28px + var(--safe-l));
   bottom: calc(28px + var(--safe-b));
-  width: 140px;
-  height: 140px;
+  width: 112px;
+  height: 112px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16));
   border: 2px solid rgba(255, 255, 255, 0.28);
@@ -1096,9 +1092,9 @@ input[type='range'] {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 58px;
-  height: 58px;
-  margin: -29px 0 0 -29px;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.55);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -1131,13 +1127,13 @@ input[type='range'] {
 }
 
 .ctl-btn .ico {
-  font-size: 30px;
+  font-size: 23px;
   line-height: 1;
 }
 
 .ctl-btn .lbl {
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 11px;
+  margin-top: 1px;
 }
 
 .ctl-btn.pressed {
@@ -1149,18 +1145,18 @@ input[type='range'] {
 .ctl-btn.action {
   right: calc(28px + var(--safe-r));
   bottom: calc(28px + var(--safe-b));
-  width: 96px;
-  height: 96px;
+  width: 76px;
+  height: 76px;
 }
 
 /* 가운데에서 오른쪽: 공격(술래) / 수리(생존자) */
 .ctl-btn.main {
-  right: calc(36px + var(--safe-r));
+  right: calc(30px + var(--safe-r));
   top: 50%;
   margin-top: -20px;
   transform-origin: center;
-  width: 104px;
-  height: 104px;
+  width: 82px;
+  height: 82px;
   translate: 0 -50%;
 }
 
@@ -1170,22 +1166,22 @@ input[type='range'] {
 
 .ctl-btn .count {
   position: absolute;
-  top: 8px;
-  right: 14px;
-  min-width: 22px;
-  height: 22px;
-  border-radius: 11px;
+  top: 5px;
+  right: 9px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
   background: var(--accent);
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 11px;
+  line-height: 18px;
   text-align: center;
   z-index: 1;
 }
 
 .ctl-btn .timer {
   position: absolute;
-  bottom: 8px;
-  font-size: 11px;
+  bottom: 6px;
+  font-size: 10px;
   color: #ffd98a;
   z-index: 1;
 }
@@ -1253,16 +1249,16 @@ body.touch #pc-hint {
 /* 작은 가로 화면 (휴대폰 가로) */
 @media (max-height: 430px) {
   #joy {
-    width: 120px;
-    height: 120px;
+    width: 100px;
+    height: 100px;
   }
   .ctl-btn.action {
-    width: 84px;
-    height: 84px;
+    width: 66px;
+    height: 66px;
   }
   .ctl-btn.main {
-    width: 92px;
-    height: 92px;
+    width: 72px;
+    height: 72px;
   }
   .menu-card {
     padding: 16px 18px;
@@ -1748,18 +1744,18 @@ body.touch #pc-hint {
 
 /* 점프: 오른쪽 아래(달리기/스킬) 버튼 위 */
 .ctl-btn.jump {
-  right: calc(44px + var(--safe-r));
-  bottom: calc(136px + var(--safe-b));
-  width: 64px;
-  height: 64px;
+  right: calc(40px + var(--safe-r));
+  bottom: calc(116px + var(--safe-b));
+  width: 52px;
+  height: 52px;
 }
 
 .ctl-btn.jump .ico {
-  font-size: 24px;
+  font-size: 19px;
 }
 
 .ctl-btn.jump .lbl {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 /* 낮은 화면(휴대폰 가로): 공격/수리 버튼을 점프 버튼 위로 쌓는다 */
@@ -1768,19 +1764,21 @@ body.touch #pc-hint {
     top: auto;
     translate: none;
     margin-top: 0;
-    bottom: calc(212px + var(--safe-b));
+    right: calc(25px + var(--safe-r));
+    bottom: calc(182px + var(--safe-b));
   }
 }
 
 @media (max-height: 430px) {
   .ctl-btn.jump {
-    right: calc(40px + var(--safe-r));
-    bottom: calc(122px + var(--safe-b));
-    width: 58px;
-    height: 58px;
+    right: calc(38px + var(--safe-r));
+    bottom: calc(104px + var(--safe-b));
+    width: 46px;
+    height: 46px;
   }
   .ctl-btn.main {
-    bottom: calc(190px + var(--safe-b));
+    right: calc(25px + var(--safe-r));
+    bottom: calc(162px + var(--safe-b));
   }
 }
 

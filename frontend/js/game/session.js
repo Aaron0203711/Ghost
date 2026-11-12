@@ -130,7 +130,7 @@ export class GameSession {
     this.tracers = new Map(); // 서버 총알 id → 궤적 (끝 위치를 받기 전)
     this.liveTracers = []; // 화면에 그리는 중인 궤적
     this.effects = [];
-    // 이번 판 규칙 (5명이면 발전기 5개, 체력 2칸)
+    // 이번 판 규칙 (5명이면 발전기 7개, 체력 2칸)
     this.hitsToCatch = start.rules?.hitsToCatch ?? RULES.HITS_TO_CATCH;
     this.maxHits = me.mx ?? this.hitsToCatch; // 내 체력 칸 (푸드파이터 +4)
     this.staminaMax = me.stm ?? RULES.STAMINA_MAX; // 푸드파이터 5초
@@ -753,6 +753,7 @@ export class GameSession {
       this.disguiseAvatars.set(p.id, d);
     }
     d.avatar.setTarget(p.x, p.z, p.yaw);
+    d.avatar.repairing = !!p.rep; // 발전기 옆에서 수리하는 척
     d.avatar.group.visible = p.st === STATUS.ALIVE;
     hunterAvatar.group.visible = false;
   }
@@ -1161,6 +1162,7 @@ export class GameSession {
     if (alive && this.moving) {
       const speed = speedFor(this.role, this.running, {
         cls: this.isHunter ? this.hunterClass : null,
+        scls: this.scls,
         aiming: this.aiming,
         invisible: this.isAssassin && this.invisLeft > 0,
         slowed: this.isAssassin && this.slowLeft > 0,

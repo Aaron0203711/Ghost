@@ -553,6 +553,7 @@ export class Game {
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
       const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), {
         cls: p.cls,
+        scls: p.scls,
         aiming: p.aiming,
         invisible: this.isInvisible(p),
         slowed: this.time < p.slowUntil,
@@ -622,6 +623,11 @@ export class Game {
       if (!g) continue;
       g.repairers++;
       s.repairing = true;
+    }
+    // 살가죽 변장: 발전기 옆에 멈춰 서 있으면 생존자처럼 수리하는 척 (진행도는 오르지 않음)
+    for (const h of this.players.values()) {
+      if (h.role !== ROLE.HUNTER || !h.disguiseAs || h.moving || this.isStunned(h) || h.pulledBy) continue;
+      if (this.nearestGen(h)) h.repairing = true;
     }
     const robotWork = stepRobots(this, dt); // 엔지니어 로봇: 매초 4%
     for (const g of this.gens) {

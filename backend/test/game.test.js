@@ -95,20 +95,22 @@ test('덫: 술래는 자기 덫을 밟지 않는다', () => {
   assert.ok(!game.isStunned(hunter));
 });
 
-test('방망이: 3번 맞으면 잡힘, 맞은 뒤 2초 무적, 공격 쿨타임 1초', () => {
+test('방망이: 3번 맞으면 잡힘, 맞은 뒤 1초 무적, 공격 쿨타임 1초', () => {
   const { game, hunter, s1 } = makeGame();
   faceOff(game, hunter, s1);
   game.handleAttack('p1');
   assert.equal(s1.hits, 1);
   game.handleAttack('p1'); // 쿨타임 중
   assert.equal(s1.hits, 1);
-  run(game, 1.05);
-  game.handleAttack('p1'); // 쿨타임은 끝났지만 무적 2초
+  hunter.attackReadyAt = game.time + 0.5; // 쿨타임을 앞당겨 무적만 확인
+  run(game, 0.55);
+  game.handleAttack('p1'); // 쿨타임은 끝났지만 무적 1초
   assert.equal(s1.hits, 1);
-  run(game, 1.0);
+  hunter.attackReadyAt = 0; // 헛스윙 쿨타임은 무시
+  run(game, 0.5);
   game.handleAttack('p1');
   assert.equal(s1.hits, 2);
-  run(game, 2.05);
+  run(game, 1.05);
   game.handleAttack('p1');
   assert.equal(s1.hits, 3);
   assert.equal(s1.status, STATUS.CAUGHT);
@@ -116,7 +118,7 @@ test('방망이: 3번 맞으면 잡힘, 맞은 뒤 2초 무적, 공격 쿨타임
 
 test('방망이: 사거리 밖, 등 뒤, 벽 너머는 맞지 않는다', () => {
   const { game, hunter, s1 } = makeGame();
-  faceOff(game, hunter, s1, 3.5);
+  faceOff(game, hunter, s1, 4);
   game.handleAttack('p1');
   assert.equal(s1.hits, 0, '사거리 밖');
   run(game, 1.1);
@@ -263,13 +265,13 @@ test('맵: 모든 발전기와 생존자 시작점은 장애물과 겹치지 않
   }
 });
 
-test('5인 규칙: 5명이면 발전기 5개, 4명이면 3개', () => {
-  assert.equal(makeGame(5, 11).game.gens.length, 5);
-  assert.equal(makeGame(4, 11).game.gens.length, 3);
-  assert.equal(makeGame(2, 11).game.gens.length, 3);
+test('5인 규칙: 5명이면 발전기 7개, 4명이면 5개', () => {
+  assert.equal(makeGame(5, 11).game.gens.length, 7);
+  assert.equal(makeGame(4, 11).game.gens.length, 5);
+  assert.equal(makeGame(2, 11).game.gens.length, 5);
   const { game } = makeGame(5, 11);
-  assert.deepEqual(game.startPayload('p2').rules, { hunters: 1, generators: 5, hitsToCatch: 2 });
-  assert.equal(game.startPayload('p2').generators.length, 5);
+  assert.deepEqual(game.startPayload('p2').rules, { hunters: 1, generators: 7, hitsToCatch: 2 });
+  assert.equal(game.startPayload('p2').generators.length, 7);
 });
 
 test('5인 규칙: 생존자는 2번 맞으면 잡힘 (4명 이하는 3번)', () => {
@@ -472,18 +474,18 @@ function duoGame(n = 6, classes = ['maniac', 'sniper'], seed = 5) {
   return { game, events };
 }
 
-test('6명 이상 규칙: 술래 2명, 발전기 5개, 체력 3칸', () => {
+test('6명 이상 규칙: 술래 2명, 발전기 7개, 체력 3칸', () => {
   for (const n of [6, 8]) {
     const { game } = duoGame(n);
     assert.equal([...game.players.values()].filter((p) => p.role === 'hunter').length, 2);
-    assert.equal(game.gens.length, 5);
+    assert.equal(game.gens.length, 7);
     assert.equal(game.rules.hitsToCatch, 3);
     const [h1, h2] = [game.players.get('p1'), game.players.get('p2')];
     assert.ok(Math.hypot(h1.x - h2.x, h1.z - h2.z) > 5, '두 술래는 다른 곳에서 시작');
     for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9));
   }
-  assert.deepEqual(matchRules(5), { hunters: 1, generators: 5, hitsToCatch: 2 });
-  assert.deepEqual(matchRules(4), { hunters: 1, generators: 3, hitsToCatch: 3 });
+  assert.deepEqual(matchRules(5), { hunters: 1, generators: 7, hitsToCatch: 2 });
+  assert.deepEqual(matchRules(4), { hunters: 1, generators: 5, hitsToCatch: 3 });
 });
 
 test('술래 2명: 술래 1명이 나가면 계속, 둘 다 나가면 생존자 승리', () => {
@@ -586,7 +588,7 @@ test('폐광산 맵으로 게임 시작: 시작 위치와 발전기가 장애물
 
 // ───────────── 암살자 ─────────────
 
-test('암살자: 쿠나이 1칸, 쿨타임 1.5초, 사거리 2m', () => {
+test('암살자: 쿠나이 1칸, 쿨타임 1.5초, 사거리 3m', () => {
   const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
   faceOff(game, hunter, s1, 1.8);
   game.handleAttack('p1', { yaw: 0, pitch: 0 });
@@ -600,7 +602,7 @@ test('암살자: 쿠나이 1칸, 쿨타임 1.5초, 사거리 2m', () => {
   assert.equal(s1.hits, 2);
   assert.ok(Math.abs(hunter.attackReadyAt - game.time - 1.5) < 1e-9, '쿨타임 1.5초');
   run(game, 2.05);
-  faceOff(game, hunter, s1, 2.6);
+  faceOff(game, hunter, s1, 3.6);
   game.handleAttack('p1', { yaw: 0, pitch: 0 });
   assert.equal(s1.hits, 2, '사거리 밖');
   game.handleTrap('p1');
@@ -845,12 +847,13 @@ function field(cls, n = 3) {
   return g;
 }
 
-test('근접 공격 사거리·쿨타임: 선장 2m/0.5초, 유령 2m/0.5초, 살가죽 3m/1.5초, 질주자 3m/1초', () => {
+test('근접 공격 사거리·쿨타임: 미치광이 3m/1초, 선장 3m/0.5초, 유령 3m/0.5초, 살가죽 4m/1.5초, 질주자 4m/1초', () => {
   for (const [cls, range, cd] of [
-    ['captain', 2, 0.5],
-    ['ghost', 2, 0.5],
-    ['skinwalker', 3, 1.5],
-    ['sprinter', 3, 1],
+    ['maniac', 3, 1],
+    ['captain', 3, 0.5],
+    ['ghost', 3, 0.5],
+    ['skinwalker', 4, 1.5],
+    ['sprinter', 4, 1],
   ]) {
     const { game, hunter, s1 } = field(cls);
     s1.x = 0;
@@ -1214,4 +1217,48 @@ test('음성: 투명화 중인 암살자는 생존자에게 안 들리고 동료
   assert.equal(game.voiceFor('p3').p1[0], 0, '생존자에게 안 들림');
   assert.ok(game.voiceFor('p2').p1[0] > 0, '동료 술래에게는 들림');
   assert.ok(game.voiceFor('p1').p3[0] > 0, '암살자는 생존자 목소리를 들음');
+});
+
+test('밸런스: 술래 24km/h, 생존자 1초 무적, 광대 공 11m', () => {
+  assert.ok(Math.abs(RULES.HUNTER_SPEED - 24 / 3.6) < 1e-9);
+  assert.equal(RULES.HIT_INVULNERABLE, 1);
+  const { game, hunter } = field('maniac');
+  run(game, 2);
+  assert.ok(Math.abs(hunter.budget - (24 / 3.6) * 0.6) < 0.01, '술래 이동 허용량');
+});
+
+test('푸드파이터: 걷기·달리기 모두 이동 속도 20% 감소', () => {
+  const { game, s1, s2 } = makeGame();
+  s1.scls = 'foodfighter';
+  run(game, 2);
+  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_WALK_SPEED * 0.8 * 0.6) < 0.01, '걷기 -20%');
+  assert.ok(Math.abs(s2.budget - RULES.SURVIVOR_WALK_SPEED * 0.6) < 0.01, '다른 직업은 그대로');
+  s1.wantsRun = true;
+  s1.stamina = 5;
+  run(game, 1);
+  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_RUN_SPEED * 0.8 * 0.6) < 0.01, '달리기 -20%');
+});
+
+test('살가죽: 변장 중 발전기 옆에 멈춰 서 있으면 수리하는 척 (진행도는 그대로)', () => {
+  const { game, hunter } = makeGame(3, 7, 'skinwalker');
+  const g = game.gens[0];
+  hunter.x = g.x + 1.2;
+  hunter.z = g.z;
+  hunter.moving = false;
+  game.tick(DT);
+  assert.equal(hunter.repairing, false, '변장 안 하면 안 함');
+  game.handleSkill('p1', {});
+  assert.ok(hunter.disguiseAs);
+  run(game, 1);
+  assert.equal(hunter.repairing, true);
+  assert.equal(g.progress, 0, '진행도는 오르지 않음');
+  const seen = game.snapshotFor('p2').players.find((p) => p.id === 'p1');
+  assert.equal(seen.rep, 1, '생존자에게 수리 동작이 보임');
+  hunter.moving = true;
+  game.tick(DT);
+  assert.equal(hunter.repairing, false, '움직이면 멈춤');
+  hunter.moving = false;
+  hunter.x = g.x + 5;
+  game.tick(DT);
+  assert.equal(hunter.repairing, false, '발전기에서 멀면 안 함');
 });

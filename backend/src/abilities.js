@@ -1,15 +1,16 @@
 // 술래 직업 능력: 선장(닻·끌어오기), 유령(벽 통과·유도탄), 살가죽(변장), 질주자(질주).
 // Game 인스턴스(game)를 받아 상태를 바꾸는 함수들. 판정은 모두 서버가 한다.
 
-import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE } from '../../shared/constants.js';
+import { skillDrowned } from './drowned.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
 const survivors = (game) => [...game.players.values()].filter((s) => s.role === ROLE.SURVIVOR && alive(s));
 
-/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주) */
+/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙) */
 export function isForced(game, p) {
-  return game.time < p.pullUntil || !!p.dashPhase;
+  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive;
 }
 
 /** 유령은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
@@ -49,6 +50,8 @@ function startPull(game, t, ownerId) {
 
 export function stepAnchors(game, dt) {
   const STEP = 0.25;
+  // 바다의 저주(선장 + 익사자): 닻이 커지고 판정 반경 1.5m
+  const radius = game.synergies.includes('seaCurse') ? SEA_CURSE.ANCHOR_RADIUS : CAPTAIN.ANCHOR_RADIUS;
   for (const a of [...game.anchors]) {
     const owner = game.players.get(a.owner);
     let remain = CAPTAIN.ANCHOR_SPEED * dt;
@@ -61,7 +64,7 @@ export function stepAnchors(game, dt) {
       a.traveled += s;
       for (const t of survivors(game)) {
         // 닻에 직접 맞으면 닻이 거기서 멈춘다
-        if (Math.hypot(t.x - a.x, t.z - a.z) <= CAPTAIN.ANCHOR_RADIUS + RULES.PLAYER_RADIUS) {
+        if (Math.hypot(t.x - a.x, t.z - a.z) <= radius + RULES.PLAYER_RADIUS) {
           startPull(game, t, a.owner);
           end = { hit: t.id };
           break;
@@ -245,8 +248,8 @@ export function endDash(game, p, reason) {
 
 // ───────────── 스킬 키 처리 ─────────────
 
-/** 선장·유령·살가죽·질주자 스킬. 처리했으면 true */
-export function useSkill(game, p) {
+/** 선장·유령·살가죽·질주자·익사자 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
+export function useSkill(game, p, msg = {}) {
   if (isForced(game, p)) return true;
   if (game.time < p.skillReadyAt) return true;
   switch (p.cls) {
@@ -261,6 +264,9 @@ export function useSkill(game, p) {
       return true;
     case HUNTER_CLASS.SPRINTER:
       skillSprinter(game, p);
+      return true;
+    case HUNTER_CLASS.DROWNED:
+      skillDrowned(game, p, msg);
       return true;
     default:
       return false;

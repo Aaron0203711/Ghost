@@ -135,6 +135,7 @@ export const HUNTER_CLASS = Object.freeze({
   SKINWALKER: 'skinwalker',
   SPRINTER: 'sprinter',
   CLOWN: 'clown',
+  DROWNED: 'drowned',
 });
 
 /** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
@@ -145,6 +146,7 @@ export const MELEE = Object.freeze({
   ghost: { range: 3.0, cooldown: 0.5 }, // 할퀴기
   skinwalker: { range: 4.0, cooldown: 1.5 }, // 갈고리
   sprinter: { range: 4.0, cooldown: 1 }, // 발차기
+  drowned: { range: 3.0, cooldown: 1.5 }, // 작살 (미치광이와 같은 사거리)
 });
 
 /** 직업별 설치형 스킬 개수와 충전 시간 (미치광이 덫, 광대 실) */
@@ -192,16 +194,49 @@ export const TRAP_DUO = Object.freeze({
   THREAD_SCAN_MAX: 40,
 });
 
+/** 바다의 저주: 술래 2명이 선장과 익사자일 때. 닻 판정 반경 1.5m(닻도 커짐), 다이빙 지름 10m·거리 무제한 */
+export const SEA_CURSE = Object.freeze({ ANCHOR_RADIUS: 1.5, DIVE_RADIUS: 5, DIVE_RANGE: Infinity });
+
+/** 최고의 스파이들: 술래 2명이 저격수와 암살자일 때.
+ *  저격수가 35m 밖에서 맞히면 생존자 즉사(무적 중이면 막힘), 암살자가 투명해지는 순간 0.5초 동안 모든 생존자 위치가 암살자에게 보임 */
+export const SPIES = Object.freeze({ KILL_DISTANCE: 35, REVEAL_TIME: 0.5 });
+
 /** 술래 2명의 직업 조합 시너지 */
 export function synergiesFor(classes) {
   const out = [];
-  if (classes.includes(HUNTER_CLASS.MANIAC) && classes.includes(HUNTER_CLASS.CLOWN)) out.push('trapDuo');
+  const has = (c) => classes.includes(c);
+  if (has(HUNTER_CLASS.MANIAC) && has(HUNTER_CLASS.CLOWN)) out.push('trapDuo');
+  if (has(HUNTER_CLASS.CAPTAIN) && has(HUNTER_CLASS.DROWNED)) out.push('seaCurse');
+  if (has(HUNTER_CLASS.SNIPER) && has(HUNTER_CLASS.ASSASSIN)) out.push('spies');
   return out;
 }
 
 export const SYNERGY_INFO = Object.freeze({
-  trapDuo: { name: '함정 듀오', icon: '🪤🧵', desc: '미치광이 덫이 5m 안의 생존자를 따라가고, 광대 실이 벽 끝에서 끝까지 움직여요' },
+  trapDuo: { name: '정신병원', icon: '🪤🧵', desc: '미치광이 덫이 5m 안의 생존자를 따라가고, 광대 실이 벽 끝에서 끝까지 움직여요' },
+  seaCurse: { name: '바다의 저주', icon: '⚓🌊', desc: '선장의 닻이 커지고 판정이 1.5m로, 익사자 다이빙이 지름 10m·거리 무제한이 돼요' },
+  spies: { name: '최고의 스파이들', icon: '🎯🥷', desc: '저격수가 35m 밖에서 맞히면 즉사, 암살자가 투명해지면 0.5초 동안 모든 생존자 위치가 보여요' },
 });
+
+/** 익사자: 작살 근접 공격 + 다이빙.
+ *  다이빙: 스킬 키를 누르고 있는 동안 조준점이 가리키는 땅(최대 25m)에 지름 8m 원이 보이고, 떼면 땅속으로 들어가
+ *  0.5초 뒤 그 원 가운데에서 튀어나온다. 땅속에 있는 동안은 안 보이고 공격·테이저건에 맞지 않으며, 생존자에게도 도착 원이 보인다.
+ *  튀어나올 때 원 안의 생존자는 피해 없이 바깥쪽으로 2m 튕겨 나가고(벽에 막히면 멈춤) 2초 동안 이동 속도 30% 감소. 쿨타임 20초(쓴 순간부터) */
+export const DROWNED = Object.freeze({
+  DIVE_RADIUS: 4,
+  DIVE_RANGE: 25,
+  DIVE_TIME: 0.5,
+  KNOCKBACK: 2,
+  SLOW_FACTOR: 0.7,
+  SLOW_TIME: 2,
+  SKILL_COOLDOWN: 20,
+});
+
+/** 다이빙 원 반지름과 최대 거리 (바다의 저주면 커지고 무제한) */
+export function diveStats(synergies = []) {
+  return synergies.includes('seaCurse')
+    ? { radius: SEA_CURSE.DIVE_RADIUS, range: SEA_CURSE.DIVE_RANGE }
+    : { radius: DROWNED.DIVE_RADIUS, range: DROWNED.DIVE_RANGE };
+}
 
 /** 선장: 닻을 던져 맞은 생존자를 1.5초 동안 자기 앞까지 끌고 온다 (피해 없음) */
 export const CAPTAIN = Object.freeze({
@@ -295,6 +330,7 @@ export const CLASS_INFO = Object.freeze({
   skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 4m (쿨타임 1.5초) · 생존자로 변장(발전기 수리하는 척), 공격하면 풀림 (쿨타임 5초)' },
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
+  drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 8m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
 });
 
 // ───────────── 생존자 직업 (메인 화면에서 고름) ─────────────

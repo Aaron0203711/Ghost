@@ -2407,9 +2407,19 @@ body.touch #cd-sskill,
     padding: 14px 18px;
   }
   .train-classes {
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(9, 1fr);
+  }
+  .train-card > .hint {
+    display: none;
   }
   .train-card .scls-desc {
     min-height: 2.6em;
   }
+}
+
+/* ───────────── 익사자: 다이빙 중 (땅속) ───────────── */
+
+#screen-game.diving #game-canvas-wrap {
+  filter: brightness(0.4) saturate(1.6) hue-rotate(150deg) blur(2px);
+  transition: filter 0.1s ease;
 }

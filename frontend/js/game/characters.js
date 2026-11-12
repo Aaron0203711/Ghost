@@ -324,6 +324,8 @@ const HUNTER_SPECS = {
   skinwalker: { skin: '#d9a58e', topColor: '#c79a86', pants: '#7a4f3f', shoes: '#3a2418', hairStyle: 'none', top: 'tshirt', noFace: true },
   sprinter: { skin: '#e3b98f', topColor: '#c8282d', pants: '#1c1c22', shoes: '#f2f2f2', hairStyle: 'short', hair: '#1b1410', top: 'jacket' },
   clown: { skin: '#f4f1ea', topColor: '#e0393e', pants: '#2f6fd6', shoes: '#e0393e', hairStyle: 'curly', hair: '#ff7a1a', top: 'tshirt', eyes: '#111' },
+  // 익사자: 옛날 잠수복 (누런 캔버스 천, 놋쇠 투구, 납 신발)
+  drowned: { skin: '#7d8f86', topColor: '#7a6d52', pants: '#6e6249', shoes: '#2e2c2a', hairStyle: 'none', top: 'jacket', noFace: true },
 };
 
 export function hunterSpec(cls) {
@@ -515,6 +517,60 @@ export function dressHunter(cls, h) {
         const big = mesh(new THREE.SphereGeometry(0.09, 10, 8), solid('#e0393e', 0.5), 0, -0.44, -0.12);
         big.scale.set(1, 0.55, 1.7);
         leg.add(big);
+      }
+      break;
+    }
+    case 'drowned': {
+      // 옛날 잠수복: 커다란 놋쇠 투구(앞·양옆 둥근 창), 어깨 위 놋쇠 가슴판과 볼트, 등 공기 호스, 납 벨트와 납 신발, 미역
+      const brass = solid('#b08a3e', 0.35, 0.85);
+      const copper = solid('#8a5a32', 0.4, 0.8);
+      const glass = new THREE.MeshStandardMaterial({ color: '#1c3a36', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.85 });
+      const helmet = mesh(new THREE.SphereGeometry(0.17, 18, 14), copper, 0, 0.09, 0);
+      head.add(helmet);
+      const port = (x, y, z, ry, r) => {
+        const ring = mesh(new THREE.TorusGeometry(r, 0.014, 6, 18), brass, x, y, z);
+        ring.rotation.y = ry;
+        const pane = mesh(new THREE.CircleGeometry(r, 16), glass, x, y, z);
+        pane.rotation.y = ry + Math.PI;
+        head.add(ring, pane);
+      };
+      port(0, 0.1, -0.168, 0, 0.068); // 앞 창
+      port(-0.165, 0.09, -0.02, -Math.PI / 2, 0.045);
+      port(0.165, 0.09, -0.02, Math.PI / 2, 0.045);
+      for (let i = 0; i < 4; i++) {
+        const bar = mesh(new THREE.BoxGeometry(0.006, 0.13, 0.006), brass, -0.045 + i * 0.03, 0.1, -0.172); // 앞 창 창살
+        head.add(bar);
+      }
+      head.add(mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.05, 10), brass, 0, 0.27, 0)); // 꼭대기 밸브
+      addGlowEyes(h, [
+        [-0.03, 0.105, -0.13],
+        [0.03, 0.105, -0.13],
+      ], '#4dffd2', 0.014);
+      const plate = mesh(new THREE.CylinderGeometry(0.21, 0.25, 0.1, 18), brass, 0, 1.47, 0);
+      plate.scale.z = 0.8;
+      root.add(plate);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        root.add(mesh(new THREE.SphereGeometry(0.012, 6, 4), copper, Math.cos(a) * 0.22, 1.43, Math.sin(a) * 0.18));
+      }
+      // 등 공기 호스
+      const hose = mesh(new THREE.TorusGeometry(0.2, 0.022, 6, 16, Math.PI), solid('#2b2b2b', 0.8), 0, 1.35, 0.2);
+      hose.rotation.y = Math.PI / 2;
+      root.add(hose);
+      // 납 벨트
+      root.add(mesh(new THREE.BoxGeometry(0.34, 0.06, 0.24), solid('#55585c', 0.5, 0.6), 0, 0.98, 0));
+      for (const s of [-1, 1]) root.add(mesh(new THREE.BoxGeometry(0.08, 0.1, 0.04), solid('#4a4d50', 0.5, 0.6), 0.1 * s, 0.97, -0.13));
+      // 납 신발
+      for (const leg of [h.parts.kneeL, h.parts.kneeR]) {
+        const boot = mesh(new THREE.BoxGeometry(0.13, 0.08, 0.24), solid('#3c3e40', 0.5, 0.6), 0, -0.44, -0.04);
+        leg.add(boot);
+      }
+      // 몸에 엉겨 붙은 미역
+      const weed = solid('#2f5a2a', 0.9);
+      for (let i = 0; i < 6; i++) {
+        const strand = mesh(new THREE.BoxGeometry(0.02, 0.18 + (i % 3) * 0.06, 0.006), weed, -0.15 + i * 0.06, 1.15 - (i % 2) * 0.2, -0.13);
+        strand.rotation.z = (i % 2 ? 0.3 : -0.2);
+        root.add(strand);
       }
       break;
     }

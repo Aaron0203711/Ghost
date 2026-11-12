@@ -26,7 +26,9 @@ import {
   survivorStats,
   ghostWallExit,
   TRAINING,
+  SPIES,
 } from '../../shared/constants.js';
+import { stepDives } from './drowned.js';
 import { trainingRoster, placeDummies } from './training.js';
 import {
   isForced,
@@ -420,13 +422,15 @@ export class Game {
     if (this.isStunned(p)) return; // 테이저건에 맞은 술래
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (p.cls !== HUNTER_CLASS.ASSASSIN) {
-      useSkill(this, p); // 선장·유령·살가죽·질주자
+      useSkill(this, p, msg); // 선장·유령·살가죽·질주자·익사자
       return;
     }
     // 암살자 투명화 (15초, 끝난 뒤 쿨타임 8초)
     if (this.isInvisible(p) || this.time < p.skillReadyAt) return;
     p.invisUntil = this.time + ASSASSIN.INVIS_TIME;
     this.emitToSeers({ t: 'event', kind: 'invis', id, on: true });
+    // 최고의 스파이들: 투명해지는 순간 0.5초 동안 모든 생존자 위치가 암살자에게 보인다 (벽 너머로 빛남)
+    if (this.synergies.includes('spies')) this.emit(id, { t: 'event', kind: 'spyReveal', id, time: SPIES.REVEAL_TIME });
   }
 
   endInvis(p, reason) {
@@ -517,9 +521,13 @@ export class Game {
           end = { hit: t.id };
           // 무적 중이면 피해 없이 막힌다
           if (this.time >= t.invulnUntil) {
-            const far = Math.hypot(b.x - b.ox, b.z - b.oz) >= SNIPER.FAR_DISTANCE;
-            const dist = Math.round(Math.hypot(b.x - b.ox, b.z - b.oz));
-            this.damage(t, b.owner, far ? SNIPER.FAR_DAMAGE : SNIPER.NEAR_DAMAGE, { far, dist, aimed: b.aimed ? 1 : 0 });
+            const flat = Math.hypot(b.x - b.ox, b.z - b.oz);
+            const far = flat >= SNIPER.FAR_DISTANCE;
+            const dist = Math.round(flat);
+            // 최고의 스파이들: 35m 밖에서 맞히면 즉사 (푸드파이터도)
+            if (this.synergies.includes('spies') && flat >= SPIES.KILL_DISTANCE) {
+              this.damage(t, b.owner, t.maxHits - t.hits, { far, dist, aimed: b.aimed ? 1 : 0, spyKill: 1 });
+            } else this.damage(t, b.owner, far ? SNIPER.FAR_DAMAGE : SNIPER.NEAR_DAMAGE, { far, dist, aimed: b.aimed ? 1 : 0 });
             if (b.aimed && t.status === STATUS.ALIVE) this.addSlow(t, SNIPER.AIM_HIT_SLOW_FACTOR, SNIPER.AIM_HIT_SLOW_TIME);
           } else end.blocked = true;
           break;
@@ -615,6 +623,7 @@ export class Game {
     stepPulls(this, dt);
     stepWisps(this, dt);
     stepDashes(this, dt);
+    stepDives(this);
     stepBalls(this, dt);
     stepTasers(this, dt);
     stepClones(this, dt);
@@ -827,7 +836,8 @@ export class Game {
       time: r2(this.time),
       players: [...this.players.values()].map((p) => {
         const invis = this.isInvisible(p);
-        if (invis && hideInvis) return { id: p.id, hidden: 1, st: p.status, hits: p.hits };
+        // 땅속의 익사자도 생존자에게는 위치를 보내지 않는다
+        if ((invis || p.dive) && hideInvis) return { id: p.id, hidden: 1, st: p.status, hits: p.hits };
         return {
           id: p.id,
           x: r2(p.x),
@@ -847,6 +857,7 @@ export class Game {
           ...(p.disguiseAs ? (hideInvis ? { look: p.disguiseAs } : { disg: p.disguiseAs }) : {}),
           ...(p.pulledBy ? { pull: p.pulledBy } : {}), // 선장 닻에 끌려오는 중
           ...(p.dashPhase ? { dash: p.dashPhase } : {}), // 질주자
+          ...(p.dive ? { dive: 1 } : {}), // 익사자: 땅속
           ...(this.isRevealed(p) ? { glow: 1 } : {}), // 광대 실에 걸려 빛나는 중 (벽 너머로 보임)
         };
       }),

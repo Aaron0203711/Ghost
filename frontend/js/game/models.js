@@ -29,6 +29,30 @@ export function makeBat() {
   return g;
 }
 
+/** 익사자 작살: 손잡이가 원점, +y 방향으로 길게 뻗고 끝에 미늘 달린 촉 */
+export function makeHarpoon() {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 1.2, 8), mat('#5b4630'));
+  shaft.position.y = 0.3;
+  const steel = mat('#9aa3a8');
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 8), mat('#b08a3e'));
+  collar.position.y = 0.88;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.2, 6), steel);
+  tip.position.y = 1.0;
+  g.add(shaft, collar, tip);
+  for (const s of [-1, 1]) {
+    const barb = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.09, 4), steel);
+    barb.position.set(0.025 * s, 0.93, 0);
+    barb.rotation.z = Math.PI - 0.5 * s;
+    g.add(barb);
+  }
+  // 줄 감긴 손잡이
+  const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.18, 8), mat('#2a2622'));
+  wrap.position.y = 0.0;
+  g.add(wrap);
+  return g;
+}
+
 /** 선장 후크: 손잡이가 원점, 갈고리가 +y 끝에서 휘어짐 */
 export function makeHook() {
   const g = new THREE.Group();
@@ -296,7 +320,9 @@ export class Avatar {
       hand.add(obj);
       return obj;
     };
-    if (this.cls === 'captain' || this.cls === 'ghost' || this.cls === 'skinwalker') {
+    if (this.cls === 'drowned') {
+      this.weapon = hold(makeHarpoon(), -Math.PI / 2); // 촉이 앞으로
+    } else if (this.cls === 'captain' || this.cls === 'ghost' || this.cls === 'skinwalker') {
       this.weapon = hold(this.cls === 'captain' ? makeHook() : this.cls === 'ghost' ? makeClaws() : makeChainHook(), Math.PI);
     } else if (this.cls === 'assassin') {
       this.kunai = hold(makeKunai(), Math.PI); // 날이 팔 끝 방향 (아래로 들고 다님)
@@ -905,10 +931,51 @@ export function makeViewModel(camera, cls) {
       return new BatViewModel(camera, { weapon: makeBall(), arm: '#e0393e', fist: '#f4f1ea', speed: 7, scale: 0.42 });
     case 'sniper':
       return new RifleViewModel(camera);
+    case 'drowned':
+      return new HarpoonViewModel(camera);
     case 'assassin':
       return new KunaiViewModel(camera);
     default:
       return new BatViewModel(camera);
+  }
+}
+
+/** 익사자 1인칭: 오른손에 작살을 앞으로 겨누고, 공격하면 앞으로 찌른다 */
+export class HarpoonViewModel {
+  constructor(camera) {
+    this.root = new THREE.Group();
+    this.hand = new THREE.Group();
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.42), mat('#7a6d52'));
+    arm.position.set(0, -0.03, 0.2);
+    const glove = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), mat('#3c3e40'));
+    const harpoon = makeHarpoon();
+    harpoon.rotation.x = -Math.PI / 2; // +y → 앞(-z)
+    harpoon.position.set(0, 0, 0.1);
+    this.hand.add(arm, glove, harpoon);
+    this.root.add(this.hand);
+    this.root.scale.setScalar(0.55);
+    this.root.position.set(0.3, -0.3, -0.5);
+    camera.add(this.root);
+    this.swing = 0;
+    this.bob = 0;
+  }
+
+  playSwing() {
+    this.swing = 1;
+  }
+
+  update(dt, moving) {
+    this.bob += dt * (moving ? 9 : 2);
+    const by = Math.sin(this.bob) * (moving ? 0.015 : 0.004);
+    let thrust = 0;
+    if (this.swing > 0) {
+      this.swing = Math.max(0, this.swing - dt * 4);
+      const t = 1 - this.swing;
+      thrust = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+    }
+    this.hand.rotation.set(0.05, 0.12 - thrust * 0.1, 0);
+    this.hand.position.set(-thrust * 0.12, thrust * 0.04, -thrust * 0.55);
+    this.root.position.set(0.3, -0.3 + by, -0.5);
   }
 }
 

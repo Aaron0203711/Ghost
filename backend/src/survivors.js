@@ -109,7 +109,7 @@ export function stepTasers(game, dt) {
       t.z += t.dir.z * s;
       t.traveled += s;
       for (const h of game.players.values()) {
-        if (h.role !== ROLE.HUNTER || !alive(h)) continue;
+        if (h.role !== ROLE.HUNTER || !alive(h) || h.dive) continue; // 땅속의 익사자는 안 맞음
         if (Math.hypot(h.x - t.x, h.z - t.z) > POLICE.RADIUS + RULES.PLAYER_RADIUS) continue;
         stunHunter(game, h);
         end = { hit: h.id };

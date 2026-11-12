@@ -194,4 +194,13 @@ export const sfx = {
   robot: () => {
     for (let i = 0; i < 3; i++) tone({ freq: 880 + i * 220, dur: 0.07, type: 'square', vol: 0.06, delay: i * 0.08 });
   },
+  // 3차 업데이트: 익사자 다이빙
+  diveIn: (vol = 1) => {
+    noiseBurst(0.5, 0.35 * vol, 500);
+    tone({ freq: 300, to: 70, dur: 0.5, type: 'sine', vol: 0.18 * vol });
+  },
+  diveOut: (vol = 1) => {
+    noiseBurst(0.6, 0.6 * vol, 700);
+    tone({ freq: 70, to: 260, dur: 0.35, type: 'sine', vol: 0.22 * vol });
+  },
 };

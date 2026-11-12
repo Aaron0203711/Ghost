@@ -107,15 +107,21 @@ export const LARGE_MATCH = Object.freeze({ PLAYERS: 5, GENERATORS: 7, HITS_TO_CA
 /** 6명 이상이면 술래 2명, 발전기 7개(모두 켜야 탈출구가 열림), 생존자 체력 3칸 */
 export const DUO_MATCH = Object.freeze({ PLAYERS: 6, HUNTERS: 2, GENERATORS: 7, HITS_TO_CATCH: 3 });
 
-/** 인원 수에 따라 달라지는 한 판의 규칙 */
+/** 딱 2명(술래 1 + 생존자 1)이면 발전기 3개, 술래가 주는 모든 피해(기본 공격·스킬) 50% 감소 */
+export const DUEL_MATCH = Object.freeze({ PLAYERS: 2, GENERATORS: 3, DAMAGE_FACTOR: 0.5 });
+
+/** 인원 수에 따라 달라지는 한 판의 규칙. damageFactor: 술래가 주는 피해 배율 */
 export function matchRules(playerCount) {
   if (playerCount >= DUO_MATCH.PLAYERS) {
-    return { hunters: DUO_MATCH.HUNTERS, generators: DUO_MATCH.GENERATORS, hitsToCatch: DUO_MATCH.HITS_TO_CATCH };
+    return { hunters: DUO_MATCH.HUNTERS, generators: DUO_MATCH.GENERATORS, hitsToCatch: DUO_MATCH.HITS_TO_CATCH, damageFactor: 1 };
   }
   if (playerCount === LARGE_MATCH.PLAYERS) {
-    return { hunters: 1, generators: LARGE_MATCH.GENERATORS, hitsToCatch: LARGE_MATCH.HITS_TO_CATCH };
+    return { hunters: 1, generators: LARGE_MATCH.GENERATORS, hitsToCatch: LARGE_MATCH.HITS_TO_CATCH, damageFactor: 1 };
   }
-  return { hunters: 1, generators: RULES.GENERATOR_COUNT, hitsToCatch: RULES.HITS_TO_CATCH };
+  if (playerCount === DUEL_MATCH.PLAYERS) {
+    return { hunters: 1, generators: DUEL_MATCH.GENERATORS, hitsToCatch: RULES.HITS_TO_CATCH, damageFactor: DUEL_MATCH.DAMAGE_FACTOR };
+  }
+  return { hunters: 1, generators: RULES.GENERATOR_COUNT, hitsToCatch: RULES.HITS_TO_CATCH, damageFactor: 1 };
 }
 
 // ───────────── 술래 직업 ─────────────
@@ -373,3 +379,19 @@ export function voiceGain(dist) {
   const t = (dist - VOICE.FULL_RANGE) / (VOICE.MAX_RANGE - VOICE.FULL_RANGE);
   return (1 - t) * (1 - t);
 }
+
+// ───────────── 훈련장 (혼자 연습) ─────────────
+
+/**
+ * 훈련장: 혼자 들어가 술래나 생존자 직업을 체험한다. 제한 시간·승패 없음, 판 규칙은 기본(체력 3칸, 발전기 5개, 피해 감소 없음).
+ * - 술래 체험: 생존자 모양 허수아비가 내 시작 위치 주변 여러 거리에 제자리로 서 있다. 체력을 다 깎으면 쓰러졌다가 3초 뒤 제자리에서 다시 일어남
+ * - 생존자 체험: 공격하지 않는 술래 허수아비(테이저건·연막 대상)와 발전기. 발전기를 다 켜고 탈출하면 처음부터 다시
+ */
+export const TRAINING = Object.freeze({
+  DUMMY_DISTANCES: [4, 7, 11, 16, 24, 35], // 술래 체험: 허수아비 6개 (저격 30m 연습용으로 먼 것도)
+  HUNTER_DUMMIES: [
+    { cls: 'maniac', dist: 6 },
+    { cls: 'ghost', dist: 11 },
+  ],
+  REVIVE_TIME: 3,
+});

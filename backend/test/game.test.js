@@ -268,9 +268,10 @@ test('맵: 모든 발전기와 생존자 시작점은 장애물과 겹치지 않
 test('5인 규칙: 5명이면 발전기 7개, 4명이면 5개', () => {
   assert.equal(makeGame(5, 11).game.gens.length, 7);
   assert.equal(makeGame(4, 11).game.gens.length, 5);
-  assert.equal(makeGame(2, 11).game.gens.length, 5);
+  assert.equal(makeGame(3, 11).game.gens.length, 5);
+  assert.equal(makeGame(2, 11).game.gens.length, 3, '2명이면 발전기 3개');
   const { game } = makeGame(5, 11);
-  assert.deepEqual(game.startPayload('p2').rules, { hunters: 1, generators: 7, hitsToCatch: 2 });
+  assert.deepEqual(game.startPayload('p2').rules, { hunters: 1, generators: 7, hitsToCatch: 2, damageFactor: 1 });
   assert.equal(game.startPayload('p2').generators.length, 7);
 });
 
@@ -484,8 +485,9 @@ test('6명 이상 규칙: 술래 2명, 발전기 7개, 체력 3칸', () => {
     assert.ok(Math.hypot(h1.x - h2.x, h1.z - h2.z) > 5, '두 술래는 다른 곳에서 시작');
     for (const p of game.players.values()) assert.ok(game.world.isFree(p.x, p.z, RULES.PLAYER_RADIUS * 0.9));
   }
-  assert.deepEqual(matchRules(5), { hunters: 1, generators: 7, hitsToCatch: 2 });
-  assert.deepEqual(matchRules(4), { hunters: 1, generators: 5, hitsToCatch: 3 });
+  assert.deepEqual(matchRules(5), { hunters: 1, generators: 7, hitsToCatch: 2, damageFactor: 1 });
+  assert.deepEqual(matchRules(4), { hunters: 1, generators: 5, hitsToCatch: 3, damageFactor: 1 });
+  assert.deepEqual(matchRules(2), { hunters: 1, generators: 3, hitsToCatch: 3, damageFactor: 0.5 });
 });
 
 test('술래 2명: 술래 1명이 나가면 계속, 둘 다 나가면 생존자 승리', () => {

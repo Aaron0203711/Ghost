@@ -25,6 +25,7 @@ import {
   trapChargesFor,
   survivorSkillCooldown,
   ghostWallExit,
+  TRAINING,
 } from '@shared/constants.js';
 import { buildWorld, buildSky } from './world.js';
 import {
@@ -49,11 +50,12 @@ import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
 import { Bgm } from './bgm.js';
 import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
+import { makeHpBar, makeDamagePop } from './training.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 /** 체력 칸 표시 (반 칸 포함): 1.5 → "1.5", 2 → "2" */
-const fmtHits = (h) => String(Math.round(h * 10) / 10);
+const fmtHits = (h) => String(Math.round(h * 1000) / 1000);
 const genBox = (g) => {
   const rotated = Math.abs(Math.sin(g.rot)) > 0.5;
   return { x: g.x, z: g.z, w: rotated ? 0.8 : 1.2, d: rotated ? 1.2 : 0.8 };
@@ -135,6 +137,10 @@ export class GameSession {
     this.maxHits = me.mx ?? this.hitsToCatch; // 내 체력 칸 (푸드파이터 +4)
     this.staminaMax = me.stm ?? RULES.STAMINA_MAX; // 푸드파이터 5초
     this.synergies = start.synergies || [];
+    // 훈련장: 허수아비 상대로 혼자 연습 (제한 시간·승패 없음)
+    this.training = start.training || null;
+    this.trainingRestarted = !!start.restarted;
+    this.hpBars = new Map(); // 허수아비 id → 체력 막대
 
     // 내 상태 (클라이언트 예측)
     this.pos = { x: me.x, z: me.z };
@@ -242,9 +248,15 @@ export class GameSession {
       if (p.id === this.myId) continue;
       // 이름표는 같은 생존자끼리만 보인다
       // 같은 편끼리만 이름표가 보인다 (생존자끼리, 술래끼리)
-      const showLabel = this.isHunter ? p.role === ROLE.HUNTER : p.role === ROLE.SURVIVOR;
+      // 훈련장 허수아비는 항상 이름표와 체력 막대가 보인다
+      const showLabel = p.dummy || (this.isHunter ? p.role === ROLE.HUNTER : p.role === ROLE.SURVIVOR);
       const a = new Avatar(p.role, p.index, p.name, showLabel, p.role === ROLE.HUNTER ? p.cls ?? this.hunterClass : p.scls);
       a.setTarget(p.x, p.z, p.yaw, true);
+      if (p.dummy && p.role === ROLE.SURVIVOR) {
+        const bar = makeHpBar(p.mx ?? this.hitsToCatch);
+        a.group.add(bar.sprite);
+        this.hpBars.set(p.id, bar);
+      }
       scene.add(a.group);
       this.avatars.set(p.id, a);
     }
@@ -317,6 +329,12 @@ export class GameSession {
     $('cd-sskill').classList.toggle('passive', !this.hasSSkill);
     $('pc-hint-sskill').textContent = this.hasSSkill ? `Q ${sinfo.skill} · ` : '';
     $('hud-feed').innerHTML = '';
+    $('btn-train').classList.toggle('hidden', !this.training);
+    screen.classList.toggle('training', !!this.training);
+    if (this.training) {
+      $('hud-timer').textContent = '🎯 훈련장';
+      $('hud-timer').classList.remove('urgent');
+    }
     $('hud-exit').classList.add('hidden');
     $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : this.isBackrooms ? '🚪 EXIT' : '⛩ 탈출구';
     screen.classList.toggle('theme-mine', this.isMine);
@@ -329,6 +347,18 @@ export class GameSession {
     this.renderPlayerList();
     const mates = [...this.info.values()].filter((p) => p.role === ROLE.HUNTER && p.id !== this.myId).map((p) => p.name);
     const mateText = this.isHunter && mates.length ? ` · 동료 술래: ${mates.join(', ')}` : '';
+    if (this.training) {
+      this.feed('🎯 훈련장 · 🔄 버튼으로 역할·직업을 바꿀 수 있어요', 'good');
+      this.centerMsg(
+        this.trainingRestarted
+          ? '탈출 성공! 처음부터 다시 시작해요'
+          : this.isHunter
+            ? `${info.icon} ${info.name} 체험 · 허수아비를 공격해 보세요`
+            : `${sinfo?.icon ?? ''} ${sinfo?.name ?? '생존자'} 체험 · 술래 허수아비는 공격하지 않아요. 발전기 ${this.gens.size}개를 켜고 탈출해 보세요`,
+        3,
+      );
+      return;
+    }
     this.centerMsg(
       ({
         captain: '선장: 닻을 던져 생존자를 끌어오세요!',
@@ -543,6 +573,7 @@ export class GameSession {
       }
       const a = this.avatars.get(p.id);
       if (!a) continue;
+      this.hpBars.get(p.id)?.set(p.hits);
       // 투명한 암살자: 생존자에게는 위치가 오지 않으므로 아예 숨긴다
       info.hidden = !!p.hidden;
       // 살가죽 변장: 생존자 화면에서는 그 생존자 모습으로 그린다 (심장 박동도 없음)
@@ -804,17 +835,19 @@ export class GameSession {
         break;
       case 'hit': {
         this.avatars.get(e.id)?.hitFlash();
+        this.damagePop(e);
         const max = e.max ?? this.hitsToCatch;
+        const dmg = `-${fmtHits(e.dmg)}칸`;
         const far = e.far
-          ? ` · ${e.dist}m 원거리 저격! -${e.dmg}칸`
+          ? ` · ${e.dist}m 원거리 저격! ${dmg}`
           : e.wisp
-            ? ' · 유도탄'
+            ? ` · 유도탄 ${dmg}`
             : e.dash
-              ? ' · 질주'
+              ? ` · 질주 ${dmg}`
               : e.ball
-                ? ' · 공 -0.75칸'
-                : e.dmg > 1
-                  ? ` -${e.dmg}칸`
+                ? ` · 공 ${dmg}`
+                : e.dmg !== 1
+                  ? ` ${dmg}`
                   : '';
         const hp = `(${fmtHits(e.hits)}/${max})`;
         if (me) {
@@ -822,7 +855,7 @@ export class GameSession {
           this.flash('hit');
           this.shake = e.ball ? 0.2 : 0.35;
           this.centerMsg(
-            `맞았다! ${hp}${e.far ? ' 원거리 저격 -2칸' : e.ball ? ' 공 -0.75칸' : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
+            `맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
             1.5,
           );
         } else if (e.by === this.myId) {
@@ -835,6 +868,12 @@ export class GameSession {
       case 'caught':
         sfx.caught();
         if (e.by === this.myId) this.hitMarker();
+        this.damagePop(e);
+        if (this.info.get(e.id)?.dummy) {
+          this.hpBars.get(e.id)?.set(Infinity);
+          this.feed(`💀 ${name(e.id)} 쓰러짐 · ${TRAINING.REVIVE_TIME}초 뒤 다시 일어나요`, 'warn');
+          break;
+        }
         this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
         if (me) this.flash('hit');
         break;
@@ -1015,7 +1054,11 @@ export class GameSession {
         break;
       case 'escaped':
         this.feed(`🏁 ${name(e.id)} 탈출 성공`, 'good');
-        if (me) this.centerMsg('탈출 성공!', 3);
+        if (me) this.centerMsg(this.training ? '탈출 성공! 처음부터 다시 시작해요' : '탈출 성공!', 3);
+        break;
+      case 'revived':
+        this.hpBars.get(e.id)?.set(0);
+        this.feed(`🎯 ${name(e.id)}이(가) 다시 일어났다`);
         break;
       case 'left':
         this.feed(`${e.name} 님이 나갔어요`);
@@ -1023,6 +1066,14 @@ export class GameSession {
       default:
         break;
     }
+  }
+
+  /** 훈련장: 허수아비가 맞은 피해량을 머리 위에 띄운다 */
+  damagePop(e) {
+    if (!this.info.get(e.id)?.dummy || e.dmg == null) return;
+    const a = this.avatars.get(e.id);
+    if (!a) return;
+    this.effects.push(makeDamagePop(this.scene, a.pos, `-${fmtHits(e.dmg)}`, e.dmg >= 2 ? '#ff7a4a' : '#ffd25a'));
   }
 
   /** 총알 발사 이벤트: 총구에서 궤적을 그린다 */
@@ -1310,15 +1361,15 @@ export class GameSession {
   }
 
   updateHud(dt) {
-    // 남은 시간
+    // 남은 시간 (훈련장은 제한 시간 없음)
     const left = Math.max(0, Math.ceil(RULES.MATCH_TIME - (this.matchTime || 0)));
-    const timerText = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    const timerText = this.training ? '🎯 훈련장' : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     if (timerText !== this.lastTimerText) {
       this.lastTimerText = timerText;
       const el = $('hud-timer');
       el.textContent = timerText;
-      el.classList.toggle('urgent', left <= 60);
-      if (left === 60) this.centerMsg('남은 시간 1분!', 2);
+      el.classList.toggle('urgent', left <= 60 && !this.training);
+      if (left === 60 && !this.training) this.centerMsg('남은 시간 1분!', 2);
     }
     const alive = this.status === STATUS.ALIVE;
     if (!this.isHunter && alive) {

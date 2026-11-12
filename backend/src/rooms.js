@@ -1,6 +1,6 @@
 // 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 공개 방 목록·비공개 설정, 강퇴, 호스트 위임, 게임 시작/종료.
 
-import { RULES, HUNTER_CLASS, CLASS_PICK_TIME, matchRules, validSurvivorClass, DEFAULT_SURVIVOR_CLASS } from '../../shared/constants.js';
+import { RULES, ROLE, HUNTER_CLASS, CLASS_PICK_TIME, matchRules, validSurvivorClass, DEFAULT_SURVIVOR_CLASS } from '../../shared/constants.js';
 import { Game } from './game.js';
 import { MAP_THEMES } from './mapgen.js';
 
@@ -84,6 +84,9 @@ export class RoomManager {
         break;
       case 'start':
         this.start(client);
+        break;
+      case 'training':
+        this.startTraining(client, msg);
         break;
       case 'input':
         if (client.room?.game) client.room.game.handleInput(client.id, msg);
@@ -332,19 +335,72 @@ export class RoomManager {
     }
   }
 
+  /**
+   * 훈련장: 혼자 쓰는 비공개 방에서 바로 시작한다 (방 목록·코드 참가 불가, 대기실 없음).
+   * msg: { role: 'hunter'|'survivor', cls: 술래 직업, scls: 생존자 직업, map: 맵 id 또는 'random' }
+   * 훈련장 안에서 다시 보내면 같은 맵에서 새 직업으로 다시 시작한다 (map을 주면 그 맵으로)
+   */
+  startTraining(client, msg = {}) {
+    const role = msg.role === ROLE.SURVIVOR ? ROLE.SURVIVOR : ROLE.HUNTER;
+    const cls = Object.values(HUNTER_CLASS).includes(msg.cls) ? msg.cls : HUNTER_CLASS.MANIAC;
+    if (msg.scls !== undefined) client.scls = validSurvivorClass(msg.scls);
+    let room = client.room;
+    if (!room?.training) {
+      this.leaveRoom(client);
+      this.watchers.delete(client);
+      const code = `T${client.id}`; // 숫자 4자리가 아니므로 코드로 참가할 수 없다
+      room = { code, hostId: client.id, members: [client], state: 'playing', private: true, training: null, map: 'random', game: null, timer: null, select: null };
+      this.rooms.set(code, room);
+      client.room = room;
+    }
+    const themes = Object.keys(MAP_THEMES);
+    let theme = room.training?.theme;
+    if (msg.map === 'random' || !theme) theme = this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
+    if (Object.hasOwn(MAP_THEMES, msg.map)) theme = msg.map;
+    room.training = { role, cls, theme };
+    this.beginTraining(room);
+  }
+
+  /** 훈련장 게임을 (다시) 만든다. restarted: 탈출해서 처음부터 다시 */
+  beginTraining(room, restarted = false) {
+    if (room.timer) clearInterval(room.timer);
+    room.timer = null;
+    const client = room.members[0];
+    if (!client) return;
+    room.game = new Game([{ id: client.id, name: client.name, scls: client.scls }], {
+      training: { mode: room.training.role, cls: room.training.cls },
+      theme: room.training.theme,
+      rand: this.rand,
+      emit: (toId, msg) => {
+        if (toId === null || toId === client.id) client.send(msg);
+      },
+    });
+    client.send({ ...room.game.startPayload(client.id), ...(restarted ? { restarted: true } : {}) });
+    if (this.autoTick) {
+      const dt = 1 / this.tickRate;
+      room.timer = setInterval(() => this.step(room, dt), 1000 / this.tickRate);
+    }
+  }
+
   /** 게임 한 틱 진행 + 상태 전송. 테스트에서는 직접 호출한다. */
   step(room, dt) {
     const game = room.game;
     if (!game) return;
     game.tick(dt);
     for (const m of room.members) m.send(game.snapshotFor(m.id));
-    if (game.ended) this.endGame(room);
+    if (room.training && game.restartTraining) this.beginTraining(room, true);
+    else if (game.ended) this.endGame(room);
   }
 
   endGame(room) {
     if (room.timer) clearInterval(room.timer);
     room.timer = null;
     room.game = null;
+    if (room.training) {
+      // 훈련장은 대기실이 없다
+      for (const m of room.members) m.room = null;
+      return this.closeRoom(room);
+    }
     room.state = 'lobby';
     if (room.members.length === 0) this.closeRoom(room);
     else this.broadcastRoom(room);
@@ -361,6 +417,7 @@ export class RoomManager {
   }
 
   broadcastRoom(room) {
+    if (room.training) return; // 훈련장은 대기실 화면이 없다
     const msg = {
       t: 'room',
       code: room.code,

@@ -2368,3 +2368,48 @@ body.touch #cd-sskill,
     display: none;
   }
 }
+
+/* ───────────── 훈련장 ───────────── */
+
+.train-card {
+  width: min(460px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.train-card h2,
+.train-card .hint {
+  margin: 0;
+}
+
+.train-roles .map-choice {
+  font-size: 15px;
+  padding: 8px 16px;
+}
+
+.train-classes {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.train-classes .scls-card.hunter.on {
+  border-color: var(--accent);
+  background: rgba(224, 85, 58, 0.2);
+  box-shadow: 0 0 12px rgba(224, 85, 58, 0.35);
+}
+
+.train-card .scls-desc {
+  min-height: 3.9em;
+}
+
+@media (max-height: 460px) {
+  .train-card {
+    width: min(640px, calc(100vw - 32px));
+    gap: 8px;
+    padding: 14px 18px;
+  }
+  .train-classes {
+    grid-template-columns: repeat(8, 1fr);
+  }
+  .train-card .scls-desc {
+    min-height: 2.6em;
+  }
+}

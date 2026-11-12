@@ -340,7 +340,7 @@ test('의사: 5m 안 바라본 다친 생존자를 한 칸 회복, 없으면 자
 });
 
 test('경찰: 테이저건은 10m까지, 맞은 술래는 4초간 이동·공격·스킬 불가, 쿨타임 21.5초', () => {
-  const { game, p, ev } = makeGame({ n: 2, scls: ['police'] });
+  const { game, p, ev } = makeGame({ n: 3, scls: ['police'] });
   const h = p('p1');
   const c = p('p2');
   const spot = clearSpot(game, [h, c]);
@@ -528,4 +528,38 @@ test('유령: 벽을 빠져나온 순간부터 1초 동안 이동 속도 25% 감
   // 한 번에 얇은 벽을 건너뛰어도(입력 간격 사이) 넘은 것으로 친다
   move(500, 500.4);
   assert.ok(game.time < g.wallSlowUntil);
+});
+
+// ───────────── 2인 규칙 ─────────────
+test('2인 규칙: 발전기 3개, 술래가 주는 모든 피해(기본 공격·스킬) 50% 감소', () => {
+  const { game, p } = makeGame({ n: 2 });
+  assert.equal(game.gens.length, 3);
+  assert.equal(game.startPayload('p2').rules.damageFactor, 0.5);
+  const h = p('p1');
+  const c = p('p2');
+  const spot = clearSpot(game, [h, c]);
+  Object.assign(h, { x: spot.x, z: spot.z, yaw: 0 });
+  Object.assign(c, { x: spot.x, z: spot.z - 1.5 });
+  game.handleAttack('p1');
+  assert.equal(c.hits, 0.5, '근접 공격 1칸 → 0.5칸');
+  run(game, 1.1);
+  game.damage(c, 'p1', 1, { wisp: 1 }); // 유도탄·질주 같은 스킬 피해도 절반
+  assert.equal(c.hits, 1);
+  game.damage(c, 'p1', 2, { far: true }); // 원거리 저격 2칸 → 1칸
+  assert.equal(c.hits, 2);
+  assert.equal(c.status, STATUS.ALIVE);
+  game.damage(c, 'p1', CLOWN.BALL_DAMAGE, { ball: 1 }); // 광대 공 0.75 → 0.375
+  assert.equal(c.hits, 2.375);
+});
+
+test('3명 이상이면 피해 감소 없음', () => {
+  const { game, p } = makeGame({ n: 3 });
+  assert.equal(game.gens.length, 5);
+  const h = p('p1');
+  const c = p('p2');
+  const spot = clearSpot(game, [h, c]);
+  Object.assign(h, { x: spot.x, z: spot.z, yaw: 0 });
+  Object.assign(c, { x: spot.x, z: spot.z - 1.5 });
+  game.handleAttack('p1');
+  assert.equal(c.hits, 1);
 });

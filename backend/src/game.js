@@ -25,7 +25,9 @@ import {
   validSurvivorClass,
   survivorStats,
   ghostWallExit,
+  TRAINING,
 } from '../../shared/constants.js';
+import { trainingRoster, placeDummies } from './training.js';
 import {
   isForced,
   worldFor,
@@ -50,6 +52,7 @@ export class Game {
    *   hunters: 술래 목록과 각자의 직업 (6명 이상이면 2명). 없으면 hunterId/hunterClass 하나
    *   theme: 맵 테마 ('village' | 'mine')
    *   emit(null, msg)는 전체 방송, emit(id, msg)는 한 명에게 전송
+   *   training: { mode: 'hunter'|'survivor', cls } 훈련장 (roster는 나 한 명, 허수아비는 여기서 만든다)
    */
   constructor(roster, opts) {
     this.rand = opts.rand || Math.random;
@@ -57,7 +60,18 @@ export class Game {
     this.seed = opts.seed ?? Math.floor(this.rand() * 2 ** 31);
     this.map = generateMap(this.seed, opts.theme);
 
-    this.rules = matchRules(roster.length);
+    // 훈련장: 제한 시간·승패 없음, 기본 규칙(체력 3칸, 발전기 5개, 피해 감소 없음)
+    this.training = null;
+    let dummies = [];
+    if (opts.training) {
+      const mode = opts.training.mode === ROLE.SURVIVOR ? ROLE.SURVIVOR : ROLE.HUNTER;
+      this.training = { mode };
+      const t = trainingRoster(roster[0], mode, opts.training.cls);
+      roster = t.roster;
+      opts = { ...opts, hunters: t.hunters };
+      dummies = t.dummies;
+    }
+    this.rules = matchRules(this.training ? 1 : roster.length);
     const validCls = (c) => (Object.values(HUNTER_CLASS).includes(c) ? c : HUNTER_CLASS.MANIAC);
     let hunters = opts.hunters;
     if (!hunters) {
@@ -133,10 +147,12 @@ export class Game {
         smokeUntil: 0, // 술래: 연막으로 화면이 뿌연 동안
         cls,
         scls,
+        dummy: !!p.dummy, // 훈련장 허수아비 (움직이지 않고 공격하지 않음)
       });
     };
     hunters.forEach((h, i) => make(roster.find((p) => p.id === h.id), ROLE.HUNTER, plan.hunterSpawns[i]));
     survivors.forEach((p, i) => make(p, ROLE.SURVIVOR, plan.survivorSpawns[i]));
+    if (this.training) this.placeTrainingDummies(roster[0].id, dummies);
 
     this.hunterId = this.hunterIds[0];
     this.traps = [];
@@ -169,6 +185,29 @@ export class Game {
     this.result = null;
   }
 
+  /** 훈련장: 허수아비를 내 시작 위치 주변 정해진 거리쯤에 세우고, 나는 가장 가까운 허수아비를 바라본다 */
+  placeTrainingDummies(meId, dummies) {
+    const me = this.players.get(meId);
+    const spots = placeDummies(this.world, me, dummies.map((d) => d.dist), this.rand);
+    const face = (a, b) => Math.atan2(-(b.x - a.x), -(b.z - a.z));
+    dummies.forEach((d, i) => {
+      const q = this.players.get(d.id);
+      Object.assign(q, spots[i]);
+      q.yaw = face(q, me);
+      q.home = { x: q.x, z: q.z, yaw: q.yaw };
+    });
+    if (spots.length) me.yaw = face(me, spots[0]);
+  }
+
+  /** 훈련장: 쓰러진 허수아비는 3초 뒤 제자리에서 체력이 가득 찬 채로 다시 일어난다 */
+  reviveDummies() {
+    for (const q of this.players.values()) {
+      if (!q.dummy || q.status !== STATUS.CAUGHT || this.time < q.reviveAt) continue;
+      Object.assign(q, { status: STATUS.ALIVE, hits: 0, x: q.home.x, z: q.home.z, yaw: q.home.yaw, slows: [], stunUntil: 0, revealUntil: 0 });
+      this.emit(null, { t: 'event', kind: 'revived', id: q.id, name: q.name });
+    }
+  }
+
   /** 게임 시작 시 각 플레이어에게 보낼 데이터 */
   startPayload(forId) {
     return {
@@ -179,9 +218,11 @@ export class Game {
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
       synergies: this.synergies,
+      ...(this.training ? { training: this.training } : {}),
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
+        ...(p.dummy ? { dummy: 1 } : {}),
         role: p.role,
         cls: p.cls,
         scls: p.scls,
@@ -396,13 +437,15 @@ export class Game {
     this.emit(null, { t: 'event', kind: 'invis', id: p.id, on: false, reason });
   }
 
-  /** 생존자에게 피해. 맞으면 2초 무적, 체력이 다 닳으면 잡힘 */
+  /** 생존자에게 피해. 맞으면 1초 무적, 체력이 다 닳으면 잡힘. 2인 규칙이면 모든 피해 절반 */
   damage(s, byId, amount, extra = {}) {
+    amount *= this.rules.damageFactor ?? 1;
     s.hits = Math.min(s.maxHits, s.hits + amount); // 광대 공은 반 칸(0.5)
     s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
     if (s.hits >= s.maxHits - 1e-9) {
       s.status = STATUS.CAUGHT;
-      this.deaths.push({ x: r2(s.x), z: r2(s.z), id: s.id });
+      if (s.dummy) s.reviveAt = this.time + TRAINING.REVIVE_TIME;
+      else this.deaths.push({ x: r2(s.x), z: r2(s.z), id: s.id });
       s.repairing = false;
       this.emit(null, { t: 'event', kind: 'caught', id: s.id, by: byId, name: s.name, dmg: amount, ...extra });
       this.checkEnd();
@@ -529,6 +572,7 @@ export class Game {
   tick(dt) {
     if (this.ended) return;
     this.time += dt;
+    if (this.training) this.reviveDummies();
 
     for (const p of this.players.values()) {
       if (p.status !== STATUS.ALIVE) continue;
@@ -658,12 +702,13 @@ export class Game {
           s.status = STATUS.ESCAPED;
           s.repairing = false;
           this.emit(null, { t: 'event', kind: 'escaped', id: s.id, name: s.name });
+          if (this.training) this.restartTraining = true; // 훈련장: 탈출하면 처음부터 다시 (방 관리자가 새로 시작)
         }
       }
     }
 
     this.checkEnd();
-    if (!this.ended && this.time >= RULES.MATCH_TIME) this.timeUp();
+    if (!this.ended && !this.training && this.time >= RULES.MATCH_TIME) this.timeUp();
   }
 
   /** 제한 시간 종료: 탈출한 생존자가 1명이라도 있으면 생존자 승리, 아무도 없으면 술래 승리 */
@@ -699,7 +744,7 @@ export class Game {
   }
 
   checkEnd() {
-    if (this.ended) return;
+    if (this.ended || this.training) return; // 훈련장은 승패가 없다
     const survivors = [...this.players.values()].filter((p) => p.role === ROLE.SURVIVOR);
     const alive = survivors.filter((p) => p.status === STATUS.ALIVE).length;
     if (alive > 0) return;
@@ -743,7 +788,7 @@ export class Game {
     if (!me) return out;
     const meAlive = me.status === STATUS.ALIVE;
     for (const p of this.players.values()) {
-      if (p.id === listenerId) continue;
+      if (p.id === listenerId || p.dummy) continue;
       const alive = p.status === STATUS.ALIVE;
       if (!meAlive || !alive) {
         out[p.id] = [!meAlive && !alive ? 1 : 0, 0];

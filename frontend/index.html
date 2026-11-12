@@ -49,6 +49,7 @@
           <button id="btn-create" class="btn primary big">🏠 방 만들기</button>
           <button id="btn-rooms-open" class="btn big">📋 방 목록</button>
           <button id="btn-join-open" class="btn big">🔑 코드로 참가</button>
+          <button id="btn-training-open" class="btn big">🎯 훈련장 (혼자 연습)</button>
           <button class="btn ghost" data-back="screen-main">← 뒤로</button>
         </div>
       </section>
@@ -150,6 +151,7 @@
             <span id="hud-role" class="badge"></span>
             <div class="gens"><span>발전기</span><span id="hud-gens"></span><b id="hud-gen-count">0/3</b><span class="sep"></span><b id="hud-timer">7:00</b></div>
             <div class="top-btns">
+              <button id="btn-train" class="icon-btn hidden" data-ui aria-label="훈련장 직업 바꾸기" title="직업 바꾸기">🔄</button>
               <button id="btn-mic-game" class="icon-btn" data-ui aria-label="마이크">🔇</button>
               <button id="btn-map" class="icon-btn" data-ui aria-label="지도">🗺️</button>
               <button id="btn-game-settings" class="icon-btn" data-ui aria-label="설정">⚙</button>
@@ -245,6 +247,26 @@
           <button id="btn-settings-close" class="btn primary">닫기</button>
         </div>
         <button id="btn-quit-game" class="btn danger ghost hidden">게임 나가기</button>
+      </div>
+    </div>
+
+    <!-- 훈련장: 역할·직업·맵 고르기 (메인 메뉴에서 입장, 훈련장 안에서 직업 바꾸기) -->
+    <div id="modal-training" class="modal hidden" data-ui>
+      <div class="modal-card train-card">
+        <h2>🎯 훈련장</h2>
+        <p class="hint">혼자 허수아비를 상대로 직업을 연습해요. 제한 시간과 승패가 없어요.</p>
+        <div class="map-choices train-roles" id="train-roles">
+          <button type="button" class="map-choice" data-role="hunter">👹 술래 체험</button>
+          <button type="button" class="map-choice" data-role="survivor">🏃 생존자 체험</button>
+        </div>
+        <div class="scls-list train-classes" id="train-classes"><!-- main.js가 만든다 --></div>
+        <p class="scls-desc" id="train-desc"></p>
+        <div class="lobby-map" id="train-map-row">
+          <span class="lobby-map-label">맵</span>
+          <div class="map-choices" id="train-maps"><!-- main.js가 만든다 --></div>
+        </div>
+        <button id="btn-train-go" class="btn primary big">입장하기</button>
+        <button id="btn-train-close" class="btn ghost">닫기</button>
       </div>
     </div>
 

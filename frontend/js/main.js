@@ -2,7 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
-import { matchRules, LARGE_MATCH, DUO_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats } from '@shared/constants.js';
+import { matchRules, LARGE_MATCH, DUO_MATCH, DUEL_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats } from '@shared/constants.js';
 import { Voice } from './game/voice.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
@@ -16,6 +16,7 @@ let session = null;
 let GameSessionClass = null;
 let pendingAction = null; // 버튼을 눌러 서버 응답을 기다리는 중
 let currentScreen = 'screen-main';
+let trainingSession = false; // 지금 게임이 훈련장인지
 
 // three.js 등 게임 코드를 미리 불러와서 시작 버튼을 누를 때 끊김이 없게 한다
 const gameModule = import('./game/session.js').then((m) => (GameSessionClass = m.GameSession));
@@ -239,6 +240,103 @@ function joinRoom() {
 }
 tap($('btn-join'), joinRoom);
 
+// ───────────────────────── 훈련장 ─────────────────────────
+
+// 혼자 허수아비를 상대로 직업을 체험한다. 메뉴에서 입장하고, 훈련장 안에서는 🔄 버튼으로 직업을 바꾼다
+const TRAIN_MAPS = [
+  { id: 'random', name: '랜덤', icon: '🎲' },
+  { id: 'village', name: '시골 마을', icon: '🏘️' },
+  { id: 'mine', name: '폐광산', icon: '⛏️' },
+  { id: 'backrooms', name: '백룸', icon: '🟨' },
+];
+const train = {
+  role: settings.trainRole === 'survivor' ? 'survivor' : 'hunter',
+  cls: CLASS_INFO[settings.trainCls] ? settings.trainCls : 'maniac',
+  scls: validSurvivorClass(settings.trainScls ?? settings.scls),
+  map: TRAIN_MAPS.some((m) => m.id === settings.trainMap) ? settings.trainMap : 'random',
+  inGame: false,
+};
+
+function renderTraining() {
+  document.querySelectorAll('#train-roles .map-choice').forEach((b) => b.classList.toggle('on', b.dataset.role === train.role));
+  const hunter = train.role === 'hunter';
+  const list = $('train-classes');
+  list.innerHTML = '';
+  const infos = hunter ? CLASS_INFO : SURVIVOR_CLASS_INFO;
+  const cur = hunter ? train.cls : train.scls;
+  for (const [id, c] of Object.entries(infos)) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `scls-card${hunter ? ' hunter' : ''}`;
+    card.dataset.id = id;
+    card.classList.toggle('on', id === cur);
+    card.innerHTML = '<span class="ico"></span><span class="n"></span>';
+    card.querySelector('.ico').textContent = c.icon;
+    card.querySelector('.n').textContent = c.name === '살가죽을 뒤집어 쓴 자' ? '살가죽' : c.name;
+    card.title = c.desc;
+    list.appendChild(card);
+  }
+  const info = infos[cur];
+  $('train-desc').textContent = `${info.icon} ${info.name} · ${info.desc}${
+    hunter ? ' — 허수아비를 때려 보세요 (다 깎으면 3초 뒤 다시 일어나요)' : ' — 공격하지 않는 술래 허수아비와 발전기가 있어요'
+  }`;
+  const maps = $('train-maps');
+  maps.innerHTML = '';
+  for (const m of TRAIN_MAPS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'map-choice';
+    b.dataset.map = m.id;
+    b.classList.toggle('on', m.id === train.map);
+    b.textContent = `${m.icon} ${m.name}`;
+    maps.appendChild(b);
+  }
+  $('train-map-row').classList.toggle('hidden', train.inGame);
+  $('btn-train-go').textContent = train.inGame ? '이 직업으로 다시 시작' : '입장하기';
+}
+
+function openTraining(inGame) {
+  train.inGame = inGame;
+  renderTraining();
+  $('modal-training').classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeTraining() {
+  $('modal-training').classList.add('hidden');
+}
+
+$('train-roles').addEventListener('click', (e) => {
+  const b = e.target.closest('.map-choice');
+  if (!b) return;
+  train.role = b.dataset.role;
+  renderTraining();
+});
+$('train-classes').addEventListener('click', (e) => {
+  const b = e.target.closest('.scls-card');
+  if (!b) return;
+  if (train.role === 'hunter') train.cls = b.dataset.id;
+  else train.scls = b.dataset.id;
+  renderTraining();
+});
+$('train-maps').addEventListener('click', (e) => {
+  const b = e.target.closest('.map-choice');
+  if (!b) return;
+  train.map = b.dataset.map;
+  renderTraining();
+});
+tap($('btn-training-open'), () => openTraining(false));
+tap($('btn-train-close'), closeTraining);
+$('modal-training').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-training') closeTraining();
+});
+tap($('btn-train-go'), () => {
+  saveSettings({ trainRole: train.role, trainCls: train.cls, trainScls: train.scls, trainMap: train.map });
+  if (playerName()) net.send({ t: 'hello', name: playerName() });
+  waitFor($('btn-train-go'));
+  net.send({ t: 'training', role: train.role, cls: train.cls, scls: train.scls, ...(train.inGame ? {} : { map: train.map }) });
+});
+tap($('btn-train'), () => openTraining(true));
+
 // ───────────────────────── 대기실 ─────────────────────────
 
 // 맵 선택: 방장만 고를 수 있고, 다른 사람은 정해진 맵을 본다
@@ -279,9 +377,10 @@ function renderLobby() {
   renderLobbyMaps(isHost);
   const rules = matchRules(room.players.length);
   const n = room.players.length;
-  const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : '';
+  const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : n === DUEL_MATCH.PLAYERS ? ' (2인 규칙)' : '';
   const ff = survivorStats('foodfighter', rules.hitsToCatch).maxHits;
-  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${tag}`;
+  const dmg = rules.damageFactor < 1 ? ` · 술래 피해 ${Math.round((1 - rules.damageFactor) * 100)}% 감소` : '';
+  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${dmg}${tag}`;
   $('lobby-rules').classList.toggle('large', !!tag);
   const list = $('lobby-players');
   list.innerHTML = '';
@@ -449,6 +548,7 @@ $('input-sound').addEventListener('change', (e) => {
 function openSettings() {
   syncSettingsUi();
   $('btn-quit-game').classList.toggle('hidden', !session);
+  $('btn-quit-game').textContent = trainingSession ? '훈련장 나가기' : '게임 나가기';
   $('modal-settings').classList.remove('hidden');
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -468,10 +568,12 @@ tap($('btn-quit-game'), () => {
   endSession();
   room = null;
   show('screen-play');
-  toast('게임에서 나왔어요');
+  toast(trainingSession ? '훈련장에서 나왔어요' : '게임에서 나왔어요');
+  trainingSession = false;
 });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('modal-settings').classList.contains('hidden')) closeSettings();
+  if (e.key === 'Escape' && !$('modal-training').classList.contains('hidden')) closeTraining();
 });
 
 // ───────────────────────── 마이크 ─────────────────────────
@@ -519,6 +621,7 @@ async function startSession(msg) {
   await gameModule;
   endSession();
   closeSettings();
+  trainingSession = !!msg.training;
   show('screen-game');
   tryFullscreen();
   session = new GameSessionClass({ net, start: msg, settings, onOpenSettings: openSettings });
@@ -616,6 +719,7 @@ net.on('_close', () => {
   $('conn-text').textContent = '연결이 끊겼어요. 다시 연결 중…';
   done();
   voice.leave();
+  closeTraining();
   if (room || session) {
     endSession();
     room = null;
@@ -738,6 +842,7 @@ net.on('notice', (m) => {
 
 net.on('start', (m) => {
   clearInterval(selectTimer);
+  closeTraining();
   if (m.autoPicked && m.players.find((p) => p.id === myId)?.role === 'hunter') {
     toast(`시간이 지나 직업이 무작위로 정해졌어요: ${(CLASS_INFO[m.hunterClass] || CLASS_INFO.maniac).name}`);
   }

@@ -632,8 +632,9 @@ export class GeneratorModel {
     this.t = Math.random() * 10;
   }
 
-  set(progress, done) {
+  set(progress, done, repairing = false) {
     this.progress = progress;
+    this.repairing = repairing && !done;
     if (done && !this.done) {
       this.done = true;
       this.bulbMat.color.set('#3cff6a');
@@ -645,7 +646,14 @@ export class GeneratorModel {
 
   update(dt) {
     this.t += dt;
-    if (!this.done) {
+    if (!this.done && this.repairing) {
+      // 누군가 수리 중이면 노란 불빛 (진행될수록 빠르게 일렁임)
+      const pulse = 0.75 + 0.25 * Math.sin(this.t * (3 + this.progress * 6) * Math.PI);
+      this.bulbMat.color.set('#ffd23a');
+      this.light.color.set('#ffd23a');
+      this.light.intensity = 3 + pulse * 2;
+    } else if (!this.done) {
+      this.light.color.set('#ff3a2a');
       // 진행될수록 빠르게 깜빡임
       const speed = 1.5 + this.progress * 8;
       const on = Math.sin(this.t * speed * Math.PI) > -0.3;

@@ -104,7 +104,7 @@ test('저격수: 조준하지 않고 맞히면 감속 없음', () => {
 
 // ───────────── 2. 광대 ─────────────
 
-test('광대: 공은 반 칸, 쿨타임 0.5초, 포물선으로 떨어짐', () => {
+test('광대: 공은 0.75칸, 쿨타임 0.5초, 포물선으로 떨어짐', () => {
   const { game, p, ev } = makeGame({ hunters: [{ id: 'p1', cls: 'clown' }] });
   const h = p('p1');
   const s = p('p2');
@@ -116,11 +116,11 @@ test('광대: 공은 반 칸, 쿨타임 0.5초, 포물선으로 떨어짐', () =
   game.handleAttack('p1', { yaw: 0, pitch: 0 }); // 쿨타임 중
   assert.equal(game.balls.length, 1);
   run(game, 0.5);
-  assert.equal(s.hits, 0.5, '반 칸');
+  assert.equal(s.hits, 0.75, '0.75칸');
   assert.equal(ev('ballEnd')[0].msg.hit, 'p2');
   assert.equal(s.status, STATUS.ALIVE);
-  // 반 칸씩 6번 맞으면 잡힘 (체력 3칸)
-  for (let i = 0; i < 5; i++) {
+  // 0.75칸씩 4번 맞으면 잡힘 (체력 3칸)
+  for (let i = 0; i < 3; i++) {
     run(game, RULES.HIT_INVULNERABLE + 0.1);
     game.handleAttack('p1', { yaw: 0, pitch: 0 });
     run(game, 0.5);
@@ -195,7 +195,7 @@ test('광대: 실은 최대 4개, 23초마다 1개 충전', () => {
   assert.equal(h.charges, 1);
 });
 
-test('광대: 실을 밟으면 사라지고 2초간 몸이 빛나며 50% 감속, 점프로 피할 수 있음', () => {
+test('광대: 실을 밟으면 사라지고 4초간 몸이 빛나며 50% 감속, 점프로 피할 수 있음', () => {
   const { game, h, s, spot, ev } = clownWithWalls();
   game.handleTrap('p1');
   h.x = h.z = 1000;
@@ -218,6 +218,9 @@ test('광대: 실을 밟으면 사라지고 2초간 몸이 빛나며 50% 감속,
   const snap = game.snapshotFor('p1');
   assert.equal(snap.players.find((q) => q.id === 'p2').glow, 1, '술래에게 빛나는 상태 전달');
   run(game, 2.05);
+  assert.equal(game.slowState(s).factor, 0.5, '2초 뒤에도 그대로');
+  assert.ok(game.isRevealed(s));
+  run(game, 2);
   assert.equal(game.slowState(s).factor, 1);
   assert.ok(!game.isRevealed(s));
 });
@@ -323,11 +326,14 @@ test('의사: 5m 안 바라본 다친 생존자를 한 칸 회복, 없으면 자
   assert.equal(o.hits, 1, '바라본 생존자 우선');
   assert.equal(d.hits, 1);
   game.handleSkill('p2', { yaw: 0 });
-  assert.equal(o.hits, 1, '쿨타임 20초');
-  run(game, 20.05);
+  assert.equal(o.hits, 1, '쿨타임 23초');
+  run(game, 22.9);
+  game.handleSkill('p2', { yaw: Math.PI });
+  assert.equal(d.hits, 1, '23초 전에는 아직');
+  run(game, 0.15);
   game.handleSkill('p2', { yaw: Math.PI }); // 뒤를 보면 자신
   assert.equal(d.hits, 0);
-  run(game, 20.05);
+  run(game, 23.05);
   o.z = spot.z - 6; // 5m 밖
   game.handleSkill('p2', { yaw: 0 });
   assert.equal(o.hits, 1);
@@ -435,7 +441,7 @@ test('닌자: 분신이 5초 동안 보던 방향으로 걷고, 술래 공격에
   assert.equal(nj.hits, 0);
 });
 
-test('엔지니어: 지름 3m 안의 발전기에 로봇을 붙이면 5초 동안 20% (쿨타임 10초)', () => {
+test('엔지니어: 지름 3m 안의 발전기에 로봇을 붙이면 5초 동안 20% (쿨타임 13초)', () => {
   const { game, p, ev } = makeGame({ n: 2, scls: ['engineer'] });
   const e = p('p2');
   const g = game.gens[0];
@@ -455,8 +461,8 @@ test('엔지니어: 지름 3m 안의 발전기에 로봇을 붙이면 5초 동�
   assert.equal(game.robots.length, 0);
   e.x = g.x + 1.4;
   game.handleSkill('p2');
-  assert.equal(game.robots.length, 0, '쿨타임 10초 (사용 시점부터)');
-  run(game, 4.6);
+  assert.equal(game.robots.length, 0, '쿨타임 13초 (사용 시점부터)');
+  run(game, 7.6);
   game.handleSkill('p2');
   assert.equal(game.robots.length, 1);
 });

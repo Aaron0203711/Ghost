@@ -616,7 +616,7 @@ export class GameSession {
       if (!gen) continue;
       gen.progress = g.p;
       gen.done = !!g.done;
-      gen.model.set(g.p, gen.done);
+      gen.model.set(g.p, gen.done, !!g.rep);
     }
     this.syncTraps(s.traps);
     this.minimap?.update(s.map, s.exit);
@@ -812,7 +812,7 @@ export class GameSession {
             : e.dash
               ? ' · 질주'
               : e.ball
-                ? ' · 공 -반 칸'
+                ? ' · 공 -0.75칸'
                 : e.dmg > 1
                   ? ` -${e.dmg}칸`
                   : '';
@@ -822,7 +822,7 @@ export class GameSession {
           this.flash('hit');
           this.shake = e.ball ? 0.2 : 0.35;
           this.centerMsg(
-            `맞았다! ${hp}${e.far ? ' 원거리 저격 -2칸' : e.ball ? ' 공 -반 칸' : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
+            `맞았다! ${hp}${e.far ? ' 원거리 저격 -2칸' : e.ball ? ' 공 -0.75칸' : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
             1.5,
           );
         } else if (e.by === this.myId) {
@@ -1407,9 +1407,15 @@ export class GameSession {
     const t = performance.now() / 1000;
     for (const m of this.anchorMeshes.values()) {
       const g = m.userData.target;
-      m.position.x += (g.x - m.position.x) * k;
-      m.position.z += (g.z - m.position.z) * k;
-      m.rotation.z += dt * 14; // 빙글빙글 돌며 날아감
+      const dx = g.x - m.position.x;
+      const dz = g.z - m.position.z;
+      // 돌지 않고 날아가는 방향으로 닻 끝을 향한 채 일자로 나아감
+      if (Math.hypot(dx, dz) > 0.02) {
+        m.rotation.order = 'YXZ';
+        m.rotation.set(Math.PI / 2, Math.atan2(-dx, -dz), 0);
+      }
+      m.position.x += dx * k;
+      m.position.z += dz * k;
     }
     for (const [id, m] of this.wispMeshes) {
       const g = m.userData.target;

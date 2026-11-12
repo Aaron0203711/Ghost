@@ -615,7 +615,10 @@ export class Game {
     }
 
     // 발전기 수리: 범위 안에서 상호작용 키를 누르고 있는 생존자 수만큼 빨라진다
-    for (const g of this.gens) g.repairers = 0;
+    for (const g of this.gens) {
+      g.repairers = 0;
+      g.fake = false;
+    }
     for (const s of this.players.values()) {
       s.repairing = false;
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || !s.interact || s.pulledBy) continue;
@@ -627,11 +630,16 @@ export class Game {
     // 살가죽 변장: 발전기 옆에 멈춰 서 있으면 생존자처럼 수리하는 척 (진행도는 오르지 않음)
     for (const h of this.players.values()) {
       if (h.role !== ROLE.HUNTER || !h.disguiseAs || h.moving || this.isStunned(h) || h.pulledBy) continue;
-      if (this.nearestGen(h)) h.repairing = true;
+      const g = this.nearestGen(h);
+      if (!g) continue;
+      h.repairing = true;
+      g.fake = true; // 노란 불빛도 진짜 수리처럼 켜진다
     }
     const robotWork = stepRobots(this, dt); // 엔지니어 로봇: 매초 4%
     for (const g of this.gens) {
       const bonus = robotWork.get(g.id) || 0;
+      // 누군가 수리 중(로봇·변장한 살가죽 포함)이면 노란 불빛
+      g.active = !g.done && (g.repairers > 0 || bonus > 0 || g.fake);
       if (g.done || (g.repairers === 0 && bonus === 0)) continue;
       g.progress = Math.min(1, g.progress + (g.repairers * dt) / RULES.GENERATOR_REPAIR_TIME + bonus);
       if (g.progress >= 1) {
@@ -803,7 +811,7 @@ export class Game {
       robots: this.robots.map((r) => ({ id: r.id, g: r.genId })),
       anchors: this.anchors.map((a) => ({ id: a.id, x: r2(a.x), z: r2(a.z) })),
       wisps: this.wisps.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z) })),
-      gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0 })),
+      gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0, ...(g.active ? { rep: 1 } : {}) })),
       traps,
       exit: this.exit,
       voice: this.voiceFor(id),

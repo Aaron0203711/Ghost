@@ -1219,12 +1219,12 @@ test('음성: 투명화 중인 암살자는 생존자에게 안 들리고 동료
   assert.ok(game.voiceFor('p1').p3[0] > 0, '암살자는 생존자 목소리를 들음');
 });
 
-test('밸런스: 술래 24km/h, 생존자 1초 무적, 광대 공 11m', () => {
-  assert.ok(Math.abs(RULES.HUNTER_SPEED - 24 / 3.6) < 1e-9);
+test('밸런스: 술래 20km/h, 생존자 1초 무적', () => {
+  assert.ok(Math.abs(RULES.HUNTER_SPEED - 20 / 3.6) < 1e-9);
   assert.equal(RULES.HIT_INVULNERABLE, 1);
   const { game, hunter } = field('maniac');
   run(game, 2);
-  assert.ok(Math.abs(hunter.budget - (24 / 3.6) * 0.6) < 0.01, '술래 이동 허용량');
+  assert.ok(Math.abs(hunter.budget - (20 / 3.6) * 0.6) < 0.01, '술래 이동 허용량');
 });
 
 test('푸드파이터: 걷기·달리기 모두 이동 속도 20% 감소', () => {
@@ -1254,6 +1254,7 @@ test('살가죽: 변장 중 발전기 옆에 멈춰 서 있으면 수리하는 �
   assert.equal(g.progress, 0, '진행도는 오르지 않음');
   const seen = game.snapshotFor('p2').players.find((p) => p.id === 'p1');
   assert.equal(seen.rep, 1, '생존자에게 수리 동작이 보임');
+  assert.equal(game.snapshotFor('p2').gens.find((x) => x.id === g.id).rep, 1, '발전기 노란 불빛도 켜짐');
   hunter.moving = true;
   game.tick(DT);
   assert.equal(hunter.repairing, false, '움직이면 멈춤');
@@ -1261,4 +1262,34 @@ test('살가죽: 변장 중 발전기 옆에 멈춰 서 있으면 수리하는 �
   hunter.x = g.x + 5;
   game.tick(DT);
   assert.equal(hunter.repairing, false, '발전기에서 멀면 안 함');
+});
+
+test('발전기: 누군가 수리 중이면 노란 불빛(rep), 손을 떼면 꺼짐', () => {
+  const { game, s1 } = makeGame();
+  const g = game.gens[0];
+  s1.x = g.x + 1.2;
+  s1.z = g.z;
+  const genOf = () => game.snapshotFor('p1').gens.find((x) => x.id === g.id);
+  game.tick(DT);
+  assert.equal(genOf().rep, undefined, '평소엔 꺼짐');
+  s1.interact = true;
+  game.tick(DT);
+  assert.equal(genOf().rep, 1, '수리 중 노란 불빛 (술래에게도 보임)');
+  s1.interact = false;
+  game.tick(DT);
+  assert.equal(genOf().rep, undefined);
+});
+
+test('선장: 닻 판정 반경 0.8m (옆으로 1.1m 비켜 있어도 맞음, 1.3m는 안 맞음)', () => {
+  for (const [off, hit] of [
+    [1.1, true],
+    [1.3, false],
+  ]) {
+    const { game, s1 } = field('captain');
+    s1.x = off;
+    s1.z = -10;
+    game.handleSkill('p1', { yaw: 0 });
+    run(game, 0.8);
+    assert.equal(s1.pulledBy === 'p1', hit, `옆으로 ${off}m`);
+  }
 });

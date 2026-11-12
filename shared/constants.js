@@ -7,7 +7,7 @@ export const RULES = Object.freeze({
   // 이동
   SURVIVOR_WALK_SPEED: kmh(16), // 4.44 m/s
   SURVIVOR_RUN_SPEED: kmh(23), // 6.39 m/s
-  HUNTER_SPEED: kmh(24), // 6.67 m/s
+  HUNTER_SPEED: kmh(20), // 5.56 m/s
   PLAYER_RADIUS: 0.35,
   EYE_HEIGHT: 1.6,
 
@@ -154,13 +154,13 @@ export const MANIAC = Object.freeze({
 });
 
 /**
- * 광대: 공 던지기(반 칸, 쿨타임 0.5초, 포물선, 수평 최대 11m)와 실 함정.
+ * 광대: 공 던지기(0.75칸, 쿨타임 0.5초, 포물선, 수평 최대 11m)와 실 함정.
  * 실 함정은 좌우 양쪽 벽(담장 포함) 사이에 쳐지고(최대 10m), 최대 4개·23초마다 1개 충전.
- * 밟은 생존자는 2초 동안 몸이 빛나 벽 너머로도 보이고 이동 속도 50% 감소 (점프로 피함). 밟으면 사라짐
+ * 밟은 생존자는 4초 동안 몸이 빛나 벽 너머로도 보이고 이동 속도 50% 감소 (점프로 피함). 밟으면 사라짐
  */
 export const CLOWN = Object.freeze({
   BALL_COOLDOWN: 0.5,
-  BALL_DAMAGE: 0.5,
+  BALL_DAMAGE: 0.75,
   BALL_SPEED: 15, // m/s, 바라보는 방향(위아래 포함)으로 던짐
   BALL_GRAVITY: 9.8,
   BALL_RANGE: 11, // 수평으로 11m 날아가면 사라짐
@@ -170,9 +170,9 @@ export const CLOWN = Object.freeze({
   THREAD_MAX_LEN: 10, // 양쪽 벽 사이 거리
   THREAD_RADIUS: 0.12, // 실 굵기 (생존자 반경에 더해 판정)
   THREAD_VISIBLE_RANGE: 4, // 생존자에게 보이는 거리
-  THREAD_SLOW_TIME: 2,
+  THREAD_SLOW_TIME: 4,
   THREAD_SLOW_FACTOR: 0.5,
-  THREAD_REVEAL_TIME: 2, // 몸이 빛나 벽 너머로 보이는 시간
+  THREAD_REVEAL_TIME: 4, // 몸이 빛나 벽 너머로 보이는 시간
   // 실을 걸 수 있는 장애물: 담장·벽·건물·바깥 경계
   WALL_KINDS: ['wall', 'stonewall', 'boundary', 'house', 'hut', 'shed', 'shrine'],
 });
@@ -201,7 +201,7 @@ export const SYNERGY_INFO = Object.freeze({
 export const CAPTAIN = Object.freeze({
   ANCHOR_SPEED: 25,
   ANCHOR_RANGE: 20,
-  ANCHOR_RADIUS: 0.5,
+  ANCHOR_RADIUS: 0.8,
   ROPE_RADIUS: 0.15, // 날아가는 닻과 선장 사이 밧줄. 닿아도 끌려온다
   PULL_TIME: 1.5,
   SKILL_COOLDOWN: 7.5,
@@ -217,7 +217,7 @@ export const GHOST = Object.freeze({
   VIEW_HALF_ANGLE: (60 * Math.PI) / 180,
   SKILL_COOLDOWN: 7,
   WALL_SLOW_TIME: 1, // 벽을 빠져나온 순간부터 1초 동안
-  WALL_SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (24km/h → 12km/h)
+  WALL_SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (20km/h → 10km/h)
 });
 
 /**
@@ -261,7 +261,7 @@ export const SNIPER = Object.freeze({
   FAR_DISTANCE: 30, // 이 거리(m) 밖에서 맞히면 2칸
   NEAR_DAMAGE: 1,
   FAR_DAMAGE: 2,
-  AIM_SPEED_FACTOR: 0.5, // 조준 중 이동 속도 배율 (24km/h → 12km/h)
+  AIM_SPEED_FACTOR: 0.5, // 조준 중 이동 속도 배율 (20km/h → 10km/h)
   AIM_FOV: 24, // 조준 시 시야각(확대)
   AIM_HIT_SLOW_TIME: 2, // 조준한 상태로 맞히면 생존자 2초간
   AIM_HIT_SLOW_FACTOR: 0.9, // 이동 속도 10% 감소
@@ -275,9 +275,9 @@ export const ASSASSIN = Object.freeze({
   ATTACK_RANGE: 3.0,
   INVIS_TIME: 15,
   SKILL_COOLDOWN: 15, // 투명화가 끝난 뒤부터 셈
-  INVIS_SPEED_FACTOR: 1.5, // 투명화 중 이동 속도 50% 증가 (24km/h → 36km/h)
+  INVIS_SPEED_FACTOR: 1.5, // 투명화 중 이동 속도 50% 증가 (20km/h → 30km/h)
   SLOW_TIME: 3.5, // 생존자를 맞혀 투명화가 풀리면 3.5초간
-  SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (24km/h → 12km/h)
+  SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (20km/h → 10km/h)
 });
 
 export const CLASS_INFO = Object.freeze({
@@ -288,7 +288,7 @@ export const CLASS_INFO = Object.freeze({
   ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과(빠져나오면 1초간 50% 감속) · 할퀴기 3m (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
   skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 4m (쿨타임 1.5초) · 생존자로 변장(발전기 수리하는 척), 공격하면 풀림 (쿨타임 5초)' },
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
-  clown: { name: '광대', icon: '🤡', desc: '공 던지기 반 칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
+  clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
 });
 
 // ───────────── 생존자 직업 (메인 화면에서 고름) ─────────────
@@ -303,30 +303,30 @@ export const SURVIVOR_CLASS = Object.freeze({
 });
 
 /** 의사: 5m 안에서 바라본 다친 생존자(없으면 자신)를 한 칸 회복. 다친 사람이 없으면 안 쓰임 */
-export const DOCTOR = Object.freeze({ COOLDOWN: 20, RANGE: 5, HEAL: 1, AIM_HALF_ANGLE: (45 * Math.PI) / 180 });
+export const DOCTOR = Object.freeze({ COOLDOWN: 23, RANGE: 5, HEAL: 1, AIM_HALF_ANGLE: (45 * Math.PI) / 180 });
 
 /** 경찰: 테이저건. 초속 30m로 10m까지, 벽에 막힘. 맞은 술래는 4초 스턴 (이동·공격·스킬 불가) */
-export const POLICE = Object.freeze({ COOLDOWN: 21.5, RANGE: 10, SPEED: 30, RADIUS: 0.3, STUN: 4 });
+export const POLICE = Object.freeze({ COOLDOWN: 24.5, RANGE: 10, SPEED: 30, RADIUS: 0.3, STUN: 4 });
 
 /** 군인: 연막탄. 지름 3m 연막이 5초 유지, 안에 있는 술래는 화면이 매우 뿌옇게 (나오면 1초 뒤 풀림) */
-export const SOLDIER = Object.freeze({ COOLDOWN: 25, RADIUS: 1.5, DURATION: 5, LINGER: 1 });
+export const SOLDIER = Object.freeze({ COOLDOWN: 28, RADIUS: 1.5, DURATION: 5, LINGER: 1 });
 
 /** 푸드파이터: 체력 +4칸 (보통 7칸, 5인 규칙이면 6칸), 스태미나 최대 5초, 이동 속도 20% 감소 */
 export const FOODFIGHTER = Object.freeze({ BONUS_HP: 4, STAMINA_MAX: 5, SPEED_FACTOR: 0.8 });
 
 /** 닌자: 분신이 5초 동안 소환한 방향으로 걷기 속도로 직진. 술래 공격에 맞으면 사라짐 */
-export const NINJA = Object.freeze({ COOLDOWN: 10, LIFE: 5, HIT_RADIUS: 0.45 });
+export const NINJA = Object.freeze({ COOLDOWN: 13, LIFE: 5, HIT_RADIUS: 0.45 });
 
 /** 엔지니어: 지름 3m 안의 발전기에 소형 로봇 부착, 5초 동안 매초 4% (총 20%) */
-export const ENGINEER = Object.freeze({ COOLDOWN: 10, DURATION: 5, RATE: 0.04, RANGE: 1.5 });
+export const ENGINEER = Object.freeze({ COOLDOWN: 13, DURATION: 5, RATE: 0.04, RANGE: 1.5 });
 
 export const SURVIVOR_CLASS_INFO = Object.freeze({
-  doctor: { name: '의사', icon: '🩺', skill: '회복', desc: '5m 안의 생존자(없으면 자신)를 한 칸 회복 · 쿨타임 20초' },
-  police: { name: '경찰', icon: '👮', skill: '테이저건', desc: '테이저건 10m · 맞은 술래 4초 스턴 · 쿨타임 21.5초' },
-  soldier: { name: '군인', icon: '🪖', skill: '연막탄', desc: '지름 3m 연막 5초 · 안에 있는 술래 화면이 뿌옇게 · 쿨타임 25초' },
+  doctor: { name: '의사', icon: '🩺', skill: '회복', desc: '5m 안의 생존자(없으면 자신)를 한 칸 회복 · 쿨타임 23초' },
+  police: { name: '경찰', icon: '👮', skill: '테이저건', desc: '테이저건 10m · 맞은 술래 4초 스턴 · 쿨타임 24.5초' },
+  soldier: { name: '군인', icon: '🪖', skill: '연막탄', desc: '지름 3m 연막 5초 · 안에 있는 술래 화면이 뿌옇게 · 쿨타임 28초' },
   foodfighter: { name: '푸드파이터', icon: '🍔', skill: null, desc: '체력 +4칸 (보통 7칸) · 대신 스태미나 5초 · 이동 속도 -20%' },
-  ninja: { name: '닌자', icon: '🌀', skill: '분신', desc: '5초 동안 앞으로 걸어가는 분신 소환 · 쿨타임 10초' },
-  engineer: { name: '엔지니어', icon: '🔧', skill: '로봇', desc: '발전기에 로봇 부착, 5초간 20% 수리 · 쿨타임 10초' },
+  ninja: { name: '닌자', icon: '🌀', skill: '분신', desc: '5초 동안 앞으로 걸어가는 분신 소환 · 쿨타임 13초' },
+  engineer: { name: '엔지니어', icon: '🔧', skill: '로봇', desc: '발전기에 로봇 부착, 5초간 20% 수리 · 쿨타임 13초' },
 });
 
 export const DEFAULT_SURVIVOR_CLASS = SURVIVOR_CLASS.DOCTOR;

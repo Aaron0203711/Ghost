@@ -609,7 +609,7 @@ test('암살자: 쿠나이 1칸, 쿨타임 1.5초, 사거리 3m', () => {
   assert.equal(game.traps.length, 0, '덫 없음');
 });
 
-test('암살자: 투명화 15초, 끝난 뒤 15초 쿨타임', () => {
+test('암살자: 투명화 15초, 끝난 뒤 8초 쿨타임', () => {
   const { game, hunter, events } = makeGame(3, 7, 'assassin');
   game.handleSkill('p1');
   assert.ok(game.isInvisible(hunter));
@@ -620,15 +620,15 @@ test('암살자: 투명화 15초, 끝난 뒤 15초 쿨타임', () => {
   assert.ok(events.some((e) => e.msg.kind === 'invis' && e.msg.on === false && e.msg.reason === 'timeout'));
   game.handleSkill('p1');
   assert.ok(!game.isInvisible(hunter), '쿨타임 중');
-  run(game, 14.9);
+  run(game, 7.9);
   game.handleSkill('p1');
-  assert.ok(!game.isInvisible(hunter), '15초 전');
+  assert.ok(!game.isInvisible(hunter), '8초 전');
   run(game, 0.15);
   game.handleSkill('p1');
-  assert.ok(game.isInvisible(hunter), '15초 뒤 다시 사용');
+  assert.ok(game.isInvisible(hunter), '8초 뒤 다시 사용');
 });
 
-test('암살자: 투명화 중 생존자를 맞히면 바로 풀리고, 그때부터 15초 쿨타임', () => {
+test('암살자: 투명화 중 생존자를 맞히면 바로 풀리고, 그때부터 8초 쿨타임', () => {
   const { game, hunter, s1 } = makeGame(3, 7, 'assassin');
   game.handleSkill('p1');
   run(game, 3);
@@ -636,7 +636,7 @@ test('암살자: 투명화 중 생존자를 맞히면 바로 풀리고, 그때�
   game.handleAttack('p1', { yaw: 0, pitch: 0 }); // 정면의 생존자를 맞힘
   assert.equal(s1.hits, 1);
   assert.ok(!game.isInvisible(hunter));
-  assert.ok(Math.abs(hunter.skillReadyAt - (game.time + 15)) < 1e-9);
+  assert.ok(Math.abs(hunter.skillReadyAt - (game.time + 8)) < 1e-9);
 });
 
 test('암살자: 헛치면 투명화 유지', () => {

@@ -217,7 +217,7 @@ export const GHOST = Object.freeze({
   VIEW_HALF_ANGLE: (60 * Math.PI) / 180,
   SKILL_COOLDOWN: 7,
   WALL_SLOW_TIME: 1, // 벽을 빠져나온 순간부터 1초 동안
-  WALL_SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (20km/h → 10km/h)
+  WALL_SLOW_FACTOR: 0.75, // 이동 속도 25% 감소 (20km/h → 15km/h)
 });
 
 /**
@@ -274,7 +274,7 @@ export const ASSASSIN = Object.freeze({
   ATTACK_COOLDOWN: 1.5,
   ATTACK_RANGE: 3.0,
   INVIS_TIME: 15,
-  SKILL_COOLDOWN: 15, // 투명화가 끝난 뒤부터 셈
+  SKILL_COOLDOWN: 8, // 투명화가 끝난 뒤부터 셈
   INVIS_SPEED_FACTOR: 1.5, // 투명화 중 이동 속도 50% 증가 (20km/h → 30km/h)
   SLOW_TIME: 3.5, // 생존자를 맞혀 투명화가 풀리면 3.5초간
   SLOW_FACTOR: 0.5, // 이동 속도 50% 감소 (20km/h → 10km/h)
@@ -282,10 +282,10 @@ export const ASSASSIN = Object.freeze({
 
 export const CLASS_INFO = Object.freeze({
   maniac: { name: '미치광이', icon: '👹', desc: '방망이 3m (쿨타임 1초) · 덫 3개' },
-  assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 3m (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 15초)' },
+  assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 3m (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
   captain: { name: '선장', icon: '⚓', desc: '후크 3m (쿨타임 0.5초) · 닻이나 밧줄에 닿은 생존자를 끌고 옴 (쿨타임 7.5초)' },
-  ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과(빠져나오면 1초간 50% 감속) · 할퀴기 3m (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
+  ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과(빠져나오면 1초간 25% 감속) · 할퀴기 3m (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
   skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 4m (쿨타임 1.5초) · 생존자로 변장(발전기 수리하는 척), 공격하면 풀림 (쿨타임 5초)' },
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },

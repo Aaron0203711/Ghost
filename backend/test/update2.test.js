@@ -495,7 +495,7 @@ test('생존자 직업: 대기실에서 받은 직업이 게임에 들어가고,
 
 // ───────────── 밸런스 조정 2 ─────────────
 
-test('유령: 벽을 빠져나온 순간부터 1초 동안 이동 속도 50% 감소 (벽 옆을 걸을 때는 그대로)', () => {
+test('유령: 벽을 빠져나온 순간부터 1초 동안 이동 속도 25% 감소 (벽 옆을 걸을 때는 그대로)', () => {
   const { game, p } = makeGame({ hunters: [{ id: 'p1', cls: 'ghost' }] });
   const g = p('p1');
   clearSpot(game, [g]);
@@ -520,9 +520,9 @@ test('유령: 벽을 빠져나온 순간부터 1초 동안 이동 속도 50% 감
   assert.ok(g.inWall);
   assert.equal(speed(), RULES.HUNTER_SPEED, '벽 안을 지나는 동안은 보통 속도');
   move(500, 499.5); // 빠져나옴
-  assert.equal(speed(), RULES.HUNTER_SPEED * 0.5);
+  assert.equal(speed(), RULES.HUNTER_SPEED * 0.75);
   run(game, 0.95);
-  assert.equal(speed(), RULES.HUNTER_SPEED * 0.5);
+  assert.equal(speed(), RULES.HUNTER_SPEED * 0.75);
   run(game, 0.1);
   assert.equal(speed(), RULES.HUNTER_SPEED, '1초 뒤 원래대로');
   // 한 번에 얇은 벽을 건너뛰어도(입력 간격 사이) 넘은 것으로 친다

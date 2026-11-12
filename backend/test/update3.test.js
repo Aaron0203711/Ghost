@@ -53,8 +53,8 @@ test('익사자 다이빙: 0.5초 땅속(안 보임·이동 불가) 뒤 도착 �
   const far = p('p3');
   const spot = openSpot(game, 6);
   Object.assign(h, { x: spot.x, z: spot.z + 12, yaw: 0 });
-  Object.assign(s, { x: spot.x + 2, z: spot.z }); // 원(반지름 4m) 안
-  Object.assign(far, { x: spot.x + 5.5, z: spot.z }); // 원 밖
+  Object.assign(s, { x: spot.x + 1.5, z: spot.z }); // 원(반지름 2m) 안
+  Object.assign(far, { x: spot.x + 3, z: spot.z }); // 원(반지름 2m) 밖
   const farPos = { x: far.x, z: far.z };
   game.handleSkill('p1', { yaw: 0, tx: spot.x, tz: spot.z });
   assert.equal(ev('dive').length, 1);
@@ -69,7 +69,7 @@ test('익사자 다이빙: 0.5초 땅속(안 보임·이동 불가) 뒤 도착 �
   assert.ok(Math.hypot(h.x - spot.x, h.z - spot.z) > 5, '아직 땅속');
   run(game, 0.3);
   assert.ok(Math.hypot(h.x - spot.x, h.z - spot.z) < 0.6, '도착 지점에서 튀어나옴');
-  assert.ok(Math.abs(s.x - (spot.x + 4)) < 0.05, `바깥으로 2m (${s.x - spot.x})`);
+  assert.ok(Math.abs(s.x - (spot.x + 3.5)) < 0.05, `바깥으로 2m (${s.x - spot.x})`);
   assert.equal(s.hits, 0, '피해 없음');
   assert.equal(game.slowState(s).factor, DROWNED.SLOW_FACTOR);
   assert.deepEqual({ x: far.x, z: far.z }, farPos, '원 밖은 그대로');
@@ -127,7 +127,7 @@ function duo(classes) {
   return { ...ctx, a: ctx.p('p1'), b: ctx.p('p2'), s: ctx.p('p3') };
 }
 
-test('바다의 저주: 닻 판정 1.5m, 다이빙 지름 10m·거리 무제한', () => {
+test('바다의 저주: 닻 판정 1.5m, 다이빙 지름 7m·거리 무제한', () => {
   const { game, a, b, s, ev } = duo(['captain', 'drowned']);
   assert.deepEqual(game.synergies, ['seaCurse']);
   for (const q of game.players.values()) if (q.role === 'survivor') q.x = 1000;
@@ -142,14 +142,14 @@ test('바다의 저주: 닻 판정 1.5m, 다이빙 지름 10m·거리 무제한'
   assert.ok(SEA_CURSE.ANCHOR_RADIUS > CAPTAIN.ANCHOR_RADIUS);
   run(game, 2);
   a.x = 1000;
-  // 다이빙: 4.5m 떨어진 생존자도 튕김, 멀리도 감
+  // 다이빙: 3.5m 떨어진 생존자도 튕김(보통은 2m), 멀리도 감
   Object.assign(b, { x: spot.x, z: spot.z, yaw: 0 });
   const target = reachableCells(game.world, spot.x, spot.z).find((c) => Math.hypot(c.x - spot.x, c.z - spot.z) > 45 && game.world.isFree(c.x, c.z, 1));
   game.handleSkill('p2', { yaw: 0, tx: target.x, tz: target.z });
   const d = ev('dive')[0].msg;
   assert.equal(d.r, SEA_CURSE.DIVE_RADIUS);
   assert.ok(Math.hypot(d.x - target.x, d.z - target.z) < 1, '거리 제한 없음');
-  Object.assign(s, { x: d.x + 4.5, z: d.z });
+  Object.assign(s, { x: d.x + 3.5, z: d.z });
   run(game, 0.6);
   assert.deepEqual(ev('diveEnd')[0].msg.hits, ['p3']);
 });

@@ -241,6 +241,11 @@ export class Game {
     return this.time < p.stunUntil;
   }
 
+  /** 발전기 수리 중: 살아 있는 생존자가 고치지 않은 발전기 옆에서 상호작용 키를 누르고 있음 */
+  isRepairing(p) {
+    return p.role === ROLE.SURVIVOR && p.status === STATUS.ALIVE && p.interact && !p.pulledBy && !!this.nearestGen(p);
+  }
+
   /** 생존자 감속: factor 배율로 duration초 (from부터, 기본은 지금). noRun이면 그동안 달리기 불가 */
   addSlow(s, factor, duration, { noRun = false, from = this.time } = {}) {
     s.slows.push({ from, until: from + duration, factor, noRun });
@@ -287,7 +292,8 @@ export class Game {
     if (msg.corr !== p.corr) return;
     if (!Number.isFinite(msg.x) || !Number.isFinite(msg.z)) return;
 
-    if (this.isStunned(p)) {
+    // 덫에 걸렸거나 발전기를 수리하는 동안에는 움직일 수 없다
+    if (this.isStunned(p) || this.isRepairing(p)) {
       if (Math.hypot(msg.x - p.x, msg.z - p.z) > 0.05) this.correct(p);
       return;
     }
@@ -402,7 +408,7 @@ export class Game {
   handleJump(id) {
     const p = this.players.get(id);
     if (!p || this.ended || p.status !== STATUS.ALIVE) return;
-    if (this.isAirborne(p) || this.isStunned(p)) return;
+    if (this.isAirborne(p) || this.isStunned(p) || this.isRepairing(p)) return; // 수리 중에도 못 뜀
     if (p.role === ROLE.SURVIVOR) {
       if (p.stamina < RULES.JUMP_STAMINA) return;
       p.stamina -= RULES.JUMP_STAMINA;
@@ -614,7 +620,7 @@ export class Game {
         slowFactor: slow.factor,
         noRun: slow.noRun,
       });
-      if (stunned || isForced(this, p)) p.budget = 0;
+      if (stunned || isForced(this, p) || this.isRepairing(p)) p.budget = 0;
       else p.budget = Math.min(p.budget + speed * dt * 1.2, speed * 0.6);
     }
 

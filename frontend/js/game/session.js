@@ -491,7 +491,7 @@ export class GameSession {
 
   /** 점프: 땅에 있을 때만, 생존자는 스태미나 1초분 필요. 덫에 걸리면 못 뜀 */
   tryJump() {
-    if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0) return;
+    if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0 || this.isRepairing()) return;
     if (!this.isHunter) {
       if (this.stam.stamina < RULES.JUMP_STAMINA) {
         this.centerMsg('스태미나가 부족해 점프할 수 없어요', 1);
@@ -1306,11 +1306,13 @@ export class GameSession {
       this.pos.x += (this.serverPos.x - this.pos.x) * k;
       this.pos.z += (this.serverPos.z - this.pos.z) * k;
     }
-    const mv = alive && !stunned && !this.forced ? c.moveVector() : { x: 0, y: 0 };
+    this.interact = !this.isHunter && c.isHeld('main');
+    // 발전기를 수리하는 동안(수리 키를 누르고 있는 동안)에는 움직일 수 없다
+    const repairing = this.isRepairing();
+    const mv = alive && !stunned && !this.forced && !repairing ? c.moveVector() : { x: 0, y: 0 };
     this.moving = mv.x !== 0 || mv.y !== 0;
     const wantsRun = !this.isHunter && c.isHeld('action');
     this.wantsRun = wantsRun;
-    this.interact = !this.isHunter && c.isHeld('main');
     // 감속(덫이 풀린 뒤·조준 저격·광대 실)과 달리기 불가는 서버가 알려 준 값으로 예측
     if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned && !this.noRun, this.moving, dt, this.staminaMax);
     if (alive && this.moving) {
@@ -1448,6 +1450,11 @@ export class GameSession {
   }
 
   // ───────────────────────── HUD ─────────────────────────
+
+  /** 수리 중: 생존자가 고치지 않은 발전기 옆에서 수리 키를 누르고 있음 (이동·점프 불가) */
+  isRepairing() {
+    return !this.isHunter && this.status === STATUS.ALIVE && !!this.interact && !this.forced && !!this.nearestGen();
+  }
 
   nearestGen() {
     let best = null;

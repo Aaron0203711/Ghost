@@ -1295,3 +1295,41 @@ test('선장: 닻 판정 반경 0.8m (옆으로 1.1m 비켜 있어도 맞음, 1.
     assert.equal(s1.pulledBy === 'p1', hit, `옆으로 ${off}m`);
   }
 });
+
+test('발전기 수리 중에는 움직이거나 점프할 수 없고, 손을 떼면 다시 움직인다', () => {
+  const { game, s1 } = makeGame();
+  const g = game.gens[0];
+  s1.x = g.x + 1.2;
+  s1.z = g.z;
+  s1.stamina = 5;
+  run(game, 1);
+  const send = (extra) => game.handleInput('p2', { yaw: 0, pitch: 0, moving: true, corr: s1.corr, ...extra });
+  send({ interact: true, x: s1.x, z: s1.z });
+  run(game, 1);
+  assert.equal(s1.repairing, true);
+  assert.equal(s1.budget, 0, '수리 중에는 이동 허용량이 없음');
+  const before = { x: s1.x, z: s1.z };
+  send({ interact: true, x: s1.x + 0.3, z: s1.z });
+  assert.deepEqual({ x: s1.x, z: s1.z }, before, '수리 중 이동 입력은 무시');
+  game.handleJump('p2');
+  assert.equal(game.isAirborne(s1), false, '수리 중 점프 불가');
+  assert.ok(g.progress > 0, '수리는 계속 진행');
+
+  send({ interact: false, x: s1.x, z: s1.z });
+  run(game, 0.5);
+  send({ interact: false, x: s1.x + 0.3, z: s1.z });
+  assert.ok(s1.x > before.x, '손을 떼면 움직일 수 있음');
+  game.handleJump('p2');
+  assert.equal(game.isAirborne(s1), true, '손을 떼면 점프 가능');
+});
+
+test('발전기에서 멀면 수리 키를 눌러도 움직일 수 있다', () => {
+  const { game, s1 } = makeGame();
+  const g = game.gens[0];
+  s1.x = g.x + 5;
+  s1.z = g.z;
+  game.handleInput('p2', { moving: true, interact: true, corr: s1.corr, x: s1.x, z: s1.z });
+  run(game, 1);
+  assert.ok(s1.budget > 0);
+  assert.equal(game.isRepairing(s1), false);
+});

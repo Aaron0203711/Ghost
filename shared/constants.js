@@ -177,7 +177,7 @@ export const CLOWN = Object.freeze({
   THREAD_COOLDOWN: 23, // 23초마다 1개 충전
   THREAD_MAX_LEN: 10, // 양쪽 벽 사이 거리
   THREAD_RADIUS: 0.12, // 실 굵기 (생존자 반경에 더해 판정)
-  THREAD_VISIBLE_RANGE: 4, // 생존자에게 보이는 거리
+  THREAD_VISIBLE_RANGE: 0.5, // 생존자에게 보이는 거리 (정신병원 시너지면 아예 안 보임)
   THREAD_SLOW_TIME: 4,
   THREAD_SLOW_FACTOR: 0.5,
   THREAD_REVEAL_TIME: 4, // 몸이 빛나 벽 너머로 보이는 시간
@@ -212,7 +212,7 @@ export function synergiesFor(classes) {
 }
 
 export const SYNERGY_INFO = Object.freeze({
-  trapDuo: { name: '정신병원', icon: '🪤🧵', desc: '미치광이 덫이 5m 안의 생존자를 따라가고, 광대 실이 벽 끝에서 끝까지 움직여요' },
+  trapDuo: { name: '정신병원', icon: '🪤🧵', desc: '미치광이 덫이 5m 안의 생존자를 따라가고, 광대 실이 벽 끝에서 끝까지 움직이며 생존자에게 보이지 않아요' },
   seaCurse: { name: '바다의 저주', icon: '⚓🌊', desc: '선장의 닻이 커지고 판정이 1.5m로, 익사자 다이빙이 지름 7m·거리 무제한이 돼요' },
   spies: { name: '최고의 스파이들', icon: '🎯🥷', desc: '저격수가 35m 밖에서 맞히면 즉사, 암살자가 투명해지면 0.5초 동안 모든 생존자 위치가 보여요' },
 });

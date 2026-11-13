@@ -225,16 +225,26 @@ test('광대: 실을 밟으면 사라지고 4초간 몸이 빛나며 50% 감속,
   assert.ok(!game.isRevealed(s));
 });
 
-test('광대: 생존자에게는 4m 안의 실만 보인다', () => {
+test('광대: 생존자에게는 0.5m 안의 실만 보인다', () => {
   const { game, h, s, spot } = clownWithWalls();
   game.handleTrap('p1');
   s.x = spot.x;
-  s.z = spot.z + 6;
+  s.z = spot.z + 1;
+  assert.equal(game.snapshotFor('p2').threads.length, 0, '1m 떨어지면 안 보임');
+  assert.equal(game.snapshotFor('p1').threads.length, 1, '술래는 항상 보임');
+  s.z = spot.z + 0.45;
+  assert.equal(game.snapshotFor('p2').threads.length, 1, '0.5m 안이면 보임');
+  assert.ok(h);
+});
+
+test('정신병원 시너지: 광대 실이 생존자에게 아예 안 보인다 (술래에게는 보임)', () => {
+  const { game, s, spot } = clownWithWalls();
+  game.synergies = ['trapDuo'];
+  game.handleTrap('p1');
+  s.x = spot.x;
+  s.z = spot.z + 0.2;
   assert.equal(game.snapshotFor('p2').threads.length, 0);
   assert.equal(game.snapshotFor('p1').threads.length, 1);
-  s.z = spot.z + 3;
-  assert.equal(game.snapshotFor('p2').threads.length, 1);
-  assert.ok(h);
 });
 
 // ───────────── 3. 함정 듀오 ─────────────

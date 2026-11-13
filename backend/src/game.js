@@ -831,9 +831,10 @@ export class Game {
     const traps = this.traps
       .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE)
       .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z) }));
-    // 광대 실: 술래·관전자는 모두, 생존자는 4m 안의 실만
+    // 광대 실: 술래·관전자는 모두, 생존자는 0.5m 안의 실만 (정신병원 시너지면 생존자에게 아예 안 보임)
+    const threadsHidden = this.synergies.includes('trapDuo');
     const threads = this.threads
-      .filter((t) => seesAllTraps || distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE)
+      .filter((t) => seesAllTraps || (!threadsHidden && distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE))
       .map((t) => ({ id: t.id, ax: r2(t.ax), az: r2(t.az), bx: r2(t.bx), bz: r2(t.bz) }));
     // 살아 있는 생존자에게는 투명한 암살자의 위치를 아예 보내지 않는다
     const hideInvis = !spectator && me.role === ROLE.SURVIVOR;

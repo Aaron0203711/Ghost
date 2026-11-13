@@ -425,3 +425,29 @@ test('맵 선택: 기본은 랜덤, 방장만 맵을 정할 수 있고 정한 �
   }
   assert.equal(seen.size, 3, '랜덤으로 되돌리면 세 맵 모두 나옴');
 });
+
+test('PWA 파일: 매니페스트, 서비스 워커, 아이콘을 올바른 형식으로 제공', async () => {
+  const srv = await createServer({ port: 0, host: '127.0.0.1' });
+  const base = `http://127.0.0.1:${srv.port}`;
+  try {
+    const mf = await fetch(`${base}/manifest.webmanifest`);
+    assert.equal(mf.status, 200);
+    assert.match(mf.headers.get('content-type'), /application\/manifest\+json/);
+    const manifest = await mf.json();
+    assert.equal(manifest.short_name, 'GHOST');
+    for (const icon of manifest.icons) {
+      const r = await fetch(`${base}/${icon.src}`);
+      assert.equal(r.status, 200, icon.src);
+      await r.arrayBuffer();
+    }
+    const sw = await fetch(`${base}/sw.js`);
+    assert.equal(sw.status, 200);
+    assert.match(sw.headers.get('content-type'), /javascript/);
+    assert.equal(sw.headers.get('service-worker-allowed'), '/');
+    await sw.text();
+    const html = await (await fetch(`${base}/`)).text();
+    assert.match(html, /rel="manifest"/);
+  } finally {
+    await srv.close();
+  }
+});

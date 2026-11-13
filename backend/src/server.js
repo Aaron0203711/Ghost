@@ -80,10 +80,13 @@ export function createServer({ port = 3000, host = '0.0.0.0' } = {}) {
         res.writeHead(404).end('Not found');
         return;
       }
-      res.writeHead(200, {
+      const headers = {
         'content-type': MIME[path.extname(file)] || 'application/octet-stream',
         'cache-control': 'no-cache',
-      });
+      };
+      // 서비스 워커는 페이지 전체(/)를 맡는다
+      if (urlPath === '/sw.js') headers['service-worker-allowed'] = '/';
+      res.writeHead(200, headers);
       fs.createReadStream(file).pipe(res);
     });
   });

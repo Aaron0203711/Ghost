@@ -4,6 +4,7 @@ import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
 import { matchRules, LARGE_MATCH, DUO_MATCH, DUEL_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats } from '@shared/constants.js';
 import { Voice } from './game/voice.js';
+import { initPWA } from './pwa.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
 
 const $ = (id) => document.getElementById(id);
@@ -556,6 +557,7 @@ function closeSettings() {
   $('modal-settings').classList.add('hidden');
 }
 tap($('btn-settings-main'), openSettings);
+initPWA({ tap });
 tap($('btn-settings-lobby'), openSettings);
 tap($('btn-settings-close'), closeSettings);
 $('modal-settings').addEventListener('click', (e) => {

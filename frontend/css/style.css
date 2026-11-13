@@ -316,6 +316,14 @@ input[type='range'] {
   height: 32px;
 }
 
+.install-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+
 .conn {
   margin: 4px 0 0;
   text-align: center;

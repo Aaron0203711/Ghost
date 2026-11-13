@@ -121,6 +121,11 @@
           <ul id="lobby-players" class="player-list"></ul>
           <p class="hint" id="lobby-hint"></p>
           <button id="btn-lobby-start" class="btn primary big">게임 시작</button>
+          <button id="btn-lobby-scls" class="btn lobby-scls">
+            <span class="lobby-scls-label">생존자 직업</span>
+            <b id="lobby-scls-name"></b>
+            <span class="lobby-scls-change">바꾸기 ▸</span>
+          </button>
           <div class="row">
             <button id="btn-mic-lobby" class="btn mic-btn" aria-pressed="false">🔇 마이크 끔</button>
             <button id="btn-settings-lobby" class="btn">⚙ 설정</button>
@@ -255,6 +260,19 @@
           <button id="btn-settings-close" class="btn primary">닫기</button>
         </div>
         <button id="btn-quit-game" class="btn danger ghost hidden">게임 나가기</button>
+      </div>
+    </div>
+
+    <!-- 대기실: 생존자 직업 바꾸기 -->
+    <div id="modal-scls" class="modal hidden" data-ui>
+      <div class="modal-card wide">
+        <h2>생존자 직업 <b id="modal-scls-name"></b></h2>
+        <div class="scls-list" id="modal-scls-list"><!-- main.js가 SURVIVOR_CLASS_INFO로 만든다 --></div>
+        <p class="scls-desc" id="modal-scls-desc"></p>
+        <p class="hint">술래가 되면 생존자 직업은 쓰이지 않아요.</p>
+        <div class="row">
+          <button id="btn-scls-close" class="btn primary">닫기</button>
+        </div>
       </div>
     </div>
 

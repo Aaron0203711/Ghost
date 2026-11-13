@@ -27,6 +27,7 @@ const gameModule = import('./game/session.js').then((m) => (GameSessionClass = m
 function show(id) {
   if (currentScreen === id) return;
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+  if (id !== 'screen-lobby') closeSurvivorClasses(); // 게임이 시작되거나 대기실을 나가면 직업 창을 닫는다
   // 방 목록 화면에 있는 동안만 서버가 목록을 보내 준다
   if (id === 'screen-rooms') net.send({ t: 'rooms', watch: true });
   else if (currentScreen === 'screen-rooms') net.send({ t: 'rooms', watch: false });
@@ -108,14 +109,19 @@ function survivorClass() {
 
 function renderSurvivorClasses() {
   const cur = survivorClass();
-  document.querySelectorAll('.scls-card').forEach((c) => c.classList.toggle('on', c.dataset.scls === cur));
+  document.querySelectorAll('.scls-card[data-scls]').forEach((c) => c.classList.toggle('on', c.dataset.scls === cur));
   const info = SURVIVOR_CLASS_INFO[cur];
-  $('scls-name').textContent = `${info.icon} ${info.name}`;
+  const label = `${info.icon} ${info.name}`;
+  $('scls-name').textContent = label;
+  $('modal-scls-name').textContent = label;
+  $('lobby-scls-name').textContent = label;
   $('scls-desc').textContent = info.desc;
+  $('modal-scls-desc').textContent = info.desc;
 }
 
-{
-  const list = $('scls-list');
+// 메인 화면과 대기실 직업 창에 같은 직업 카드를 만든다
+for (const listId of ['scls-list', 'modal-scls-list']) {
+  const list = $(listId);
   for (const [id, c] of Object.entries(SURVIVOR_CLASS_INFO)) {
     const card = document.createElement('button');
     card.className = 'scls-card';
@@ -130,8 +136,22 @@ function renderSurvivorClasses() {
       if (net.connected) net.send({ t: 'hello', name: playerName() || undefined, scls: id });
     });
   }
-  renderSurvivorClasses();
 }
+renderSurvivorClasses();
+
+// 대기실: 생존자 직업 바꾸기 창
+function openSurvivorClasses() {
+  renderSurvivorClasses();
+  $('modal-scls').classList.remove('hidden');
+}
+function closeSurvivorClasses() {
+  $('modal-scls').classList.add('hidden');
+}
+tap($('btn-lobby-scls'), openSurvivorClasses);
+tap($('btn-scls-close'), closeSurvivorClasses);
+$('modal-scls').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-scls') closeSurvivorClasses();
+});
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     nameInput.blur();
@@ -576,6 +596,7 @@ tap($('btn-quit-game'), () => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('modal-settings').classList.contains('hidden')) closeSettings();
   if (e.key === 'Escape' && !$('modal-training').classList.contains('hidden')) closeTraining();
+  if (e.key === 'Escape' && !$('modal-scls').classList.contains('hidden')) closeSurvivorClasses();
 });
 
 // ───────────────────────── 마이크 ─────────────────────────

@@ -2244,6 +2244,37 @@ body.touch #pc-cd,
   }
 }
 
+/* 대기실: 생존자 직업 바꾸기 버튼과 창 */
+.lobby-scls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.lobby-scls-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.lobby-scls b {
+  flex: 1;
+  color: var(--accent-2);
+}
+.lobby-scls-change {
+  font-size: 13px;
+  color: var(--muted);
+}
+.modal-card.wide {
+  width: min(560px, calc(100vw - 32px));
+}
+.modal-card h2 b {
+  margin-left: 6px;
+  color: var(--accent-2);
+  font-size: 0.85em;
+}
+#modal-scls .hint {
+  margin: 0;
+}
+
 /* 대기실·결과·게임 목록의 생존자 직업 표시 */
 .tag.scls {
   background: rgba(255, 255, 255, 0.1);

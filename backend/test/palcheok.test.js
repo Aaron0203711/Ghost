@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { mulberry32, reachableCells } from '../src/mapgen.js';
-import { MELEE, PALCHEOK, POLICE, CLASS_INFO, HUNTER_CLASS, eyeHeightFor, RULES } from '../../shared/constants.js';
+import { MELEE, PALCHEOK, POLICE, CLASS_INFO, HUNTER_CLASS, eyeHeightFor, RULES, URBAN_LEGEND, SYNERGY_INFO, synergiesFor, GHOST } from '../../shared/constants.js';
 
 const DT = 1 / 20;
 const run = (game, seconds) => {
@@ -38,7 +38,9 @@ test('팔척귀신: 직업 목록, 주먹 3m 쿨타임 1.3초, 눈높이 2.3m', 
   assert.ok(CLASS_INFO.palcheok);
   assert.deepEqual(MELEE.palcheok, { range: 3, cooldown: 1.3 });
   assert.equal(eyeHeightFor('palcheok'), 2.3);
-  assert.equal(eyeHeightFor('maniac'), RULES.EYE_HEIGHT);
+  assert.equal(eyeHeightFor('maniac'), 1.8, '다른 술래는 1.8m');
+  assert.equal(eyeHeightFor(null), RULES.EYE_HEIGHT, '생존자는 1.6m');
+  assert.equal(RULES.EYE_HEIGHT, 1.6);
   const { game, p } = makeGame();
   const h = p('p1');
   const s = p('p2');
@@ -217,4 +219,113 @@ test('들려 있는 동안에는 발전기 수리·탈출 불가', () => {
   game.exit = { x: h.x, z: h.z, rot: 0 };
   run(game, 0.1);
   assert.equal(s.status, 'alive');
+});
+
+// ───────────── 처녀귀신 이름, 술래 눈높이, 도시괴담 ─────────────
+
+function duoGame({ seed = 7 } = {}) {
+  const events = [];
+  const roster = Array.from({ length: 6 }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}` }));
+  const game = new Game(roster, {
+    seed,
+    hunters: [
+      { id: 'p1', cls: 'palcheok' },
+      { id: 'p2', cls: 'ghost' },
+    ],
+    theme: 'village',
+    rand: mulberry32(seed),
+    emit: (to, msg) => events.push({ to, msg }),
+  });
+  const p = (id) => game.players.get(id);
+  for (const id of ['p3', 'p4', 'p5', 'p6']) Object.assign(p(id), { x: 70, z: 70 });
+  Object.assign(p('p2'), { x: -70, z: -70 });
+  return { game, p, ev: (kind) => events.filter((e) => e.msg.kind === kind) };
+}
+
+test('유령 이름은 처녀귀신, 도시괴담 시너지는 처녀귀신 + 팔척귀신', () => {
+  assert.equal(CLASS_INFO.ghost.name, '처녀귀신');
+  assert.deepEqual(synergiesFor(['ghost', 'palcheok']), ['urbanLegend']);
+  assert.deepEqual(synergiesFor(['ghost', 'maniac']), []);
+  assert.equal(SYNERGY_INFO.urbanLegend.name, '도시괴담');
+  assert.ok(Math.abs(URBAN_LEGEND.WISP_SPEED - 14 / 3.6) < 1e-9);
+  assert.equal(URBAN_LEGEND.CRACK_RADIUS * 2, 5);
+});
+
+test('저격수 총알은 술래 눈높이 1.8m에서 나간다', () => {
+  const roster = [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }, { id: 'p3', name: 'C' }];
+  const game = new Game(roster, { seed: 3, hunters: [{ id: 'p1', cls: 'sniper' }], theme: 'village', rand: mulberry32(3), emit: () => {} });
+  const b = game.fire(game.players.get('p1'));
+  assert.equal(b.oy, 1.8);
+});
+
+test('도시괴담: 처녀귀신 유도탄이 안 보이는 생존자까지 모두 시속 14km로 쫓아간다', () => {
+  const { game, p, ev } = duoGame();
+  const g = p('p2');
+  g.yaw = 0;
+  game.handleSkill('p2', { yaw: 0 });
+  assert.equal(ev('wisps')[0].msg.count, 4, '살아 있는 생존자 4명 모두');
+  assert.equal(game.wisps.length, 4);
+  const w = game.wisps[0];
+  const t = p(w.target);
+  const d0 = Math.hypot(t.x - w.x, t.z - w.z);
+  run(game, 1);
+  const d1 = Math.hypot(t.x - w.x, t.z - w.z);
+  assert.ok(Math.abs(d0 - d1 - URBAN_LEGEND.WISP_SPEED) < 0.05, `1초에 ${URBAN_LEGEND.WISP_SPEED}m`);
+  assert.ok(URBAN_LEGEND.WISP_SPEED < GHOST.WISP_SPEED);
+});
+
+test('도시괴담: 던진 생존자가 멈춘 자리에 지름 5m 땅 갈라짐, 원 안 생존자 모두 1칸 (이미 맞은 사람은 무적)', () => {
+  const { game, p, ev } = duoGame();
+  const h = p('p1');
+  const s = p('p3');
+  const near = p('p4');
+  const far = p('p5');
+  const c = openLane(game, 18, 3.5);
+  Object.assign(h, { x: c.x, z: c.z, yaw: 0 });
+  Object.assign(s, { x: c.x, z: c.z - 2 });
+  game.handleSkill('p1', { yaw: 0 });
+  // 15m 지점 근처: 착지 지점에서 2m(원 안), 4m(원 밖)
+  Object.assign(near, { x: c.x + 2, z: c.z - 15 });
+  Object.assign(far, { x: c.x + 4, z: c.z - 15 });
+  game.handleSkill('p1', { yaw: 0 });
+  run(game, 1);
+  assert.equal(ev('thrownEnd')[0].msg.reason, 'land');
+  assert.equal(ev('crack').length, 1);
+  assert.equal(s.hits, 1, '던져진 생존자도 원 안');
+  assert.equal(near.hits, 1);
+  assert.equal(far.hits, 0);
+});
+
+test('도시괴담: 다른 생존자와 부딪혀 멈춰도 땅이 갈라지지만, 방금 맞은 두 사람은 무적이라 추가 피해 없음', () => {
+  const { game, p, ev } = duoGame();
+  const h = p('p1');
+  const s = p('p3');
+  const o = p('p4');
+  const by = p('p5');
+  const c = openLane(game, 18, 3.5);
+  Object.assign(h, { x: c.x, z: c.z, yaw: 0 });
+  Object.assign(s, { x: c.x, z: c.z - 2 });
+  game.handleSkill('p1', { yaw: 0 });
+  Object.assign(o, { x: c.x, z: c.z - 8 });
+  Object.assign(by, { x: c.x + 1.5, z: c.z - 8 });
+  game.handleSkill('p1', { yaw: 0 });
+  run(game, 1);
+  assert.equal(ev('thrownEnd')[0].msg.reason, 'hit');
+  assert.equal(ev('crack').length, 1);
+  assert.equal(s.hits, 1);
+  assert.equal(o.hits, 1);
+  assert.equal(by.hits, 1, '옆에 있던 생존자');
+});
+
+test('도시괴담이 아니면 땅이 갈라지지 않는다', () => {
+  const { game, p, ev } = makeGame();
+  const h = p('p1');
+  const s = p('p2');
+  const c = openLane(game, 18);
+  Object.assign(h, { x: c.x, z: c.z, yaw: 0 });
+  Object.assign(s, { x: c.x, z: c.z - 2 });
+  game.handleSkill('p1', { yaw: 0 });
+  game.handleSkill('p1', { yaw: 0 });
+  run(game, 1);
+  assert.equal(ev('crack').length, 0);
 });

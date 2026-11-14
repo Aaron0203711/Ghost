@@ -33,7 +33,7 @@ import {
   diveStats,
   aimDirection,
 } from '@shared/constants.js';
-import { makeDiveRing, disposeRing, makeDiveWarning, makeSplash } from './dive.js';
+import { makeDiveRing, disposeRing, makeDiveWarning, makeSplash, makeCrack } from './dive.js';
 import { buildWorld, buildSky } from './world.js';
 import {
   Avatar,
@@ -395,7 +395,7 @@ export class GameSession {
     this.centerMsg(
       ({
         captain: '선장: 닻을 던져 생존자를 끌어오세요!',
-        ghost: '유령: 담장을 지나다니며 유도탄으로 몰아붙이세요!',
+        ghost: '처녀귀신: 담장을 지나다니며 유도탄으로 몰아붙이세요!',
         skinwalker: '살가죽: 생존자로 변장해 다가가세요. 공격하면 정체가 드러나요',
         sprinter: '질주자: 질주로 단숨에 거리를 좁히세요!',
         clown: '광대: 공을 던지고, 골목에 실 함정을 치세요!',
@@ -523,7 +523,7 @@ export class GameSession {
     this.net.send({ t: 'jump' });
   }
 
-  /** 선장 닻 · 유령 유도탄 · 살가죽 변장 · 질주자 질주 */
+  /** 선장 닻 · 처녀귀신 유도탄 · 살가죽 변장 · 질주자 질주 · 팔척귀신 납치·던지기 */
   /** 생존자 직업 스킬: 의사 회복, 경찰 테이저건, 군인 연막탄, 닌자 분신, 엔지니어 로봇 */
   trySurvivorSkill() {
     if (this.isHunter || !this.hasSSkill || this.status !== STATUS.ALIVE || this.sskillLeft > 0) return;
@@ -572,7 +572,7 @@ export class GameSession {
     const dir = aimDirection(this.yaw, this.pitch);
     const flat = Math.hypot(dir.x, dir.z) || 1;
     const maxD = Number.isFinite(aim.range) ? aim.range : 150;
-    let d = dir.y < -0.01 ? (RULES.EYE_HEIGHT / -dir.y) * flat : maxD;
+    let d = dir.y < -0.01 ? (this.eyeHeight / -dir.y) * flat : maxD;
     d = Math.min(d, maxD);
     aim.x = this.pos.x + (dir.x / flat) * d;
     aim.z = this.pos.z + (dir.z / flat) * d;
@@ -936,7 +936,9 @@ export class GameSession {
             ? ` · 유도탄 ${dmg}`
             : e.dash
               ? ` · 질주 ${dmg}`
-              : e.thrown
+              : e.crack
+                ? ` · 땅 갈라짐 ${dmg}`
+                : e.thrown
                 ? e.wall
                   ? ` · 벽에 내던져짐 ${dmg}`
                   : ` · 던져진 생존자와 충돌 ${dmg}`
@@ -1059,7 +1061,9 @@ export class GameSession {
           else this.centerMsg('보이는 생존자가 없어 헛방이었다', 1.5);
         } else if (e.count > 0) {
           sfx.wisp();
-          if (!this.isHunter && this.status === STATUS.ALIVE) this.feed('👻 유령이 유도탄을 날렸다!', 'bad');
+          if (!this.isHunter && this.status === STATUS.ALIVE) {
+            this.feed(e.legend ? '👻👒 처녀귀신의 유도탄이 어디든 쫓아온다!' : '👻 처녀귀신이 유도탄을 날렸다!', 'bad');
+          }
         }
         break;
       case 'disguise':
@@ -1127,6 +1131,15 @@ export class GameSession {
           this.centerMsg(e.reason === 'taser' ? '⚡ 팔척귀신이 나를 놓쳤다! 도망쳐요' : '팔척귀신이 나를 내려놓았다! 도망쳐요', 1.5);
         } else if (e.target && e.reason === 'taser') this.feed(`⚡ 팔척귀신이 ${name(e.target)}을(를) 놓쳤다`, 'good');
         break;
+      case 'crack': {
+        // 도시괴담: 던진 생존자가 떨어진 자리에 지름 5m로 땅이 갈라짐
+        const d = Math.hypot(e.x - this.pos.x, e.z - this.pos.z);
+        this.effects.push(makeCrack(this.scene, e.x, e.z, e.r));
+        if (d < 40) sfx.quake(Math.max(0.25, 1 - d / 40));
+        if (d < 12) this.shake = Math.max(this.shake, 0.35 * (1 - d / 12) + 0.1);
+        if (e.id === this.myId && e.hits.length) this.feed(`👻👒 땅이 갈라졌다! ${e.hits.map(name).join(', ')}`, 'good');
+        break;
+      }
       case 'thrownEnd':
         if (e.reason !== 'land') sfx.clank();
         if (e.by === this.myId && e.reason === 'hit') this.feed(`👒 ${name(e.id)}을(를) ${name(e.other)}에게 명중!`, 'good');

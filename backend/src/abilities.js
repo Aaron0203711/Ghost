@@ -1,7 +1,7 @@
 // 술래 직업 능력: 선장(닻·끌어오기), 유령(벽 통과·유도탄), 살가죽(변장), 질주자(질주).
 // Game 인스턴스(game)를 받아 상태를 바꾸는 함수들. 판정은 모두 서버가 한다.
 
-import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE, URBAN_LEGEND } from '../../shared/constants.js';
 import { skillDrowned } from './drowned.js';
 import { skillPalcheok, isCarriedOrThrown } from './palcheok.js';
 
@@ -14,7 +14,7 @@ export function isForced(game, p) {
   return game.time < p.pullUntil || !!p.dashPhase || !!p.dive || isCarriedOrThrown(p);
 }
 
-/** 유령은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
+/** 처녀귀신(ghost)은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
 export function worldFor(game, p) {
   return p.cls === HUNTER_CLASS.GHOST ? game.ghostWorld : game.world;
 }
@@ -125,7 +125,7 @@ export function endPull(game, s) {
 
 // ───────────── 유령: 유도탄 ─────────────
 
-/** 유령 시야 안(화면 각도·안개 거리)에 있고 벽에 가리지 않은 생존자 */
+/** 처녀귀신 시야 안(화면 각도·안개 거리)에 있고 벽에 가리지 않은 생존자 */
 export function visibleSurvivors(game, p) {
   const f = forward(p.yaw);
   return survivors(game).filter((s) => {
@@ -140,11 +140,14 @@ export function visibleSurvivors(game, p) {
 
 function skillGhost(game, p) {
   p.skillReadyAt = game.time + GHOST.SKILL_COOLDOWN;
-  const targets = visibleSurvivors(game, p);
+  // 도시괴담(처녀귀신 + 팔척귀신): 보이지 않는 생존자까지 모두, 대신 시속 14km
+  const legend = game.synergies.includes('urbanLegend');
+  const targets = legend ? survivors(game) : visibleSurvivors(game, p);
+  const speed = legend ? URBAN_LEGEND.WISP_SPEED : GHOST.WISP_SPEED;
   for (const t of targets) {
-    game.wisps.push({ id: ++game.wispSeq, owner: p.id, target: t.id, x: p.x, z: p.z, life: GHOST.WISP_LIFE });
+    game.wisps.push({ id: ++game.wispSeq, owner: p.id, target: t.id, x: p.x, z: p.z, life: GHOST.WISP_LIFE, speed });
   }
-  game.emit(null, { t: 'event', kind: 'wisps', id: p.id, count: targets.length });
+  game.emit(null, { t: 'event', kind: 'wisps', id: p.id, count: targets.length, ...(legend ? { legend: 1 } : {}) });
 }
 
 export function stepWisps(game, dt) {
@@ -159,7 +162,7 @@ export function stepWisps(game, dt) {
     const dx = t.x - w.x;
     const dz = t.z - w.z;
     const d = Math.hypot(dx, dz);
-    const step = Math.min(d, GHOST.WISP_SPEED * dt);
+    const step = Math.min(d, (w.speed ?? GHOST.WISP_SPEED) * dt);
     if (d > 0) {
       w.x += (dx / d) * step;
       w.z += (dz / d) * step;

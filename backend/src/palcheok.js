@@ -1,7 +1,7 @@
 // 팔척귀신: 납치(생존자를 최대 5초 들고 다님) → 다시 누르면 던지기 (15m, 다른 생존자를 맞히면 둘 다 1칸).
 // 판정은 모두 서버가 한다.
 
-import { RULES, ROLE, STATUS, PALCHEOK } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, PALCHEOK, URBAN_LEGEND } from '../../shared/constants.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -173,4 +173,17 @@ function stepThrown(game, s, dt) {
   s.budget = 0;
   if (alive(s)) game.correct(s);
   game.emit(null, { t: 'event', kind: 'thrownEnd', id: s.id, by: th.by, x: r2(s.x), z: r2(s.z), reason: end.reason, other: end.other ?? null });
+  if (game.synergies.includes('urbanLegend')) crackGround(game, s.x, s.z, th.by);
+}
+
+/** 도시괴담: 던져진 생존자가 멈춘 자리에 지름 5m로 땅이 갈라져 원 안 생존자 모두 1칸 (무적 중이면 막힘) */
+function crackGround(game, x, z, byId) {
+  const hits = [];
+  for (const o of [...game.players.values()]) {
+    if (o.role !== ROLE.SURVIVOR || !alive(o) || o.carriedBy) continue;
+    if (Math.hypot(o.x - x, o.z - z) > URBAN_LEGEND.CRACK_RADIUS + RULES.PLAYER_RADIUS) continue;
+    hits.push(o.id);
+    if (game.time >= o.invulnUntil) game.damage(o, byId, URBAN_LEGEND.CRACK_DAMAGE, { crack: 1 });
+  }
+  game.emit(null, { t: 'event', kind: 'crack', id: byId, x: r2(x), z: r2(z), r: URBAN_LEGEND.CRACK_RADIUS, hits });
 }

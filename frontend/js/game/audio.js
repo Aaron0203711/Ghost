@@ -140,6 +140,11 @@ export const sfx = {
   // 팔척귀신: 낚아챌 때 낮게 끄는 소리, 던질 때 바람 가르는 소리
   grab: (vol = 1) => tone({ freq: 160, to: 70, dur: 0.35, type: 'sawtooth', vol: 0.16 * vol }),
   hurl: (vol = 1) => noiseBurst(0.45, 0.45 * vol, 600),
+  // 도시괴담: 땅이 갈라지는 낮은 쿵 소리
+  quake: (vol = 1) => {
+    tone({ freq: 70, to: 30, dur: 0.7, type: 'sawtooth', vol: 0.25 * vol });
+    noiseBurst(0.6, 0.5 * vol, 250);
+  },
   land: () => tone({ freq: 90, to: 50, dur: 0.1, type: 'sine', vol: 0.18 }),
   gunshot: (vol = 1) => {
     noiseBurst(0.35, 0.7 * vol, 900);

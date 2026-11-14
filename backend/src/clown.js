@@ -1,7 +1,7 @@
 // 광대(공 던지기·실 함정)와 함정 듀오(미치광이 덫 유도, 광대 실 왕복).
 // Game 인스턴스(game)를 받아 상태를 바꾸는 함수들. 판정은 모두 서버가 한다.
 
-import { RULES, ROLE, STATUS, HUNTER_CLASS, CLOWN, TRAP_DUO, SNIPER, aimDirection } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, HUNTER_CLASS, CLOWN, TRAP_DUO, SNIPER, aimDirection, eyeHeightFor } from '../../shared/constants.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -40,7 +40,7 @@ export function throwBall(game, p) {
     ox: p.x,
     oz: p.z,
     x: p.x + dir.x * 0.3,
-    y: RULES.EYE_HEIGHT - 0.1,
+    y: eyeHeightFor(p.cls) - 0.1,
     z: p.z + dir.z * 0.3,
     vx: dir.x * CLOWN.BALL_SPEED,
     vy: dir.y * CLOWN.BALL_SPEED,

@@ -27,6 +27,7 @@ import {
   ghostWallExit,
   TRAINING,
   SPIES,
+  eyeHeightFor,
 } from '../../shared/constants.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
@@ -487,10 +488,10 @@ export class Game {
       id: ++this.bulletSeq,
       owner: p.id,
       ox: p.x,
-      oy: RULES.EYE_HEIGHT,
+      oy: eyeHeightFor(p.cls),
       oz: p.z,
       x: p.x,
-      y: RULES.EYE_HEIGHT,
+      y: eyeHeightFor(p.cls),
       z: p.z,
       dir,
       traveled: 0,

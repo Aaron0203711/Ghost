@@ -298,7 +298,9 @@ export class Avatar {
     this.body = h.root;
     this.glowEyes = h.glow || []; // 술래 눈빛
     this.eyesLit = true;
-    this.body.scale.setScalar(isHunter ? 1.08 : 1);
+    // 팔척귀신은 눈높이 2.3m가 되도록 크게 (담장 1.9m 위로 머리가 보임)
+    this.tall = this.cls === 'palcheok';
+    this.body.scale.setScalar(this.tall ? 1.39 : isHunter ? 1.08 : 1);
     this.group.add(this.body);
     const P = h.parts;
     this.parts = P;
@@ -338,7 +340,7 @@ export class Avatar {
     if (showLabel) {
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(name), depthWrite: false, transparent: true }));
       sprite.scale.set(1.2, 0.3, 1);
-      sprite.position.y = 2.1;
+      sprite.position.y = this.tall ? 2.95 : 2.1;
       this.group.add(sprite);
       this.label = sprite;
     }
@@ -477,8 +479,14 @@ export class Avatar {
       this.legR.rotation.x = kick * 1.5;
       this.kneeR.rotation.x = -(1 - kick) * 0.9;
       this.body.rotation.x = kick * 0.15;
-    } else if (this.cls === 'assassin' && this.swing > 0) {
-      // 앞으로 찌르기
+    } else if (this.cls === 'palcheok' && this.carrying) {
+      // 생존자를 두 팔로 머리 위쯤 들어 올림
+      this.armL.rotation.set(-2.5, 0, -0.15);
+      this.armR.rotation.set(-2.5, 0, 0.15);
+      this.elbowL.rotation.x = 0.35;
+      this.elbowR.rotation.x = 0.35;
+    } else if ((this.cls === 'assassin' || this.cls === 'palcheok') && this.swing > 0) {
+      // 앞으로 찌르기 (팔척귀신은 주먹 뻗기)
       this.swing = Math.max(0, this.swing - dt * 4);
       const t = 1 - this.swing;
       this.armR.rotation.x = t < 0.25 ? 0.4 + (t / 0.25) * 1.3 : 1.7 - Math.min(1, (t - 0.25) / 0.6) * 1.3;
@@ -550,6 +558,23 @@ export class Avatar {
     if (lit) for (const g of this.glowEyes) if (g.halo) g.halo.material.opacity = 0.45 + Math.sin(now / 400) * 0.12;
     if (this.pulled) this.group.rotation.z = Math.sin(now / 60) * 0.08; // 끌려가며 버둥거림
     else this.group.rotation.z = 0;
+    // 팔척귀신에게 들림: 팔척귀신 머리 위에 가로로 들려 버둥거림 / 던져짐: 가로로 날아가며 떨어짐
+    if (this.carried) {
+      this.group.position.y = 2.75;
+      this.group.rotation.x = 0;
+      this.group.rotation.z = Math.PI / 2 + Math.sin(now / 70) * 0.12;
+      this.legL.rotation.x = Math.sin(now / 90) * 0.6;
+      this.legR.rotation.x = -Math.sin(now / 90) * 0.6;
+      this.thrownT = 0;
+    } else if (this.thrown) {
+      this.thrownT = (this.thrownT || 0) + dt;
+      this.group.position.y = Math.max(0.3, 2.75 - this.thrownT * this.thrownT * 3.5);
+      this.group.rotation.z = Math.PI / 2;
+      this.group.rotation.x = this.thrownT * 6;
+    } else {
+      this.thrownT = 0;
+      this.group.rotation.x = 0;
+    }
 
     if (this.revealed && this.revealMat) this.revealMat.opacity = 0.45 + Math.sin(now / 90) * 0.2;
     if (this.flash > 0) {
@@ -933,6 +958,8 @@ export function makeViewModel(camera, cls) {
       return new RifleViewModel(camera);
     case 'drowned':
       return new HarpoonViewModel(camera);
+    case 'palcheok':
+      return new BatViewModel(camera, { weapon: new THREE.Group(), arm: '#e9e6e1', fist: '#e9e6e1', speed: 4.5, scale: 0.6 });
     case 'assassin':
       return new KunaiViewModel(camera);
     default:

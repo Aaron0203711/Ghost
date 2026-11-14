@@ -136,6 +136,7 @@ export const HUNTER_CLASS = Object.freeze({
   SPRINTER: 'sprinter',
   CLOWN: 'clown',
   DROWNED: 'drowned',
+  PALCHEOK: 'palcheok',
 });
 
 /** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
@@ -147,6 +148,7 @@ export const MELEE = Object.freeze({
   skinwalker: { range: 4.0, cooldown: 1.5 }, // 갈고리
   sprinter: { range: 4.0, cooldown: 1 }, // 발차기
   drowned: { range: 3.0, cooldown: 1.5 }, // 작살 (미치광이와 같은 사거리)
+  palcheok: { range: 3.0, cooldown: 1.3 }, // 주먹
 });
 
 /** 직업별 설치형 스킬 개수와 충전 시간 (미치광이 덫, 광대 실) */
@@ -236,6 +238,29 @@ export function diveStats(synergies = []) {
   return synergies.includes('seaCurse')
     ? { radius: SEA_CURSE.DIVE_RADIUS, range: SEA_CURSE.DIVE_RANGE }
     : { radius: DROWNED.DIVE_RADIUS, range: DROWNED.DIVE_RANGE };
+}
+
+/** 팔척귀신: 키가 커서(눈높이 2.3m) 담장(1.9m) 너머를 본다. 주먹 3m(쿨타임 1.3초).
+ *  납치: 정면 3m 안 생존자를 피해 없이 최대 5초 들고 다닌다(그동안 주먹 불가, 이동 속도 그대로).
+ *  다시 스킬 키를 누르면 보던 방향으로 초속 20m 일자로 최대 15m 던진다.
+ *  날아가다 다른 생존자에게 맞으면 두 사람 모두 1칸, 벽에 부딪히면 던져진 생존자만 1칸, 15m를 다 날아가 떨어지면 피해 없음.
+ *  5초 안에 안 던지면 발밑에 내려놓고 팔척귀신은 0.7초 기절. 테이저건에 맞으면 놓친다.
+ *  빗나가도(잡을 생존자가 없어도) 쿨타임 9초. 잡은 경우 쿨타임은 던지거나 내려놓은 뒤부터 */
+export const PALCHEOK = Object.freeze({
+  EYE_HEIGHT: 2.3,
+  GRAB_RANGE: 3,
+  HOLD_TIME: 5,
+  THROW_SPEED: 20,
+  THROW_RANGE: 15,
+  THROW_HIT_RADIUS: 0.8, // 날아가는 생존자와 다른 생존자 중심 사이 거리
+  THROW_DAMAGE: 1,
+  DROP_STUN: 0.7,
+  SKILL_COOLDOWN: 9,
+});
+
+/** 시점 높이: 팔척귀신은 2.3m, 나머지는 1.6m */
+export function eyeHeightFor(cls) {
+  return cls === HUNTER_CLASS.PALCHEOK ? PALCHEOK.EYE_HEIGHT : RULES.EYE_HEIGHT;
 }
 
 /** 선장: 닻을 던져 맞은 생존자를 1.5초 동안 자기 앞까지 끌고 온다 (피해 없음) */
@@ -331,6 +356,7 @@ export const CLASS_INFO = Object.freeze({
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
   drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 4m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
+  palcheok: { name: '팔척귀신', icon: '👒', desc: '키가 커서 담장 너머가 보임 · 주먹 3m (쿨타임 1.3초) · 생존자를 5초까지 들고 다니다 15m 던짐, 다른 생존자를 맞히면 둘 다 1칸 (쿨타임 9초)' },
 });
 
 // ───────────── 생존자 직업 (메인 화면에서 고름) ─────────────

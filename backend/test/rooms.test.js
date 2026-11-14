@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomManager } from '../src/rooms.js';
 import { mulberry32 } from '../src/mapgen.js';
+import { HUNTER_CLASS } from '../../shared/constants.js';
 import { createServer } from '../src/server.js';
 import { WebSocket } from 'ws';
 
@@ -276,7 +277,7 @@ test('술래 2명 중 1명만 고르고 시간이 지나면 나머지는 무작�
   mgr.selectTimeout(room);
   assert.equal(room.state, 'playing');
   assert.equal(room.game.players.get(id1).cls, 'maniac');
-  assert.ok(['maniac', 'sniper', 'assassin', 'captain', 'ghost', 'skinwalker', 'sprinter'].includes(room.game.players.get(id2).cls));
+  assert.ok(Object.values(HUNTER_CLASS).includes(room.game.players.get(id2).cls));
   assert.equal(h1.last('start').autoPicked, false);
   assert.equal(h2.last('start').autoPicked, true);
 });

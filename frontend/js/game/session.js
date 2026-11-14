@@ -27,6 +27,8 @@ import {
   ghostWallExit,
   TRAINING,
   DROWNED,
+  PALCHEOK,
+  eyeHeightFor,
   SEA_CURSE,
   diveStats,
   aimDirection,
@@ -88,6 +90,11 @@ export class GameSession {
     this.isSprinter = this.isHunter && this.hunterClass === HUNTER_CLASS.SPRINTER;
     this.isClown = this.isHunter && this.hunterClass === HUNTER_CLASS.CLOWN;
     this.isDrowned = this.isHunter && this.hunterClass === HUNTER_CLASS.DROWNED;
+    this.isPalcheok = this.isHunter && this.hunterClass === HUNTER_CLASS.PALCHEOK;
+    this.carrying = null; // 팔척귀신: 들고 있는 생존자 id
+    this.carryLeft = 0;
+    this.carriedBy = null; // 생존자: 나를 들고 있는 팔척귀신
+    this.eyeHeight = eyeHeightFor(this.isHunter ? this.hunterClass : null); // 팔척귀신은 2.3m
     this.diveAim = null; // 익사자: 스킬 키를 누르고 있는 동안 조준 원
     this.spyRevealUntil = 0; // 최고의 스파이들: 투명화 순간 생존자 위치 공개
     // 설치형 스킬: 미치광이 덫 3개(30초), 광대 실 4개(23초)
@@ -109,7 +116,7 @@ export class GameSession {
     this.balls = new Map(); // 날아가는 광대 공 (서버 id → 화면 모델)
     this.bolts = new Map(); // 날아가는 테이저건 탄
     // 선장·유령·살가죽·질주자: 스킬 키 한 번 누르기 + 쿨타임
-    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned;
+    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned || this.isPalcheok;
     this.skillCooldown = {
       assassin: ASSASSIN.SKILL_COOLDOWN,
       captain: CAPTAIN.SKILL_COOLDOWN,
@@ -117,6 +124,7 @@ export class GameSession {
       skinwalker: SKINWALKER.SKILL_COOLDOWN,
       sprinter: SPRINTER.SKILL_COOLDOWN,
       drowned: DROWNED.SKILL_COOLDOWN,
+      palcheok: PALCHEOK.SKILL_COOLDOWN,
     }[this.hunterClass] || 1;
     this.attackCooldown = this.isSniper
       ? SNIPER.SHOT_COOLDOWN
@@ -319,6 +327,7 @@ export class GameSession {
       skinwalker: { main: ['⛓️', '갈고리'], action: ['🎭', '변장'] },
       sprinter: { main: ['🦵', '발차기'], action: ['💨', '질주'] },
       drowned: { main: ['🔱', '작살'], action: ['🌊', '다이빙'] },
+      palcheok: { main: ['👊', '주먹'], action: ['🫳', '납치'] },
     };
     if (this.isClown) classLabels.clown = { main: ['🤹', '공'], action: ['🧵', '실'] };
     const labels = this.hasClassSkill || this.isClown
@@ -345,7 +354,13 @@ export class GameSession {
     $('cd-sskill').classList.toggle('passive', !this.hasSSkill);
     $('pc-hint-sskill').textContent = this.hasSSkill ? `Q ${sinfo.skill} · ` : '';
     const skHint = document.querySelector('#pc-hint .sk-only');
-    if (skHint) skHint.textContent = this.isDrowned ? '좌클릭 작살 · E 꾹 눌러 조준, 떼면 다이빙' : '좌클릭 공격 · E 스킬';
+    if (skHint) {
+      skHint.textContent = this.isDrowned
+        ? '좌클릭 작살 · E 꾹 눌러 조준, 떼면 다이빙'
+        : this.isPalcheok
+          ? '좌클릭 주먹 · E 납치, 들고 있을 때 E 던지기'
+          : '좌클릭 공격 · E 스킬';
+    }
     $('hud-feed').innerHTML = '';
     $('btn-train').classList.toggle('hidden', !this.training);
     screen.classList.toggle('training', !!this.training);
@@ -385,6 +400,7 @@ export class GameSession {
         sprinter: '질주자: 질주로 단숨에 거리를 좁히세요!',
         clown: '광대: 공을 던지고, 골목에 실 함정을 치세요!',
         drowned: '익사자: 스킬 키를 누르고 조준한 뒤 떼면 그곳으로 다이빙!',
+        palcheok: '팔척귀신: 담장 너머를 내려다보세요. 생존자를 붙잡아 다른 생존자에게 던지세요!',
       }[this.isHunter ? this.hunterClass : ''] ||
       (this.isSniper
         ? '저격수: 조준해서 멀리서 맞히면 2칸!'
@@ -476,6 +492,7 @@ export class GameSession {
 
   tryAttack() {
     if (this.status !== STATUS.ALIVE || this.attackLeft > 0 || this.forced || this.stunLeft > 0) return;
+    if (this.carrying) return; // 팔척귀신: 들고 있는 동안 주먹 불가
     this.attackLeft = this.attackCooldown;
     this.lastAttackAt = performance.now();
     this.viewBat?.playSwing();
@@ -528,6 +545,13 @@ export class GameSession {
     } else if (this.isGhost) sfx.wisp();
     else if (this.isSkin) this.setDisguised(true);
     else if (this.isSprinter) sfx.dashCharge();
+    else if (this.isPalcheok && this.carrying) {
+      // 던지기: 그때부터 쿨타임
+      this.carrying = null;
+      this.skillLeft = this.skillCooldown;
+      this.viewBat?.playSwing();
+      sfx.hurl();
+    }
     this.net.send({ t: 'skill', yaw: this.yaw, pitch: this.pitch });
     this.updateHunterHud();
   }
@@ -624,6 +648,7 @@ export class GameSession {
         this.myDash = p.dash || null;
         if (p.pull && !this.pulledBy) this.centerMsg('⚓ 닻에 걸렸다! 끌려간다', 1.5);
         this.pulledBy = p.pull || null;
+        this.carriedBy = p.carry || null; // 팔척귀신에게 들림
         if (p.st !== this.status) this.setMyStatus(p.st);
         continue;
       }
@@ -651,6 +676,8 @@ export class GameSession {
       if (p.jmp > 0 && (a.jumpT == null || Math.abs(a.jumpT - p.jmp) > 0.15)) a.jumpT = p.jmp;
       a.aiming = !!p.aim;
       a.pulled = !!p.pull;
+      a.carried = !!p.carry; // 팔척귀신에게 들림
+      a.thrown = !!p.thrown; // 팔척귀신이 던짐
       a.dash = p.dash || null;
       // 광대 실에 걸려 빛남 (벽 너머로 보임). 최고의 스파이들: 투명화 순간 암살자에게 생존자가 빛나 보임
       const spySees = info.role === ROLE.SURVIVOR && performance.now() < this.spyRevealUntil;
@@ -667,6 +694,9 @@ export class GameSession {
     }
     // 닻·끌려옴·유도탄
     this.pulls = s.players.filter((p) => p.pull).map((p) => [p.id, p.pull]);
+    // 팔척귀신: 생존자를 들고 있는 팔척귀신 (다음 상태에서 두 팔을 들어 올림)
+    const carriers = new Set(s.players.filter((p) => p.carry).map((p) => p.carry));
+    for (const [id, a] of this.avatars) a.carrying = carriers.has(id);
     this.syncProjectiles(this.anchorMeshes, s.anchors || [], this.makeAnchorModel);
     this.syncProjectiles(this.wispMeshes, s.wisps || [], makeWisp);
     this.syncThreads(s.threads || []);
@@ -694,6 +724,10 @@ export class GameSession {
         this.noRun = !!s.me.noRun;
       }
       this.smoked = this.isHunter && !!s.me.smoke;
+      if (this.isPalcheok && !fresh(this.lastSkillAt)) {
+        this.carrying = s.me.carrying || null;
+        this.carryLeft = s.me.carryLeft ?? 0;
+      }
       if (this.isAssassin && !fresh(this.lastSkillAt)) {
         this.invisLeft = s.me.invisLeft ?? 0;
         this.skillLeft = s.me.skillLeft ?? 0;
@@ -902,6 +936,10 @@ export class GameSession {
             ? ` · 유도탄 ${dmg}`
             : e.dash
               ? ` · 질주 ${dmg}`
+              : e.thrown
+                ? e.wall
+                  ? ` · 벽에 내던져짐 ${dmg}`
+                  : ` · 던져진 생존자와 충돌 ${dmg}`
               : e.ball
                 ? ` · 공 ${dmg}`
                 : e.dmg !== 1
@@ -1041,6 +1079,57 @@ export class GameSession {
         }
         break;
       case 'trapPlaced':
+        break;
+      // ───── 팔척귀신 ─────
+      case 'grab': {
+        const vol = me || e.target === this.myId ? 1 : Math.max(0.2, 1 - this.distTo(e.id) / 30);
+        sfx.grab(vol);
+        if (!me) this.avatars.get(e.id)?.playSwing();
+        if (me) {
+          this.carrying = e.target;
+          this.carryLeft = e.time;
+          this.lastSkillAt = performance.now();
+          this.feed(`👒 ${name(e.target)} 납치! 다시 스킬 키로 던지기 (${e.time}초)`, 'good');
+        } else if (e.target === this.myId) {
+          this.controls.releaseAll();
+          this.shake = 0.3;
+          this.centerMsg('👒 팔척귀신에게 붙잡혔다!', 2);
+        } else this.feed(`👒 ${name(e.target)}이(가) 팔척귀신에게 붙잡혔다`, 'warn');
+        break;
+      }
+      case 'grabMiss':
+        if (me) {
+          this.skillLeft = this.skillCooldown;
+          this.centerMsg(e.clone ? '분신이었다!' : '잡을 생존자가 없어 헛손질했다', 1.2);
+        }
+        break;
+      case 'throw':
+        if (!me) {
+          this.avatars.get(e.id)?.playSwing();
+          if (this.distTo(e.id) < 30 || e.target === this.myId) sfx.hurl(e.target === this.myId ? 1 : 0.6);
+        }
+        if (e.target === this.myId) {
+          this.shake = 0.4;
+          this.centerMsg('🌀 내던져졌다!', 1.2);
+        }
+        break;
+      case 'drop':
+        if (me) {
+          this.carrying = null;
+          this.carryLeft = 0;
+          this.skillLeft = this.skillCooldown;
+          this.lastSkillAt = performance.now();
+          if (e.reason === 'timeout') {
+            this.stunLeft = Math.max(this.stunLeft, PALCHEOK.DROP_STUN);
+            this.centerMsg(`힘이 빠져 내려놓았다… ${PALCHEOK.DROP_STUN}초 기절`, 1.5);
+          } else if (e.reason === 'taser') this.centerMsg('테이저건에 맞아 놓쳤다!', 1.5);
+        } else if (e.target === this.myId) {
+          this.centerMsg(e.reason === 'taser' ? '⚡ 팔척귀신이 나를 놓쳤다! 도망쳐요' : '팔척귀신이 나를 내려놓았다! 도망쳐요', 1.5);
+        } else if (e.target && e.reason === 'taser') this.feed(`⚡ 팔척귀신이 ${name(e.target)}을(를) 놓쳤다`, 'good');
+        break;
+      case 'thrownEnd':
+        if (e.reason !== 'land') sfx.clank();
+        if (e.by === this.myId && e.reason === 'hit') this.feed(`👒 ${name(e.id)}을(를) ${name(e.other)}에게 명중!`, 'good');
         break;
       // ───── 광대 ─────
       case 'ball':
@@ -1346,6 +1435,7 @@ export class GameSession {
     this.attackLeft = Math.max(0, this.attackLeft - dt);
     this.sskillLeft = Math.max(0, this.sskillLeft - dt);
     if (this.hasClassSkill) this.skillLeft = Math.max(0, this.skillLeft - dt);
+    if (this.carrying) this.carryLeft = Math.max(0, this.carryLeft - dt);
     if (this.isAssassin) {
       if (this.invisLeft > 0) this.invisLeft = Math.max(0, this.invisLeft - dt);
       else this.skillLeft = Math.max(0, this.skillLeft - dt);
@@ -1402,7 +1492,9 @@ export class GameSession {
       if (!a || (info?.status ?? STATUS.ALIVE) !== STATUS.ALIVE) {
         this.cycleSpectate();
       } else {
-        cam.position.set(a.pos.x, RULES.EYE_HEIGHT + a.group.position.y, a.pos.z);
+        // 팔척귀신은 2.3m, 들리거나 던져진 사람은 몸 높이에서
+        const sEye = a.carried || a.thrown ? a.group.position.y + 0.2 : eyeHeightFor(info?.cls) + a.group.position.y;
+        cam.position.set(a.pos.x, sEye, a.pos.z);
         cam.rotation.set(a.pitch ?? 0, a.yaw, 0);
         if (cam.fov !== 75) {
           cam.fov = 75;
@@ -1433,7 +1525,9 @@ export class GameSession {
         sfx.land();
       }
     }
-    const eye = (this.stunLeft > 0 ? RULES.EYE_HEIGHT - 0.25 : RULES.EYE_HEIGHT) + jy;
+    // 팔척귀신은 2.3m. 팔척귀신에게 들리면 머리 위 높이(2.9m)에서 본다
+    const baseEye = this.carriedBy ? 2.9 : this.eyeHeight;
+    const eye = (this.stunLeft > 0 ? baseEye - 0.25 : baseEye) + jy;
     cam.position.set(this.pos.x + sx, eye + bob + sy, this.pos.z);
     cam.rotation.set(this.pitch, this.yaw, 0);
     const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running ? 82 : 75;
@@ -1653,7 +1747,14 @@ export class GameSession {
     btnA.classList.toggle('cooling', this.attackLeft > 0);
     if (this.hasClassSkill) {
       // 선장·유령·살가죽·질주자: 스킬 쿨타임 링과 남은 초
-      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim;
+      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim || !!this.carrying;
+      if (this.isPalcheok) {
+        // 들고 있으면 스킬 버튼이 던지기로 바뀐다
+        const lbl = this.carrying ? ['🌀', '던지기'] : ['🫳', '납치'];
+        btnT.querySelector('.ico').textContent = lbl[0];
+        btnT.querySelector('.lbl').textContent = lbl[1];
+        $('cd-action').querySelector('.ico').textContent = lbl[0];
+      }
       btnT.classList.toggle('aiming', active);
       btnT.classList.toggle('empty', !active && this.skillLeft > 0);
       btnT.style.setProperty('--cd', String(active ? 0 : Math.min(1, this.skillLeft / this.skillCooldown)));
@@ -1662,7 +1763,9 @@ export class GameSession {
           ? '변장 중'
           : this.diveAim
             ? '조준'
-            : '질주!'
+            : this.carrying
+              ? `${Math.ceil(this.carryLeft)}s`
+              : '질주!'
         : this.skillLeft > 0
           ? `${Math.ceil(this.skillLeft)}s`
           : '';

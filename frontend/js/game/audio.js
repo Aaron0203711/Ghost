@@ -137,6 +137,9 @@ export const sfx = {
   },
   dashCharge: (vol = 1) => tone({ freq: 120, to: 480, dur: 0.5, type: 'sawtooth', vol: 0.12 * vol }),
   dashWhoosh: (vol = 1) => noiseBurst(0.6, 0.5 * vol, 800),
+  // 팔척귀신: 낚아챌 때 낮게 끄는 소리, 던질 때 바람 가르는 소리
+  grab: (vol = 1) => tone({ freq: 160, to: 70, dur: 0.35, type: 'sawtooth', vol: 0.16 * vol }),
+  hurl: (vol = 1) => noiseBurst(0.45, 0.45 * vol, 600),
   land: () => tone({ freq: 90, to: 50, dur: 0.1, type: 'sine', vol: 0.18 }),
   gunshot: (vol = 1) => {
     noiseBurst(0.35, 0.7 * vol, 900);

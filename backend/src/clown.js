@@ -171,7 +171,7 @@ export function stepThreads(game, dt) {
     }
   }
   for (const s of survivors(game)) {
-    if (game.isAirborne(s)) continue; // 점프로 피할 수 있다
+    if (game.isAirborne(s) || s.carriedBy || s.thrown) continue; // 점프로 피할 수 있다 (팔척귀신에게 들림·던져짐도)
     const idx = game.threads.findIndex(
       (th) => distToSegment(s.x, s.z, th.ax, th.az, th.bx, th.bz) <= RULES.PLAYER_RADIUS + CLOWN.THREAD_RADIUS,
     );

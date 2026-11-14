@@ -29,6 +29,7 @@ import {
   SPIES,
 } from '../../shared/constants.js';
 import { stepDives } from './drowned.js';
+import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
 import { trainingRoster, placeDummies } from './training.js';
 import {
   isForced,
@@ -139,6 +140,10 @@ export class Game {
         jumpUntil: 0, // 점프 착지 시각
         pullUntil: 0, // 선장 닻에 끌려오는 중
         pulledBy: null,
+        carrying: null, // 팔척귀신: 들고 있는 생존자 id
+        carryUntil: 0,
+        carriedBy: null, // 생존자: 나를 들고 있는 팔척귀신 id
+        thrown: null, // 생존자: 팔척귀신이 던져 날아가는 중 { by, dir, traveled }
         disguiseAs: null, // 살가죽: 변장한 생존자 id
         dashPhase: null, // 질주자: 'windup' | 'dash'
         dashT: 0,
@@ -205,7 +210,7 @@ export class Game {
   reviveDummies() {
     for (const q of this.players.values()) {
       if (!q.dummy || q.status !== STATUS.CAUGHT || this.time < q.reviveAt) continue;
-      Object.assign(q, { status: STATUS.ALIVE, hits: 0, x: q.home.x, z: q.home.z, yaw: q.home.yaw, slows: [], stunUntil: 0, revealUntil: 0 });
+      Object.assign(q, { status: STATUS.ALIVE, hits: 0, x: q.home.x, z: q.home.z, yaw: q.home.yaw, slows: [], stunUntil: 0, revealUntil: 0, carriedBy: null, thrown: null });
       this.emit(null, { t: 'event', kind: 'revived', id: q.id, name: q.name });
     }
   }
@@ -243,7 +248,7 @@ export class Game {
 
   /** 발전기 수리 중: 살아 있는 생존자가 고치지 않은 발전기 옆에서 상호작용 키를 누르고 있음 */
   isRepairing(p) {
-    return p.role === ROLE.SURVIVOR && p.status === STATUS.ALIVE && p.interact && !p.pulledBy && !!this.nearestGen(p);
+    return p.role === ROLE.SURVIVOR && p.status === STATUS.ALIVE && p.interact && !p.pulledBy && !isCarriedOrThrown(p) && !!this.nearestGen(p);
   }
 
   /** 생존자 감속: factor 배율로 duration초 (from부터, 기본은 지금). noRun이면 그동안 달리기 불가 */
@@ -333,6 +338,7 @@ export class Game {
     const p = this.players.get(id);
     if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
     if (this.time < p.attackReadyAt || isForced(this, p) || this.isStunned(p)) return;
+    if (p.carrying) return; // 팔척귀신: 생존자를 들고 있는 동안에는 주먹 불가
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
     if (p.cls === HUNTER_CLASS.SNIPER) {
@@ -570,6 +576,13 @@ export class Game {
     this.players.delete(id);
     // 그 선장에게 끌려오던 생존자는 풀어 준다
     for (const s of this.players.values()) if (s.pulledBy === id) endPull(this, s);
+    // 그 팔척귀신이 들고 있던 생존자는 그 자리에 내려온다
+    for (const s of this.players.values()) {
+      if (s.carriedBy !== id) continue;
+      s.carriedBy = null;
+      s.budget = 0;
+      if (s.status === STATUS.ALIVE) this.correct(s);
+    }
     this.wisps = this.wisps.filter((w) => w.target !== id);
     this.clones = this.clones.filter((c) => c.owner !== id);
     if (this.ended) return;
@@ -627,6 +640,7 @@ export class Game {
     this.stepBullets(dt);
     stepAnchors(this, dt);
     stepPulls(this, dt);
+    stepPalcheok(this, dt);
     stepWisps(this, dt);
     stepDashes(this, dt);
     stepDives(this);
@@ -646,7 +660,7 @@ export class Game {
     // 덫 밟기
     for (const s of this.players.values()) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
-      if (this.isAirborne(s)) continue; // 공중에서는 덫을 밟지 않는다
+      if (this.isAirborne(s) || isCarriedOrThrown(s)) continue; // 공중에서는 덫을 밟지 않는다 (팔척귀신에게 들림·던져짐도)
       const idx = this.traps.findIndex(
         (t) => Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS,
       );
@@ -680,7 +694,7 @@ export class Game {
     }
     for (const s of this.players.values()) {
       s.repairing = false;
-      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || !s.interact || s.pulledBy) continue;
+      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || !s.interact || s.pulledBy || isCarriedOrThrown(s)) continue;
       const g = this.nearestGen(s);
       if (!g) continue;
       g.repairers++;
@@ -712,7 +726,7 @@ export class Game {
     // 탈출
     if (this.exit) {
       for (const s of this.players.values()) {
-        if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
+        if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || isCarriedOrThrown(s)) continue; // 들려서는 탈출 못 함
         if (Math.hypot(s.x - this.exit.x, s.z - this.exit.z) < RULES.EXIT_RADIUS) {
           s.status = STATUS.ESCAPED;
           s.repairing = false;
@@ -865,6 +879,8 @@ export class Game {
           ...(p.pulledBy ? { pull: p.pulledBy } : {}), // 선장 닻에 끌려오는 중
           ...(p.dashPhase ? { dash: p.dashPhase } : {}), // 질주자
           ...(p.dive ? { dive: 1 } : {}), // 익사자: 땅속
+          ...(p.carriedBy ? { carry: p.carriedBy } : {}), // 팔척귀신에게 들려 있음
+          ...(p.thrown ? { thrown: 1 } : {}), // 팔척귀신이 던져 날아가는 중
           ...(this.isRevealed(p) ? { glow: 1 } : {}), // 광대 실에 걸려 빛나는 중 (벽 너머로 보임)
         };
       }),
@@ -892,6 +908,7 @@ export class Game {
         disguised: me.disguiseAs ? 1 : 0,
         sskillLeft: r2(Math.max(0, me.sskillReadyAt - this.time)), // 생존자 직업 스킬 쿨타임
         smoke: this.time < me.smokeUntil ? 1 : 0, // 술래: 연막 속
+        ...(me.carrying ? { carrying: me.carrying, carryLeft: r2(Math.max(0, me.carryUntil - this.time)) } : {}), // 팔척귀신
       };
       if (me.role === ROLE.SURVIVOR) {
         const sl = this.slowState(me);

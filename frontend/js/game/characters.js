@@ -326,6 +326,8 @@ const HUNTER_SPECS = {
   clown: { skin: '#f4f1ea', topColor: '#e0393e', pants: '#2f6fd6', shoes: '#e0393e', hairStyle: 'curly', hair: '#ff7a1a', top: 'tshirt', eyes: '#111' },
   // 익사자: 옛날 잠수복 (누런 캔버스 천, 놋쇠 투구, 납 신발)
   drowned: { skin: '#7d8f86', topColor: '#7a6d52', pants: '#6e6249', shoes: '#2e2c2a', hairStyle: 'none', top: 'jacket', noFace: true },
+  // 팔척귀신: 아주 큰 키, 하얀 원피스, 챙 넓은 하얀 모자, 얼굴을 가린 긴 검은 머리
+  palcheok: { skin: '#e9e6e1', topColor: '#f2f0ea', pants: '#f2f0ea', shoes: '#e9e6e1', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
 };
 
 export function hunterSpec(cls) {
@@ -572,6 +574,31 @@ export function dressHunter(cls, h) {
         strand.rotation.z = (i % 2 ? 0.3 : -0.2);
         root.add(strand);
       }
+      break;
+    }
+    case 'palcheok': {
+      // 하얀 원피스 치마(무릎 아래까지), 챙 넓은 하얀 모자와 검은 띠, 얼굴과 등을 덮는 긴 검은 머리, 머리카락 사이로 희미한 눈빛
+      const dress = cloth('#f2f0ea', 0.95);
+      const skirt = mesh(new THREE.CylinderGeometry(0.17, 0.3, 0.62, 18, 1, true), dress, 0, 0.67, 0);
+      skirt.material.side = THREE.DoubleSide;
+      skirt.scale.z = 0.8;
+      root.add(skirt);
+      const hairMat = solid('#0b0b0d', 0.9);
+      head.add(mesh(new THREE.SphereGeometry(0.115, 16, 12, 0, Math.PI * 2, 0, Math.PI / 1.8), hairMat, 0, 0.1, 0));
+      const back = mesh(new THREE.BoxGeometry(0.22, 0.62, 0.05), hairMat, 0, -0.2, 0.09); // 등까지 내려오는 뒷머리
+      head.add(back);
+      const front = mesh(new THREE.BoxGeometry(0.19, 0.3, 0.02), hairMat, 0, -0.01, -0.112); // 얼굴을 가린 앞머리
+      head.add(front);
+      for (const sx of [-1, 1]) head.add(mesh(new THREE.BoxGeometry(0.03, 0.45, 0.13), hairMat, 0.1 * sx, -0.1, 0));
+      const hatMat = cloth('#f6f4ee', 0.9);
+      const brim = mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.012, 24), hatMat, 0, 0.2, 0);
+      const crown = mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.11, 18), hatMat, 0, 0.26, 0);
+      const ribbon = mesh(new THREE.CylinderGeometry(0.112, 0.112, 0.025, 18), solid('#1a1a1a', 0.8), 0, 0.225, 0);
+      head.add(brim, crown, ribbon);
+      addGlowEyes(h, [
+        [-0.03, 0.1, -0.125],
+        [0.03, 0.1, -0.125],
+      ], '#e8e8ff', 0.007);
       break;
     }
     default:

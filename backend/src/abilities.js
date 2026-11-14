@@ -3,14 +3,15 @@
 
 import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE } from '../../shared/constants.js';
 import { skillDrowned } from './drowned.js';
+import { skillPalcheok, isCarriedOrThrown } from './palcheok.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
 const survivors = (game) => [...game.players.values()].filter((s) => s.role === ROLE.SURVIVOR && alive(s));
 
-/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙) */
+/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙, 팔척귀신에게 들림·던져짐) */
 export function isForced(game, p) {
-  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive;
+  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive || isCarriedOrThrown(p);
 }
 
 /** 유령은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
@@ -63,6 +64,7 @@ export function stepAnchors(game, dt) {
       a.z += a.dir.z * s;
       a.traveled += s;
       for (const t of survivors(game)) {
+        if (isCarriedOrThrown(t)) continue; // 팔척귀신에게 들려 있거나 날아가는 중
         // 닻에 직접 맞으면 닻이 거기서 멈춘다
         if (Math.hypot(t.x - a.x, t.z - a.z) <= radius + RULES.PLAYER_RADIUS) {
           startPull(game, t, a.owner);
@@ -248,7 +250,7 @@ export function endDash(game, p, reason) {
 
 // ───────────── 스킬 키 처리 ─────────────
 
-/** 선장·유령·살가죽·질주자·익사자 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
+/** 선장·유령·살가죽·질주자·익사자·팔척귀신 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
 export function useSkill(game, p, msg = {}) {
   if (isForced(game, p)) return true;
   if (game.time < p.skillReadyAt) return true;
@@ -267,6 +269,9 @@ export function useSkill(game, p, msg = {}) {
       return true;
     case HUNTER_CLASS.DROWNED:
       skillDrowned(game, p, msg);
+      return true;
+    case HUNTER_CLASS.PALCHEOK:
+      skillPalcheok(game, p);
       return true;
     default:
       return false;

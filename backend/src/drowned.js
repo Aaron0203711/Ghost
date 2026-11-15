@@ -3,6 +3,7 @@
 
 import { RULES, ROLE, STATUS, DROWNED, diveStats } from '../../shared/constants.js';
 import { reachableCells, MAP_SIZE } from './mapgen.js';
+import { isCarriedOrThrown } from './palcheok.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const HALF = MAP_SIZE / 2;
@@ -100,7 +101,7 @@ export function stepDives(game) {
     p.budget = 0;
     const hits = [];
     for (const s of game.players.values()) {
-      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
+      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || isCarriedOrThrown(s)) continue;
       let dx = s.x - dv.x;
       let dz = s.z - dv.z;
       let d = Math.hypot(dx, dz);

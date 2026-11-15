@@ -1,19 +1,20 @@
 // 술래 직업 능력: 선장(닻·끌어오기), 유령(벽 통과·유도탄), 살가죽(변장), 질주자(질주).
 // Game 인스턴스(game)를 받아 상태를 바꾸는 함수들. 판정은 모두 서버가 한다.
 
-import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE, URBAN_LEGEND } from '../../shared/constants.js';
 import { skillDrowned } from './drowned.js';
+import { skillPalcheok, isCarriedOrThrown } from './palcheok.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
 const survivors = (game) => [...game.players.values()].filter((s) => s.role === ROLE.SURVIVOR && alive(s));
 
-/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙) */
+/** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙, 팔척귀신에게 들림·던져짐) */
 export function isForced(game, p) {
-  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive;
+  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive || isCarriedOrThrown(p);
 }
 
-/** 유령은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
+/** 처녀귀신(ghost)은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
 export function worldFor(game, p) {
   return p.cls === HUNTER_CLASS.GHOST ? game.ghostWorld : game.world;
 }
@@ -63,6 +64,7 @@ export function stepAnchors(game, dt) {
       a.z += a.dir.z * s;
       a.traveled += s;
       for (const t of survivors(game)) {
+        if (isCarriedOrThrown(t)) continue; // 팔척귀신에게 들려 있거나 날아가는 중
         // 닻에 직접 맞으면 닻이 거기서 멈춘다
         if (Math.hypot(t.x - a.x, t.z - a.z) <= radius + RULES.PLAYER_RADIUS) {
           startPull(game, t, a.owner);
@@ -123,7 +125,7 @@ export function endPull(game, s) {
 
 // ───────────── 유령: 유도탄 ─────────────
 
-/** 유령 시야 안(화면 각도·안개 거리)에 있고 벽에 가리지 않은 생존자 */
+/** 처녀귀신 시야 안(화면 각도·안개 거리)에 있고 벽에 가리지 않은 생존자 */
 export function visibleSurvivors(game, p) {
   const f = forward(p.yaw);
   return survivors(game).filter((s) => {
@@ -138,11 +140,14 @@ export function visibleSurvivors(game, p) {
 
 function skillGhost(game, p) {
   p.skillReadyAt = game.time + GHOST.SKILL_COOLDOWN;
-  const targets = visibleSurvivors(game, p);
+  // 도시괴담(처녀귀신 + 팔척귀신): 보이지 않는 생존자까지 모두, 대신 시속 14km
+  const legend = game.synergies.includes('urbanLegend');
+  const targets = legend ? survivors(game) : visibleSurvivors(game, p);
+  const speed = legend ? URBAN_LEGEND.WISP_SPEED : GHOST.WISP_SPEED;
   for (const t of targets) {
-    game.wisps.push({ id: ++game.wispSeq, owner: p.id, target: t.id, x: p.x, z: p.z, life: GHOST.WISP_LIFE });
+    game.wisps.push({ id: ++game.wispSeq, owner: p.id, target: t.id, x: p.x, z: p.z, life: GHOST.WISP_LIFE, speed });
   }
-  game.emit(null, { t: 'event', kind: 'wisps', id: p.id, count: targets.length });
+  game.emit(null, { t: 'event', kind: 'wisps', id: p.id, count: targets.length, ...(legend ? { legend: 1 } : {}) });
 }
 
 export function stepWisps(game, dt) {
@@ -157,7 +162,7 @@ export function stepWisps(game, dt) {
     const dx = t.x - w.x;
     const dz = t.z - w.z;
     const d = Math.hypot(dx, dz);
-    const step = Math.min(d, GHOST.WISP_SPEED * dt);
+    const step = Math.min(d, (w.speed ?? GHOST.WISP_SPEED) * dt);
     if (d > 0) {
       w.x += (dx / d) * step;
       w.z += (dz / d) * step;
@@ -248,7 +253,7 @@ export function endDash(game, p, reason) {
 
 // ───────────── 스킬 키 처리 ─────────────
 
-/** 선장·유령·살가죽·질주자·익사자 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
+/** 선장·유령·살가죽·질주자·익사자·팔척귀신 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
 export function useSkill(game, p, msg = {}) {
   if (isForced(game, p)) return true;
   if (game.time < p.skillReadyAt) return true;
@@ -267,6 +272,9 @@ export function useSkill(game, p, msg = {}) {
       return true;
     case HUNTER_CLASS.DROWNED:
       skillDrowned(game, p, msg);
+      return true;
+    case HUNTER_CLASS.PALCHEOK:
+      skillPalcheok(game, p);
       return true;
     default:
       return false;

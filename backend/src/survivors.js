@@ -14,6 +14,7 @@ import {
   survivorSkillCooldown,
 } from '../../shared/constants.js';
 import { endDash } from './abilities.js';
+import { dropCarried } from './palcheok.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -125,12 +126,13 @@ export function stepTasers(game, dt) {
   }
 }
 
-/** 테이저건에 맞은 술래: 4초 동안 이동·공격·스킬 불가 (질주 중이면 멈춤) */
+/** 테이저건에 맞은 술래: 4초 동안 이동·공격·스킬 불가 (질주 중이면 멈춤, 팔척귀신은 들고 있던 생존자를 놓침) */
 function stunHunter(game, h) {
   h.stunUntil = Math.max(h.stunUntil, game.time + POLICE.STUN);
   h.budget = 0;
   h.aiming = false;
   if (h.dashPhase) endDash(game, h, 'stun');
+  if (h.carrying) dropCarried(game, h, 'taser'); // 팔척귀신: 들고 있던 생존자를 놓친다
 }
 
 // ───────────── 군인 ─────────────

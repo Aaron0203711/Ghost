@@ -9,7 +9,8 @@ export const RULES = Object.freeze({
   SURVIVOR_RUN_SPEED: kmh(23), // 6.39 m/s
   HUNTER_SPEED: kmh(20), // 5.56 m/s
   PLAYER_RADIUS: 0.35,
-  EYE_HEIGHT: 1.6,
+  EYE_HEIGHT: 1.6, // 생존자 시점 높이
+  HUNTER_EYE_HEIGHT: 1.8, // 술래 시점 높이 (팔척귀신은 PALCHEOK.EYE_HEIGHT)
 
   // 점프 (술래·생존자 공통). 담장·물건은 넘을 수 없고, 공중에서는 덫만 피한다
   JUMP_HEIGHT: 0.6,
@@ -136,6 +137,7 @@ export const HUNTER_CLASS = Object.freeze({
   SPRINTER: 'sprinter',
   CLOWN: 'clown',
   DROWNED: 'drowned',
+  PALCHEOK: 'palcheok',
 });
 
 /** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
@@ -147,6 +149,7 @@ export const MELEE = Object.freeze({
   skinwalker: { range: 4.0, cooldown: 1.5 }, // 갈고리
   sprinter: { range: 4.0, cooldown: 1 }, // 발차기
   drowned: { range: 3.0, cooldown: 1.5 }, // 작살 (미치광이와 같은 사거리)
+  palcheok: { range: 3.0, cooldown: 1.3 }, // 주먹
 });
 
 /** 직업별 설치형 스킬 개수와 충전 시간 (미치광이 덫, 광대 실) */
@@ -208,6 +211,7 @@ export function synergiesFor(classes) {
   if (has(HUNTER_CLASS.MANIAC) && has(HUNTER_CLASS.CLOWN)) out.push('trapDuo');
   if (has(HUNTER_CLASS.CAPTAIN) && has(HUNTER_CLASS.DROWNED)) out.push('seaCurse');
   if (has(HUNTER_CLASS.SNIPER) && has(HUNTER_CLASS.ASSASSIN)) out.push('spies');
+  if (has(HUNTER_CLASS.GHOST) && has(HUNTER_CLASS.PALCHEOK)) out.push('urbanLegend');
   return out;
 }
 
@@ -215,7 +219,13 @@ export const SYNERGY_INFO = Object.freeze({
   trapDuo: { name: '정신병원', icon: '🪤🧵', desc: '미치광이 덫이 5m 안의 생존자를 따라가고, 광대 실이 벽 끝에서 끝까지 움직이며 생존자에게 보이지 않아요' },
   seaCurse: { name: '바다의 저주', icon: '⚓🌊', desc: '선장의 닻이 커지고 판정이 1.5m로, 익사자 다이빙이 지름 7m·거리 무제한이 돼요' },
   spies: { name: '최고의 스파이들', icon: '🎯🥷', desc: '저격수가 35m 밖에서 맞히면 즉사, 암살자가 투명해지면 0.5초 동안 모든 생존자 위치가 보여요' },
+  urbanLegend: { name: '도시괴담', icon: '👻👒', desc: '처녀귀신 유도탄이 보이지 않는 생존자까지 모두 시속 14km로 쫓아가고, 팔척귀신이 던진 생존자가 떨어진 자리에 지름 5m로 땅이 갈라져 원 안 생존자 모두 1칸' },
 });
+
+/** 도시괴담: 술래 2명이 처녀귀신(ghost)과 팔척귀신일 때.
+ *  처녀귀신 유도탄이 시야와 상관없이 살아 있는 모든 생존자에게 시속 14km로 5초 동안 날아간다.
+ *  팔척귀신이 던진 생존자가 멈춘 자리(충돌·벽·착지 모두)에 지름 5m로 땅이 갈라져 원 안 생존자 모두 1칸 (맞은 뒤 1초 무적이면 막힘) */
+export const URBAN_LEGEND = Object.freeze({ WISP_SPEED: kmh(14), CRACK_RADIUS: 2.5, CRACK_DAMAGE: 1 });
 
 /** 익사자: 작살 근접 공격 + 다이빙.
  *  다이빙: 스킬 키를 누르고 있는 동안 조준점이 가리키는 땅(최대 25m)에 지름 4m 원이 보이고, 떼면 땅속으로 들어가
@@ -238,6 +248,30 @@ export function diveStats(synergies = []) {
     : { radius: DROWNED.DIVE_RADIUS, range: DROWNED.DIVE_RANGE };
 }
 
+/** 팔척귀신: 키가 커서(눈높이 2.3m) 담장(1.9m) 너머를 본다. 주먹 3m(쿨타임 1.3초).
+ *  납치: 정면 3m 안 생존자를 피해 없이 최대 5초 들고 다닌다(그동안 주먹 불가, 이동 속도 그대로).
+ *  다시 스킬 키를 누르면 보던 방향으로 초속 20m 일자로 최대 15m 던진다.
+ *  날아가다 다른 생존자에게 맞으면 두 사람 모두 1칸, 벽에 부딪히면 던져진 생존자만 1칸, 15m를 다 날아가 떨어지면 피해 없음.
+ *  5초 안에 안 던지면 발밑에 내려놓고 팔척귀신은 0.7초 기절. 테이저건에 맞으면 놓친다.
+ *  빗나가도(잡을 생존자가 없어도) 쿨타임 9초. 잡은 경우 쿨타임은 던지거나 내려놓은 뒤부터 */
+export const PALCHEOK = Object.freeze({
+  EYE_HEIGHT: 2.3,
+  GRAB_RANGE: 3,
+  HOLD_TIME: 5,
+  THROW_SPEED: 20,
+  THROW_RANGE: 15,
+  THROW_HIT_RADIUS: 0.8, // 날아가는 생존자와 다른 생존자 중심 사이 거리
+  THROW_DAMAGE: 1,
+  DROP_STUN: 0.7,
+  SKILL_COOLDOWN: 9,
+});
+
+/** 시점 높이: 술래 직업(cls)이 있으면 1.8m(팔척귀신 2.3m), 생존자(cls 없음)는 1.6m */
+export function eyeHeightFor(cls) {
+  if (cls === HUNTER_CLASS.PALCHEOK) return PALCHEOK.EYE_HEIGHT;
+  return Object.values(HUNTER_CLASS).includes(cls) ? RULES.HUNTER_EYE_HEIGHT : RULES.EYE_HEIGHT;
+}
+
 /** 선장: 닻을 던져 맞은 생존자를 1.5초 동안 자기 앞까지 끌고 온다 (피해 없음) */
 export const CAPTAIN = Object.freeze({
   ANCHOR_SPEED: 25,
@@ -248,7 +282,7 @@ export const CAPTAIN = Object.freeze({
   SKILL_COOLDOWN: 7.5,
 });
 
-/** 유령: 담장·벽 통과. 스킬로 보이는 생존자마다 작은 유령 유도탄 (5초, 맞으면 1칸) */
+/** 처녀귀신(ghost): 담장·벽 통과. 스킬로 보이는 생존자마다 작은 유령 유도탄 (5초, 맞으면 1칸) */
 export const GHOST = Object.freeze({
   PASS_KINDS: ['wall', 'stonewall'], // 통과할 수 있는 장애물 종류
   WISP_SPEED: 5,
@@ -326,11 +360,12 @@ export const CLASS_INFO = Object.freeze({
   assassin: { name: '암살자', icon: '🥷', desc: '쿠나이 3m (쿨타임 1.5초) · 15초 투명화·이동 속도 +50% (쿨타임 8초)' },
   sniper: { name: '저격수', icon: '🎯', desc: '저격총 원거리 공격 (쿨타임 2초) · 조준 확대 · 30m 밖 명중 시 2칸' },
   captain: { name: '선장', icon: '⚓', desc: '후크 3m (쿨타임 0.5초) · 닻이나 밧줄에 닿은 생존자를 끌고 옴 (쿨타임 7.5초)' },
-  ghost: { name: '유령', icon: '👻', desc: '담장·벽 통과(빠져나오면 1초간 25% 감속) · 할퀴기 3m (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
+  ghost: { name: '처녀귀신', icon: '👻', desc: '담장·벽 통과(빠져나오면 1초간 25% 감속) · 할퀴기 3m (쿨타임 0.5초) · 보이는 생존자에게 유도탄 (쿨타임 7초)' },
   skinwalker: { name: '살가죽을 뒤집어 쓴 자', icon: '🎭', desc: '갈고리 4m (쿨타임 1.5초) · 생존자로 변장(발전기 수리하는 척), 공격하면 풀림 (쿨타임 5초)' },
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
   drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 4m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
+  palcheok: { name: '팔척귀신', icon: '👒', desc: '키가 커서 담장 너머가 보임 · 주먹 3m (쿨타임 1.3초) · 생존자를 5초까지 들고 다니다 15m 던짐, 다른 생존자를 맞히면 둘 다 1칸 (쿨타임 9초)' },
 });
 
 // ───────────── 생존자 직업 (메인 화면에서 고름) ─────────────

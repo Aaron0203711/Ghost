@@ -57,6 +57,7 @@ import {
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
 import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
+import { Headlamps, enableShadows, litDustMaterial } from './headlamp.js';
 import { Bgm } from './bgm.js';
 import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
@@ -247,12 +248,10 @@ export class GameSession {
       // 벽에 붙어도 하얗게 타지 않도록: 램프를 머리 뒤쪽에 두고, 밝은 부분은 톤 매핑으로 부드럽게
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.45;
-      const lamp = new THREE.SpotLight('#ffe2b0', 32, 36, 0.65, 0.55, 1.25);
-      lamp.position.set(0.15, 0.1, 0.7);
-      lamp.target.position.set(0, -0.15, -1);
-      camera.add(lamp, lamp.target);
-      this.headlamp = lamp;
-      this.dust = new Dust(scene);
+      // 헤드램프: 렌즈 무늬·실제 그림자·빛줄기·눈부심 (headlamp.js). 다른 사람의 램프도 보인다
+      this.headlamps = new Headlamps(scene, renderer);
+      this.dust = new Dust(scene, 700);
+      this.litDust = litDustMaterial(this.dust.points.material, this.headlamps.mine);
     } else if (this.isBackrooms) {
       // 형광등 아래 밋밋하고 누런 빛
       scene.add(new THREE.HemisphereLight('#fff4c8', '#8f7d42', 2.1));
@@ -267,6 +266,7 @@ export class GameSession {
 
     this.sky = buildSky(scene, this.theme);
     this.worldGroup = buildWorld(scene, start.map);
+    if (this.headlamps) enableShadows(this.worldGroup);
 
     // 유령은 담장·벽을 통과한다 (서버와 같은 기준으로 예측)
     this.collision = new CollisionWorld(
@@ -276,6 +276,7 @@ export class GameSession {
     for (const g of start.generators) {
       this.collision.add(genBox(g));
       const model = new GeneratorModel(g);
+      if (this.headlamps) enableShadows(model.group);
       scene.add(model.group);
       this.gens.set(g.id, { ...g, model, progress: 0, done: false });
     }
@@ -295,6 +296,7 @@ export class GameSession {
         this.hpBars.set(p.id, bar);
       }
       scene.add(a.group);
+      this.addHeadlamp(a);
       this.avatars.set(p.id, a);
     }
 
@@ -836,6 +838,7 @@ export class GameSession {
     for (const [id, a] of this.cloneAvatars) {
       if (!ids.has(id)) {
         this.scene.remove(a.group);
+        this.headlamps?.detach(a);
         a.dispose();
         this.cloneAvatars.delete(id);
       }
@@ -848,6 +851,7 @@ export class GameSession {
         a.setTarget(c.x, c.z, c.yaw, true);
         if (!this.isHunter) a.setGhost(0.55);
         this.scene.add(a.group);
+        this.addHeadlamp(a); // 분신도 주인과 똑같이 헤드램프를 찬다
         this.cloneAvatars.set(c.id, a);
       }
       a.setTarget(c.x, c.z, c.yaw);
@@ -910,17 +914,20 @@ export class GameSession {
     if (!d || d.look !== p.look) {
       if (d) {
         this.scene.remove(d.avatar.group);
+        this.headlamps?.detach(d.avatar);
         d.avatar.dispose();
       }
       const as = this.info.get(p.look);
       const avatar = new Avatar(ROLE.SURVIVOR, as?.index ?? 0, as?.name ?? '?', true);
       avatar.setTarget(p.x, p.z, p.yaw, true);
       this.scene.add(avatar.group);
+      this.addHeadlamp(avatar);
       d = { look: p.look, avatar };
       this.disguiseAvatars.set(p.id, d);
     }
     d.avatar.setTarget(p.x, p.z, p.yaw);
     d.avatar.repairing = !!p.rep; // 발전기 옆에서 수리하는 척
+    d.avatar.pitch = p.pitch; // 헤드램프가 술래의 시선을 따라감
     d.avatar.group.visible = p.st === STATUS.ALIVE;
     hunterAvatar.group.visible = false;
   }
@@ -949,6 +956,7 @@ export class GameSession {
   showExit(exit) {
     this.exit = exit;
     this.exitMesh = this.isMine ? makeMineExit(exit) : this.isBackrooms ? makeBackroomsExit(exit) : makeExit(exit);
+    if (this.headlamps) enableShadows(this.exitMesh);
     this.scene.add(this.exitMesh);
     $('hud-exit').classList.remove('hidden');
   }
@@ -1449,6 +1457,13 @@ export class GameSession {
     $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? `${CLASS_INFO[next.cls ?? HUNTER_CLASS.MANIAC].icon} ` : ''}${next.name}`;
   }
 
+  /** 폐광산: 아바타 머리에 헤드램프를 달고 내 램프의 그림자를 드리우게 한다 */
+  addHeadlamp(a) {
+    if (!this.headlamps) return;
+    enableShadows(a.group);
+    this.headlamps.attach(a);
+  }
+
   distTo(id) {
     const a = this.avatars.get(id);
     if (!a) return 0;
@@ -1462,6 +1477,10 @@ export class GameSession {
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
     this.update(dt);
+    if (this.headlamps) {
+      this.headlamps.update(dt, this.camera, this.collision);
+      this.litDust.update(this.headlamps.mine);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -2146,6 +2165,7 @@ export class GameSession {
     window.removeEventListener('keydown', this.onMapKey);
     $('map-overlay').classList.add('hidden');
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);
+    this.headlamps?.dispose();
     this.scene.traverse((o) => {
       o.geometry?.dispose();
       if (o.material) {

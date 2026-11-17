@@ -32,6 +32,8 @@ import {
   SEA_CURSE,
   diveStats,
   aimDirection,
+  FLESH,
+  slimeRadius,
 } from '@shared/constants.js';
 import { makeDiveRing, disposeRing, makeDiveWarning, makeSplash, makeCrack } from './dive.js';
 import { buildWorld, buildSky } from './world.js';
@@ -48,7 +50,8 @@ import {
   makeBall,
   makeThread,
   makeRobot,
-  makeSmoke,
+  makeSlime,
+  makeHitBurst,
   makeTaserBolt,
 } from './models.js';
 import { Controls } from './input.js';
@@ -91,6 +94,9 @@ export class GameSession {
     this.isClown = this.isHunter && this.hunterClass === HUNTER_CLASS.CLOWN;
     this.isDrowned = this.isHunter && this.hunterClass === HUNTER_CLASS.DROWNED;
     this.isPalcheok = this.isHunter && this.hunterClass === HUNTER_CLASS.PALCHEOK;
+    this.isFlesh = this.isHunter && this.hunterClass === HUNTER_CLASS.FLESH;
+    this.rushLeft = 0; // 살덩이: 스킬(시속 40km) 남은 시간
+    this.rifleSlowLeft = 0; // 술래: 군인 소총에 맞아 느려진 남은 시간
     this.carrying = null; // 팔척귀신: 들고 있는 생존자 id
     this.carryLeft = 0;
     this.carriedBy = null; // 생존자: 나를 들고 있는 팔척귀신
@@ -106,17 +112,20 @@ export class GameSession {
     this.sskillCooldown = this.isHunter ? 0 : survivorSkillCooldown(this.scls);
     this.hasSSkill = this.sskillCooldown > 0;
     this.sskillLeft = 0;
+    this.isSoldier = this.scls === 'soldier';
+    this.ammo = SOLDIER.MAG; // 군인 소총 남은 탄
+    this.reloadLeft = 0;
     this.slowFactor = 1; // 생존자 감속 배율 (서버가 알려 줌)
     this.noRun = false;
-    this.smoked = false; // 술래: 연막 속
     this.threadMeshes = new Map();
     this.cloneAvatars = new Map();
-    this.smokeMeshes = new Map();
+    this.slimeMeshes = new Map(); // 살덩이 점액 웅덩이 id → { mesh, born }
+    this.rifleTracers = new Map(); // 군인 소총 탄 id → 궤적
     this.robotMeshes = new Map();
     this.balls = new Map(); // 날아가는 광대 공 (서버 id → 화면 모델)
     this.bolts = new Map(); // 날아가는 테이저건 탄
     // 선장·유령·살가죽·질주자: 스킬 키 한 번 누르기 + 쿨타임
-    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned || this.isPalcheok;
+    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned || this.isPalcheok || this.isFlesh;
     this.skillCooldown = {
       assassin: ASSASSIN.SKILL_COOLDOWN,
       captain: CAPTAIN.SKILL_COOLDOWN,
@@ -125,6 +134,7 @@ export class GameSession {
       sprinter: SPRINTER.SKILL_COOLDOWN,
       drowned: DROWNED.SKILL_COOLDOWN,
       palcheok: PALCHEOK.SKILL_COOLDOWN,
+      flesh: FLESH.RUSH_TIME + FLESH.SKILL_COOLDOWN, // 쓰는 순간부터 끝나고 7초 뒤까지
     }[this.hunterClass] || 1;
     this.attackCooldown = this.isSniper
       ? SNIPER.SHOT_COOLDOWN
@@ -175,6 +185,9 @@ export class GameSession {
     this.chargeLeft = 0;
     this.sendTimer = 0;
     this.bobT = 0;
+    this.bobAmp = 0; // 걷기 흔들림 세기 (움직이기 시작·멈출 때 부드럽게)
+    this.camRoll = 0; // 옆으로 걸을 때 살짝 기울어짐
+    this.landDip = 0; // 착지할 때 살짝 내려앉음
     this.shake = 0;
     this.lastState = null;
     this.gens = new Map();
@@ -194,6 +207,7 @@ export class GameSession {
       return m;
     };
     this.setupThree(start);
+    for (const w of start.slimes || []) this.addSlime(w);
     this.setupHud();
     this.setupControls(onOpenSettings);
 
@@ -308,7 +322,8 @@ export class GameSession {
     screen.classList.toggle('cls-assassin', this.isAssassin);
     screen.classList.toggle('cls-skill', this.hasClassSkill);
     screen.classList.toggle('cls-clown', this.isClown);
-    screen.classList.remove('smoked', 's-slowed', 'no-run', 'diving');
+    screen.classList.remove('s-slowed', 'no-run', 'diving', 'h-slowed');
+    screen.classList.toggle('cls-noattack', this.isFlesh); // 살덩이: 기본 공격 없음
     screen.classList.remove('disguised');
     screen.classList.remove('invisible');
     screen.classList.remove('spectating', 'scoped');
@@ -328,6 +343,7 @@ export class GameSession {
       sprinter: { main: ['🦵', '발차기'], action: ['💨', '질주'] },
       drowned: { main: ['🔱', '작살'], action: ['🌊', '다이빙'] },
       palcheok: { main: ['👊', '주먹'], action: ['🫳', '납치'] },
+      flesh: { main: ['🚫', '없음'], action: ['💨', '돌진'] },
     };
     if (this.isClown) classLabels.clown = { main: ['🤹', '공'], action: ['🧵', '실'] };
     const labels = this.hasClassSkill || this.isClown
@@ -346,7 +362,7 @@ export class GameSession {
     $('cd-main').querySelector('.ico').textContent = labels.main[0];
     $('cd-action').querySelector('.ico').textContent = labels.action[0];
     // 생존자 직업 스킬 버튼 (수리 왼쪽, PC는 Q)
-    const sk = { doctor: '💉', police: '⚡', soldier: '💨', ninja: '👥', engineer: '🤖' }[this.scls] || '';
+    const sk = { doctor: '💉', police: '⚡', soldier: '🔫', ninja: '👥', engineer: '🤖' }[this.scls] || '';
     $('btn-sskill').querySelector('.ico').textContent = sk;
     $('btn-sskill').querySelector('.lbl').textContent = sinfo?.skill || '';
     $('btn-sskill').classList.toggle('passive', !this.hasSSkill);
@@ -359,7 +375,9 @@ export class GameSession {
         ? '좌클릭 작살 · E 꾹 눌러 조준, 떼면 다이빙'
         : this.isPalcheok
           ? '좌클릭 주먹 · E 납치, 들고 있을 때 E 던지기'
-          : '좌클릭 공격 · E 스킬';
+          : this.isFlesh
+            ? '기본 공격 없음 · E 돌진 (시속 40km)'
+            : '좌클릭 공격 · E 스킬';
     }
     $('hud-feed').innerHTML = '';
     $('btn-train').classList.toggle('hidden', !this.training);
@@ -401,6 +419,7 @@ export class GameSession {
         clown: '광대: 공을 던지고, 골목에 실 함정을 치세요!',
         drowned: '익사자: 스킬 키를 누르고 조준한 뒤 떼면 그곳으로 다이빙!',
         palcheok: '팔척귀신: 담장 너머를 내려다보세요. 생존자를 붙잡아 다른 생존자에게 던지세요!',
+        flesh: '살덩이: 움직이면 점액이 퍼져요. 골목을 점액으로 뒤덮으세요!',
       }[this.isHunter ? this.hunterClass : ''] ||
       (this.isSniper
         ? '저격수: 조준해서 멀리서 맞히면 2칸!'
@@ -491,6 +510,7 @@ export class GameSession {
   }
 
   tryAttack() {
+    if (this.isFlesh) return; // 살덩이: 기본 공격 없음
     if (this.status !== STATUS.ALIVE || this.attackLeft > 0 || this.forced || this.stunLeft > 0) return;
     if (this.carrying) return; // 팔척귀신: 들고 있는 동안 주먹 불가
     this.attackLeft = this.attackCooldown;
@@ -524,12 +544,23 @@ export class GameSession {
   }
 
   /** 선장 닻 · 처녀귀신 유도탄 · 살가죽 변장 · 질주자 질주 · 팔척귀신 납치·던지기 */
-  /** 생존자 직업 스킬: 의사 회복, 경찰 테이저건, 군인 연막탄, 닌자 분신, 엔지니어 로봇 */
+  /** 생존자 직업 스킬: 의사 회복, 경찰 테이저건, 군인 소총, 닌자 분신, 엔지니어 로봇 */
   trySurvivorSkill() {
     if (this.isHunter || !this.hasSSkill || this.status !== STATUS.ALIVE || this.sskillLeft > 0) return;
-    if (performance.now() - (this.lastSSkillAt || 0) < 400) return;
+    if (performance.now() - (this.lastSSkillAt || 0) < (this.isSoldier ? 150 : 400)) return;
+    if (this.isSoldier) {
+      // 소총: 장전 중이면 못 쏨. 10발을 다 쓰면 5초 자동 장전
+      if (this.reloadLeft > 0 || this.ammo <= 0) return;
+      this.ammo--;
+      if (this.ammo === 0) {
+        this.reloadLeft = SOLDIER.RELOAD;
+        sfx.reload?.();
+      }
+      sfx.gunshot(0.55);
+      this.shake = Math.max(this.shake, 0.08);
+    }
     this.lastSSkillAt = performance.now();
-    this.sskillLeft = this.sskillCooldown; // 대상이 없어 실패하면 서버가 알려 주고 되돌린다
+    this.sskillLeft = this.isSoldier && this.reloadLeft > 0 ? this.reloadLeft : this.sskillCooldown; // 대상이 없어 실패하면 서버가 알려 주고 되돌린다
     this.net.send({ t: 'skill', yaw: this.yaw, pitch: this.pitch });
   }
 
@@ -545,6 +576,11 @@ export class GameSession {
     } else if (this.isGhost) sfx.wisp();
     else if (this.isSkin) this.setDisguised(true);
     else if (this.isSprinter) sfx.dashCharge();
+    else if (this.isFlesh) {
+      this.rushLeft = FLESH.RUSH_TIME;
+      this.skillLeft = this.skillCooldown;
+      sfx.dashCharge();
+    }
     else if (this.isPalcheok && this.carrying) {
       // 던지기: 그때부터 쿨타임
       this.carrying = null;
@@ -701,7 +737,6 @@ export class GameSession {
     this.syncProjectiles(this.wispMeshes, s.wisps || [], makeWisp);
     this.syncThreads(s.threads || []);
     this.syncClones(s.clones || []);
-    this.syncSmokes(s.smokes || []);
     this.syncRobots(s.robots || []);
     if (s.me) {
       this.forced = !!s.me.forced;
@@ -723,7 +758,12 @@ export class GameSession {
         this.slowFactor = s.me.slow ?? 1;
         this.noRun = !!s.me.noRun;
       }
-      this.smoked = this.isHunter && !!s.me.smoke;
+      if (this.isHunter) this.rifleSlowLeft = s.me.rifleSlow ?? 0;
+      if (this.isFlesh && !fresh(this.lastSkillAt)) this.rushLeft = s.me.rushLeft ?? 0;
+      if (this.isSoldier && s.me.ammo != null && !fresh(this.lastSSkillAt)) {
+        this.ammo = s.me.ammo;
+        this.reloadLeft = s.me.reloadLeft ?? 0;
+      }
       if (this.isPalcheok && !fresh(this.lastSkillAt)) {
         this.carrying = s.me.carrying || null;
         this.carryLeft = s.me.carryLeft ?? 0;
@@ -814,23 +854,27 @@ export class GameSession {
     }
   }
 
-  syncSmokes(list) {
-    const ids = new Set(list.map((s) => s.id));
-    for (const [id, m] of this.smokeMeshes) {
-      if (!ids.has(id)) {
-        this.scene.remove(m);
-        m.traverse((o) => o.geometry?.dispose());
-        m.userData.mat.dispose();
-        this.smokeMeshes.delete(id);
-      }
+  /** 살덩이 점액 웅덩이: 서버가 생길 때 알려 주고, 반경은 생긴 시각부터 매초 커진다 */
+  addSlime(w) {
+    if (this.slimeMeshes.has(w.id)) return;
+    const mesh = makeSlime();
+    mesh.position.set(w.x, 0.03 + (w.id % 7) * 0.002, w.z); // 겹친 웅덩이가 깜빡이지 않게 높이를 조금씩
+    this.scene.add(mesh);
+    this.slimeMeshes.set(w.id, { mesh, born: w.born });
+  }
+
+  updateSlimes() {
+    const now = this.matchTime || 0;
+    for (const w of this.slimeMeshes.values()) w.mesh.scale.setScalar(slimeRadius(w.born, now));
+  }
+
+  /** 지금 내가 점액 웅덩이 안에 있는가 (화면 효과용) */
+  inSlime() {
+    const now = this.matchTime || 0;
+    for (const w of this.slimeMeshes.values()) {
+      if (Math.hypot(w.mesh.position.x - this.pos.x, w.mesh.position.z - this.pos.z) <= slimeRadius(w.born, now)) return true;
     }
-    for (const sm of list) {
-      if (this.smokeMeshes.has(sm.id)) continue;
-      const m = makeSmoke(SOLDIER.RADIUS);
-      m.position.set(sm.x, 0, sm.z);
-      this.scene.add(m);
-      this.smokeMeshes.set(sm.id, m);
-    }
+    return false;
   }
 
   /** 엔지니어 로봇: 발전기 위에 붙어 있다 */
@@ -928,12 +972,15 @@ export class GameSession {
       case 'hit': {
         this.avatars.get(e.id)?.hitFlash();
         this.damagePop(e);
+        this.hitBurst(e.id, e.slime);
         const max = e.max ?? this.hitsToCatch;
         const dmg = `-${fmtHits(e.dmg)}칸`;
         const far = e.far
           ? ` · ${e.dist}m 원거리 저격! ${dmg}`
           : e.wisp
             ? ` · 유도탄 ${dmg}`
+            : e.slime
+              ? ` · 점액 ${dmg}`
             : e.dash
               ? ` · 질주 ${dmg}`
               : e.crack
@@ -948,7 +995,13 @@ export class GameSession {
                   ? ` ${dmg}`
                   : '';
         const hp = `(${fmtHits(e.hits)}/${max})`;
-        if (me) {
+        if (me && e.slime) {
+          // 점액은 매초 들어오므로 짧고 가볍게
+          sfx.hit(0.4);
+          this.flash('slime');
+          this.shake = Math.max(this.shake, 0.12);
+          this.centerMsg(`🫀 점액에 녹는다! ${hp} 웅덩이 밖으로!`, 0.9);
+        } else if (me) {
           sfx.hit();
           this.flash('hit');
           this.shake = e.ball ? 0.2 : 0.35;
@@ -956,6 +1009,9 @@ export class GameSession {
             `맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
             1.5,
           );
+        } else if (e.slime) {
+          // 점액 피해는 매초라 알림 칸을 덮지 않도록 조용히
+          if (e.by === this.myId) this.hitMarker();
         } else if (e.by === this.myId) {
           sfx.hit();
           this.hitMarker();
@@ -965,6 +1021,7 @@ export class GameSession {
       }
       case 'caught':
         sfx.caught();
+        this.hitBurst(e.id);
         if (e.by === this.myId) this.hitMarker();
         this.damagePop(e);
         if (this.info.get(e.id)?.dummy) {
@@ -972,7 +1029,7 @@ export class GameSession {
           this.feed(`💀 ${name(e.id)} 쓰러짐 · ${TRAINING.REVIVE_TIME}초 뒤 다시 일어나요`, 'warn');
           break;
         }
-        this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.spyKill ? ` (${e.dist}m 저격 즉사 · 최고의 스파이들)` : e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
+        this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.slime ? ' (점액)' : ''}${e.spyKill ? ` (${e.dist}m 저격 즉사 · 최고의 스파이들)` : e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
         if (me) this.flash('hit');
         break;
       case 'trapped':
@@ -1211,9 +1268,46 @@ export class GameSession {
         }
         break;
       }
-      case 'smoke':
-        sfx.smoke(Math.max(0.2, 1 - this.distTo(e.id) / 30));
-        if (!this.isHunter && e.id !== this.myId) this.feed(`🪖 ${name(e.id)}이(가) 연막탄을 터뜨렸다`, 'good');
+      case 'rifle':
+        this.onRifle(e);
+        break;
+      case 'rifleEnd': {
+        const t = this.rifleTracers.get(e.rid);
+        if (t) {
+          t.stopAt(new THREE.Vector3(e.x, t.pos.y, e.z));
+          this.rifleTracers.delete(e.rid);
+        }
+        if (e.hit) {
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.2, e.z), '#ffb347'));
+          if (e.hit === this.myId) {
+            this.rifleSlowLeft = SOLDIER.SLOW_TIME;
+            this.flash('stun');
+            this.shake = Math.max(this.shake, 0.15);
+            this.centerMsg(`🔫 소총에 맞았다! ${SOLDIER.SLOW_TIME}초간 느려진다`, 1.2);
+          } else if (e.id === this.myId) {
+            this.hitMarker();
+            sfx.hit(0.35);
+          }
+        }
+        break;
+      }
+      case 'reloaded':
+        if (me) {
+          this.ammo = SOLDIER.MAG;
+          this.reloadLeft = 0;
+          this.sskillLeft = 0;
+          this.centerMsg('🔫 장전 완료', 0.8);
+        }
+        break;
+      case 'slime':
+        this.addSlime({ id: e.sid, x: e.x, z: e.z, born: e.born });
+        break;
+      case 'rush':
+        if (e.on) {
+          if (me) this.centerMsg(`💨 돌진! ${e.time}초 동안 시속 40km`, 1.2);
+          else if (this.distTo(e.id) < 30) sfx.dashCharge();
+          if (!this.isHunter && this.status === STATUS.ALIVE) this.feed('🫀 살덩이가 빨라졌다!', 'bad');
+        } else if (me) this.rushLeft = 0;
         break;
       case 'clone':
         sfx.poof();
@@ -1426,6 +1520,8 @@ export class GameSession {
         slowed: this.isAssassin && this.slowLeft > 0,
         wallSlowed: this.isGhost && this.wallSlowLeft > 0,
         disguised: this.disguised,
+        rushing: this.isFlesh && this.rushLeft > 0,
+        rifleSlowed: this.isHunter && this.rifleSlowLeft > 0,
         slowFactor: this.isHunter ? 1 : this.slowFactor,
         noRun: this.noRun,
       });
@@ -1447,6 +1543,14 @@ export class GameSession {
 
     this.attackLeft = Math.max(0, this.attackLeft - dt);
     this.sskillLeft = Math.max(0, this.sskillLeft - dt);
+    this.rushLeft = Math.max(0, this.rushLeft - dt);
+    this.rifleSlowLeft = Math.max(0, this.rifleSlowLeft - dt);
+    if (this.reloadLeft > 0) {
+      this.reloadLeft = Math.max(0, this.reloadLeft - dt);
+      if (this.reloadLeft === 0) this.ammo = SOLDIER.MAG;
+    }
+    // 군인: Q(또는 버튼)를 누르고 있으면 0.5초마다 계속 쏜다
+    if (this.isSoldier && alive && c.isHeld('sskill')) this.trySurvivorSkill();
     if (this.hasClassSkill) this.skillLeft = Math.max(0, this.skillLeft - dt);
     if (this.carrying) this.carryLeft = Math.max(0, this.carryLeft - dt);
     if (this.isAssassin) {
@@ -1518,8 +1622,18 @@ export class GameSession {
         return;
       }
     }
-    this.bobT += dt * (this.moving ? (this.running ? 13 : 10) : 0);
-    const bob = this.moving ? Math.sin(this.bobT) * 0.035 : 0;
+    // 걷기 카메라 흔들림: 발걸음마다 위아래로 출렁이고 좌우로 살짝 흔들리며, 옆으로 걸으면 기울어진다.
+    // 움직이기 시작하거나 멈출 때 부드럽게 커지고 줄어든다
+    const grounded = this.jumpT === null;
+    const gait = this.running ? 1.45 : this.isHunter ? 1.15 : 1;
+    const targetAmp = this.moving && grounded && this.status === STATUS.ALIVE ? gait : 0;
+    this.bobAmp += (targetAmp - this.bobAmp) * Math.min(1, dt * 8);
+    this.bobT += dt * (this.running ? 13 : this.isHunter ? 8.5 : 10) * (this.moving ? 1 : 0.4);
+    const bob = Math.abs(Math.sin(this.bobT)) * -0.05 * this.bobAmp + 0.025 * this.bobAmp;
+    const sway = Math.sin(this.bobT * 0.5) * 0.028 * this.bobAmp;
+    const strafe = this.moving ? this.controls.moveVector().x : 0;
+    this.camRoll += (-strafe * 0.025 + Math.sin(this.bobT * 0.5) * 0.006 * this.bobAmp - this.camRoll) * Math.min(1, dt * 7);
+    this.landDip = Math.max(0, this.landDip - dt * 0.6);
     let sx = 0;
     let sy = 0;
     if (this.shake > 0) {
@@ -1535,15 +1649,20 @@ export class GameSession {
       jy = jumpHeight(this.jumpT);
       if (this.jumpT >= RULES.JUMP_TIME) {
         this.jumpT = null;
+        this.landDip = 0.12; // 착지하면 살짝 내려앉았다 올라온다
         sfx.land();
       }
     }
     // 팔척귀신은 2.3m. 팔척귀신에게 들리면 머리 위 높이(2.9m)에서 본다
     const baseEye = this.carriedBy ? 2.9 : this.eyeHeight;
     const eye = (this.stunLeft > 0 ? baseEye - 0.25 : baseEye) + jy;
-    cam.position.set(this.pos.x + sx, eye + bob + sy, this.pos.z);
-    cam.rotation.set(this.pitch, this.yaw, 0);
-    const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running ? 82 : 75;
+    const dip = Math.sin(Math.min(1, this.landDip / 0.12) * Math.PI) * this.landDip;
+    // 흔들림(좌우)은 바라보는 방향의 오른쪽으로
+    const rx = Math.cos(this.yaw) * sway;
+    const rz = -Math.sin(this.yaw) * sway;
+    cam.position.set(this.pos.x + sx + rx, eye + bob + sy - dip, this.pos.z + rz);
+    cam.rotation.set(this.pitch, this.yaw, this.camRoll);
+    const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running || this.rushLeft > 0 ? 82 : 75;
     if (Math.abs(cam.fov - targetFov) > 0.1) {
       cam.fov += (targetFov - cam.fov) * Math.min(1, dt * (this.aiming ? 14 : 8));
       cam.updateProjectionMatrix();
@@ -1598,6 +1717,9 @@ export class GameSession {
         this.lastHeartsHtml = heartsHtml;
         $('hearts').innerHTML = heartsHtml;
         $('hearts').classList.toggle('many', this.maxHits > 5);
+        // 체력이 줄었으면 방금 잃은 칸이 하얗게 번쩍였다가 까매진다
+        if (this.hits > (this.lastHeartsHits ?? 0)) this.flashHearts(this.maxHits - (this.lastHeartsHits ?? 0), this.maxHits - this.hits);
+        this.lastHeartsHits = this.hits;
       }
       this.updateSurvivorSkill();
       const gen = this.nearestGen();
@@ -1634,7 +1756,9 @@ export class GameSession {
     }
     if (this.isHunter) this.updateHunterHud();
     const screen = $('screen-game');
-    screen.classList.toggle('smoked', this.smoked && alive);
+    screen.classList.toggle('h-slowed', this.isHunter && alive && this.rifleSlowLeft > 0);
+    screen.classList.toggle('in-slime', !this.isHunter && alive && this.slimeMeshes.size > 0 && this.inSlime());
+    screen.classList.toggle('rushing', this.isFlesh && alive && this.rushLeft > 0);
     screen.classList.toggle('s-slowed', !this.isHunter && alive && this.slowFactor < 1);
     screen.classList.toggle('no-run', !this.isHunter && alive && this.noRun);
     if (this.isHunter || !alive) this.danger = 0; // 술래와 관전자는 늘 보통 배경음악
@@ -1760,7 +1884,7 @@ export class GameSession {
     btnA.classList.toggle('cooling', this.attackLeft > 0);
     if (this.hasClassSkill) {
       // 선장·유령·살가죽·질주자: 스킬 쿨타임 링과 남은 초
-      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim || !!this.carrying;
+      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim || !!this.carrying || (this.isFlesh && this.rushLeft > 0);
       if (this.isPalcheok) {
         // 들고 있으면 스킬 버튼이 던지기로 바뀐다
         const lbl = this.carrying ? ['🌀', '던지기'] : ['🫳', '납치'];
@@ -1778,7 +1902,9 @@ export class GameSession {
             ? '조준'
             : this.carrying
               ? `${Math.ceil(this.carryLeft)}s`
-              : '질주!'
+              : this.isFlesh
+                ? `${Math.ceil(this.rushLeft)}s`
+                : '질주!'
         : this.skillLeft > 0
           ? `${Math.ceil(this.skillLeft)}s`
           : '';
@@ -1843,15 +1969,45 @@ export class GameSession {
   heartsHtml(max, hits) {
     const left = Math.max(0, max - hits);
     const full = Math.floor(left + 1e-9);
-    const half = left - full > 0.01 ? 1 : 0;
-    return '<b>♥</b>'.repeat(full) + (half ? '<i>♥</i>' : '') + '<s>♥</s>'.repeat(Math.max(0, max - full - half));
+    const frac = left - full;
+    const half = frac > 0.01 ? 1 : 0;
+    // 조금 깎인 칸은 남은 만큼만 빨갛게 (광대 공 0.75칸, 점액 0.2칸)
+    const part = half ? `<i style="--p:${Math.round(frac * 100)}%">♥</i>` : '';
+    return '<b>♥</b>'.repeat(full) + part + '<s>♥</s>'.repeat(Math.max(0, max - full - half));
+  }
+
+  /** 맞으면 잃은 체력 칸이 하얗게 번쩍였다가 다시 까매진다 (before → after: 남은 칸) */
+  flashHearts(before, after) {
+    const el = $('hearts');
+    [...el.children].forEach((h, i) => {
+      // i번째 칸은 [i, i+1] 구간. 방금 잃은 구간과 겹치면 번쩍
+      if (i + 1 > after + 1e-9 && i < before - 1e-9) h.classList.add('lost');
+    });
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
+  /** 피격 효과: 맞은 사람 몸에서 피가 튀고 붉은 고리가 퍼진다 (점액은 작은 초록 방울만) */
+  hitBurst(id, light = false) {
+    // 내가 맞으면 화면 가장자리 붉은빛·흔들림·체력 칸 번쩍임으로 보여 준다 (피가 눈앞을 가리지 않게)
+    if (id === this.myId) return;
+    const a = this.avatars.get(id);
+    if (!a || !a.group.visible) return;
+    const p = new THREE.Vector3(a.pos.x, a.group.position.y + 1.2, a.pos.z);
+    this.effects.push(makeHitBurst(this.scene, p, this.camera, light ? '#7fb52e' : '#c8102e', light));
   }
 
   /** 생존자 직업 스킬 버튼과 PC 쿨타임 칸 */
   updateSurvivorSkill() {
     if (!this.hasSSkill) return;
-    const frac = Math.min(1, this.sskillLeft / this.sskillCooldown);
-    const text = this.sskillLeft > 0 ? `${Math.ceil(this.sskillLeft)}s` : '';
+    let frac = Math.min(1, this.sskillLeft / this.sskillCooldown);
+    let text = this.sskillLeft > 0 ? `${Math.ceil(this.sskillLeft)}s` : '';
+    if (this.isSoldier) {
+      // 소총: 남은 탄 / 장전 남은 시간
+      frac = this.reloadLeft > 0 ? this.reloadLeft / SOLDIER.RELOAD : 0;
+      text = this.reloadLeft > 0 ? `장전 ${Math.ceil(this.reloadLeft)}s` : `${this.ammo}/${SOLDIER.MAG}`;
+    }
     const btn = $('btn-sskill');
     btn.style.setProperty('--cd', String(frac));
     btn.classList.toggle('cooling', this.sskillLeft > 0);
@@ -1873,6 +2029,24 @@ export class GameSession {
       this.avatars.get(e.id)?.playSwing();
       sfx.ballThrow(Math.max(0.2, 1 - this.distTo(e.id) / 30));
     }
+  }
+
+  /** 군인 소총: 짧은 궤적이 초속 150m로 날아간다 (끝은 서버가 알려 줌) */
+  onRifle(e) {
+    const dir = new THREE.Vector3(e.dx, 0, e.dz);
+    let origin;
+    if (e.id === this.myId) {
+      origin = new THREE.Vector3(0.18, -0.15, -0.6).applyQuaternion(this.camera.quaternion).add(this.camera.position);
+      if (e.ammo != null && !(performance.now() - (this.lastSSkillAt || 0) < 400)) this.ammo = e.ammo;
+    } else {
+      origin = new THREE.Vector3(e.x, 1.3, e.z);
+      this.avatars.get(e.id)?.playSwing();
+      sfx.gunshot(Math.max(0.12, 0.6 - this.distTo(e.id) / 80));
+    }
+    const tracer = new Tracer(this.scene, origin, dir, SOLDIER.SPEED);
+    this.rifleTracers.set(e.rid, tracer);
+    this.liveTracers.push(tracer);
+    this.effects.push(makeImpact(this.scene, origin, '#ffd27a'));
   }
 
   onTaser(e) {
@@ -1921,7 +2095,7 @@ export class GameSession {
       m.userData.tip.visible = Math.floor(now / 250) % 2 === 0;
       m.position.y = 1.0 + Math.abs(Math.sin(now / 90)) * 0.02;
     }
-    for (const m of this.smokeMeshes.values()) m.rotation.y += dt * 0.3;
+    this.updateSlimes();
   }
 
   feed(text, cls = '') {
@@ -1944,7 +2118,7 @@ export class GameSession {
   }
 
   flash(kind) {
-    const el = $(kind === 'hit' ? 'vignette-hit' : 'vignette-stun');
+    const el = $(kind === 'hit' ? 'vignette-hit' : kind === 'slime' ? 'vignette-slime' : 'vignette-stun');
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
@@ -1981,7 +2155,7 @@ export class GameSession {
     });
     this.renderer.dispose();
     this.renderer.domElement.remove();
-    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 'smoked', 's-slowed', 'no-run', 'cls-clown', 'diving');
+    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'rushing', 'cls-noattack');
   }
 }
 

@@ -4,6 +4,7 @@
 import { RULES, ROLE, STATUS, HUNTER_CLASS, CAPTAIN, GHOST, SKINWALKER, SPRINTER, SEA_CURSE, URBAN_LEGEND } from '../../shared/constants.js';
 import { skillDrowned } from './drowned.js';
 import { skillPalcheok, isCarriedOrThrown } from './palcheok.js';
+import { skillFlesh } from './flesh.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -253,7 +254,7 @@ export function endDash(game, p, reason) {
 
 // ───────────── 스킬 키 처리 ─────────────
 
-/** 선장·유령·살가죽·질주자·익사자·팔척귀신 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
+/** 선장·유령·살가죽·질주자·익사자·팔척귀신·살덩이 스킬. 처리했으면 true. msg: 익사자 다이빙 도착 지점(tx, tz) */
 export function useSkill(game, p, msg = {}) {
   if (isForced(game, p)) return true;
   if (game.time < p.skillReadyAt) return true;
@@ -275,6 +276,9 @@ export function useSkill(game, p, msg = {}) {
       return true;
     case HUNTER_CLASS.PALCHEOK:
       skillPalcheok(game, p);
+      return true;
+    case HUNTER_CLASS.FLESH:
+      skillFlesh(game, p);
       return true;
     default:
       return false;

@@ -254,19 +254,66 @@ export function makeRobot() {
   return g;
 }
 
-/** 군인 연막: 지름 3m의 뿌연 구름 (여러 겹의 반투명 덩어리) */
-export function makeSmoke(radius) {
+/** 살덩이 점액 웅덩이: 반경 1m짜리 원판을 만들고 scale로 실제 반경에 맞춘다 (모든 웅덩이가 재질·모양을 같이 씀) */
+const SLIME_GEO = new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2);
+const SLIME_RIM_GEO = new THREE.RingGeometry(0.93, 1, 40).rotateX(-Math.PI / 2);
+const SLIME_MAT = new THREE.MeshBasicMaterial({ color: '#6f9a2a', transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+const SLIME_RIM_MAT = new THREE.MeshBasicMaterial({ color: '#b6e35a', transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+export function makeSlime() {
   const g = new THREE.Group();
-  const m = new THREE.MeshLambertMaterial({ color: '#cfd2d6', transparent: true, opacity: 0.55, depthWrite: false });
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    const r = i === 0 ? 0 : radius * 0.55;
-    const puff = new THREE.Mesh(new THREE.SphereGeometry(radius * (0.55 + (i % 3) * 0.12), 12, 9), m);
-    puff.position.set(Math.cos(a) * r, 0.8 + (i % 3) * 0.35, Math.sin(a) * r);
-    g.add(puff);
-  }
-  g.userData.mat = m;
+  const pool = new THREE.Mesh(SLIME_GEO, SLIME_MAT);
+  const rim = new THREE.Mesh(SLIME_RIM_GEO, SLIME_RIM_MAT);
+  pool.renderOrder = 1;
+  rim.renderOrder = 2;
+  g.add(pool, rim);
+  g.position.y = 0.03;
+  g.userData.shared = true; // 재질·모양은 지우지 않는다
   return g;
+}
+
+/** 피격 효과: 맞은 자리에서 핏방울이 튀고 붉은 고리가 퍼진다 */
+export function makeHitBurst(scene, p, camera = null, color = '#c8102e', light = false) {
+  const g = new THREE.Group();
+  g.position.copy(p);
+  const dropMat = new THREE.MeshBasicMaterial({ color, transparent: true });
+  const drops = [];
+  for (let i = 0; i < (light ? 5 : 12); i++) {
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.035 + Math.random() * 0.03, 6, 4), dropMat);
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.5 + Math.random() * 2.5;
+    d.userData.v = new THREE.Vector3(Math.cos(a) * sp, 1.5 + Math.random() * 2.5, Math.sin(a) * sp);
+    drops.push(d);
+    g.add(d);
+  }
+  const ringMat = new THREE.MeshBasicMaterial({ color: '#ff3b3b', transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.28, 24), ringMat);
+  ring.visible = !light;
+  g.add(ring);
+  scene.add(g);
+  let t = 0;
+  return (dt) => {
+    t += dt;
+    for (const d of drops) {
+      d.userData.v.y -= 9.8 * dt;
+      d.position.addScaledVector(d.userData.v, dt);
+      if (d.position.y + g.position.y < 0.03) {
+        d.position.y = 0.03 - g.position.y;
+        d.userData.v.set(0, 0, 0);
+      }
+    }
+    dropMat.opacity = Math.max(0, 1 - t * 1.6);
+    ring.scale.setScalar(1 + t * 9);
+    ringMat.opacity = Math.max(0, 0.8 - t * 3);
+    if (camera) ring.quaternion.copy(camera.quaternion); // 고리는 늘 화면을 향함
+    if (t > 0.65) {
+      scene.remove(g);
+      g.traverse((o) => o.geometry?.dispose());
+      dropMat.dispose();
+      ringMat.dispose();
+      return false;
+    }
+    return true;
+  };
 }
 
 /** 경찰 테이저건 탄: 노랗게 번쩍이는 작은 침 */
@@ -960,6 +1007,8 @@ export function makeViewModel(camera, cls) {
       return new HarpoonViewModel(camera);
     case 'palcheok':
       return new BatViewModel(camera, { weapon: new THREE.Group(), arm: '#e9e6e1', fist: '#e9e6e1', speed: 4.5, scale: 0.6 });
+    case 'flesh':
+      return new BatViewModel(camera, { weapon: new THREE.Group(), arm: '#9a3439', fist: '#b4474b', speed: 4, scale: 0.6 });
     case 'assassin':
       return new KunaiViewModel(camera);
     default:

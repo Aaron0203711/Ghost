@@ -28,7 +28,10 @@ import {
   TRAINING,
   SPIES,
   eyeHeightFor,
+  MAP_SIGHT,
+  SOLDIER,
 } from '../../shared/constants.js';
+import { stepSlime, isRushing } from './flesh.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
 import { trainingRoster, placeDummies } from './training.js';
@@ -44,7 +47,7 @@ import {
   stepDashes,
 } from './abilities.js';
 import { throwBall, stepBalls, placeThread, stepThreads, stepHomingTraps, distToSegment } from './clown.js';
-import { useSurvivorSkill, stepTasers, stepSmokes, stepClones, stepRobots, removeClone } from './survivors.js';
+import { useSurvivorSkill, stepTasers, stepRifles, stepClones, stepRobots, removeClone } from './survivors.js';
 import { generateMap, planMatch, generatorBox } from './mapgen.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -94,6 +97,8 @@ export class Game {
     this.ghostWorld = new CollisionWorld(this.map.boxes.filter((b) => !GHOST.PASS_KINDS.includes(b.kind)));
     // 유령이 통과하는 담장·벽만: 빠져나오는 순간을 감지해 1초 감속
     this.ghostWallWorld = new CollisionWorld(this.map.boxes.filter((b) => GHOST.PASS_KINDS.includes(b.kind)));
+    // 생존자 시야 판정용: 발전기 상자를 넣기 전 세계 (발전기 자신에 가리지 않도록)
+    this.sightWorld = new CollisionWorld(this.map.boxes);
     this.gens = plan.generators.map((g) => ({ ...g, progress: 0, done: false, repairers: 0 }));
     for (const g of this.gens) {
       this.world.add(generatorBox(g));
@@ -152,7 +157,13 @@ export class Game {
         slows: [], // 생존자 감속 목록 { from, until, factor, noRun }
         revealUntil: 0, // 광대 실에 걸려 몸이 빛나는 동안
         sskillReadyAt: 0, // 생존자 직업 스킬 쿨타임
-        smokeUntil: 0, // 술래: 연막으로 화면이 뿌연 동안
+        rifleSlowUntil: 0, // 술래: 군인 소총에 맞아 느려진 동안
+        rushUntil: 0, // 살덩이: 스킬(시속 40km) 끝나는 시각
+        slimeTimer: 0, // 살덩이: 움직인 시간 (1초마다 웅덩이)
+        lastMovedAt: -1, // 마지막으로 위치가 바뀐 시각
+        slimeNextAt: 0, // 생존자: 다음 점액 피해를 받을 수 있는 시각
+        ammo: scls === 'soldier' ? SOLDIER.MAG : 0, // 군인 소총 남은 탄
+        reloadUntil: 0, // 군인: 장전이 끝나는 시각
         cls,
         scls,
         dummy: !!p.dummy, // 훈련장 허수아비 (움직이지 않고 공격하지 않음)
@@ -177,8 +188,10 @@ export class Game {
     this.threadSeq = 0;
     this.tasers = [];
     this.taserSeq = 0;
-    this.smokes = [];
-    this.smokeSeq = 0;
+    this.rifleShots = [];
+    this.rifleSeq = 0;
+    this.slimes = []; // 살덩이 점액 웅덩이 { id, owner, x, z, born }
+    this.slimeSeq = 0;
     this.clones = [];
     this.cloneSeq = 0;
     this.robots = [];
@@ -225,6 +238,7 @@ export class Game {
       hunterClass: this.players.get(forId)?.cls ?? this.hunterClass,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
+      slimes: this.slimes.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z), born: r2(w.born) })),
       synergies: this.synergies,
       ...(this.training ? { training: this.training } : {}),
       players: [...this.players.values()].map((p) => ({
@@ -324,6 +338,7 @@ export class Game {
       p.wallSlowUntil = this.time + GHOST.WALL_SLOW_TIME;
       p.budget = Math.min(p.budget, RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR * 0.6);
     }
+    if (Math.hypot(res.x - p.x, res.z - p.z) > 1e-4) p.lastMovedAt = this.time;
     p.x = res.x;
     p.z = res.z;
     if (clamped || Math.hypot(res.x - msg.x, res.z - msg.z) > 0.15) this.correct(p);
@@ -340,6 +355,7 @@ export class Game {
     if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
     if (this.time < p.attackReadyAt || isForced(this, p) || this.isStunned(p)) return;
     if (p.carrying) return; // 팔척귀신: 생존자를 들고 있는 동안에는 주먹 불가
+    if (p.cls === HUNTER_CLASS.FLESH) return; // 살덩이: 기본 공격 없음
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
     if (p.cls === HUNTER_CLASS.SNIPER) {
@@ -454,11 +470,12 @@ export class Game {
     this.emit(null, { t: 'event', kind: 'invis', id: p.id, on: false, reason });
   }
 
-  /** 생존자에게 피해. 맞으면 1초 무적, 체력이 다 닳으면 잡힘. 2인 규칙이면 모든 피해 절반 */
-  damage(s, byId, amount, extra = {}) {
+  /** 생존자에게 피해. 맞으면 1.5초 무적(invuln: false면 무적 없음), 체력이 다 닳으면 잡힘. 2인 규칙이면 모든 피해 절반 */
+  damage(s, byId, amount, extra = {}, { invuln = true } = {}) {
     amount *= this.rules.damageFactor ?? 1;
-    s.hits = Math.min(s.maxHits, s.hits + amount); // 광대 공은 반 칸(0.5)
-    s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
+    // 0.2칸 같은 소수 피해가 쌓여도 오차가 남지 않도록
+    s.hits = Math.min(s.maxHits, Math.round((s.hits + amount) * 1e6) / 1e6); // 광대 공은 0.75칸
+    if (invuln) s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
     if (s.hits >= s.maxHits - 1e-9) {
       s.status = STATUS.CAUGHT;
       if (s.dummy) s.reviveAt = this.time + TRAINING.REVIVE_TIME;
@@ -631,6 +648,8 @@ export class Game {
         slowed: this.time < p.slowUntil,
         wallSlowed: this.time < p.wallSlowUntil,
         disguised: !!p.disguiseAs,
+        rushing: isRushing(this, p),
+        rifleSlowed: p.role === ROLE.HUNTER && this.time < p.rifleSlowUntil,
         slowFactor: slow.factor,
         noRun: slow.noRun,
       });
@@ -647,8 +666,10 @@ export class Game {
     stepDives(this);
     stepBalls(this, dt);
     stepTasers(this, dt);
+    stepRifles(this, dt);
     stepClones(this, dt);
-    stepSmokes(this);
+    stepSlime(this, dt);
+    if (this.ended) return;
     stepHomingTraps(this, dt);
     stepThreads(this, dt);
     if (this.ended) return;
@@ -677,11 +698,11 @@ export class Game {
       this.emit(null, { t: 'event', kind: 'trapped', id: s.id, name: s.name, x: r2(trap.x), z: r2(trap.z) });
     }
 
-    // 발전기 발견: 생존자가 수리 거리까지 다가가면 모든 생존자 지도에 표시
+    // 발전기 발견: 생존자 시야에 들어오거나 수리 거리까지 다가가면 모든 생존자 지도에 표시
     for (const s of this.players.values()) {
-      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
+      if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE || s.dummy) continue;
       for (const g of this.gens) {
-        if (!this.foundGens.has(g.id) && Math.hypot(g.x - s.x, g.z - s.z) <= RULES.GENERATOR_INTERACT_RANGE) {
+        if (!this.foundGens.has(g.id) && this.seesGenerator(s, g)) {
           this.foundGens.add(g.id);
           this.emitToSurvivors({ t: 'event', kind: 'genFound', genId: g.id, by: s.id });
         }
@@ -748,6 +769,18 @@ export class Game {
     ).length;
     if (escaped > 0) this.finish('survivors', 'timeUpEscaped');
     else this.finish('hunter', 'timeUp');
+  }
+
+  /** 생존자 시야: 바라보는 방향 ±60°, 맵 시야 거리(마을·백룸 75m, 폐광산 60m) 안, 벽에 가리지 않음. 2m 안이면 방향 무관 */
+  seesGenerator(s, g) {
+    const dx = g.x - s.x;
+    const dz = g.z - s.z;
+    const d = Math.hypot(dx, dz);
+    if (d <= RULES.GENERATOR_INTERACT_RANGE) return true;
+    if (d > (MAP_SIGHT.RANGE[this.map.theme] ?? MAP_SIGHT.RANGE.village)) return false;
+    const cos = (dx * -Math.sin(s.yaw) + dz * -Math.cos(s.yaw)) / d;
+    if (cos < Math.cos(MAP_SIGHT.HALF_ANGLE)) return false;
+    return !this.sightWorld.segmentBlocked(s.x, s.z, g.x, g.z);
   }
 
   nearestGen(s) {
@@ -887,7 +920,6 @@ export class Game {
       }),
       threads,
       clones: this.clones.map((c) => ({ id: c.id, o: c.owner, x: r2(c.x), z: r2(c.z), yaw: r2(c.yaw) })),
-      smokes: this.smokes.map((s) => ({ id: s.id, x: r2(s.x), z: r2(s.z) })),
       robots: this.robots.map((r) => ({ id: r.id, g: r.genId })),
       anchors: this.anchors.map((a) => ({ id: a.id, x: r2(a.x), z: r2(a.z) })),
       wisps: this.wisps.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z) })),
@@ -908,7 +940,9 @@ export class Game {
         forced: isForced(this, me) ? 1 : 0, // 서버가 내 위치를 움직이는 중
         disguised: me.disguiseAs ? 1 : 0,
         sskillLeft: r2(Math.max(0, me.sskillReadyAt - this.time)), // 생존자 직업 스킬 쿨타임
-        smoke: this.time < me.smokeUntil ? 1 : 0, // 술래: 연막 속
+        rifleSlow: r2(Math.max(0, me.rifleSlowUntil - this.time)), // 술래: 군인 소총에 맞아 느려진 남은 시간
+        rushLeft: r2(Math.max(0, me.rushUntil - this.time)), // 살덩이 스킬 남은 시간
+        ...(me.scls === 'soldier' ? { ammo: me.ammo, reloadLeft: r2(Math.max(0, me.reloadUntil - this.time)) } : {}),
         ...(me.carrying ? { carrying: me.carrying, carryLeft: r2(Math.max(0, me.carryUntil - this.time)) } : {}), // 팔척귀신
       };
       if (me.role === ROLE.SURVIVOR) {

@@ -328,6 +328,8 @@ const HUNTER_SPECS = {
   drowned: { skin: '#7d8f86', topColor: '#7a6d52', pants: '#6e6249', shoes: '#2e2c2a', hairStyle: 'none', top: 'jacket', noFace: true },
   // 팔척귀신: 아주 큰 키, 하얀 원피스, 챙 넓은 하얀 모자, 얼굴을 가린 긴 검은 머리
   palcheok: { skin: '#e9e6e1', topColor: '#f2f0ea', pants: '#f2f0ea', shoes: '#e9e6e1', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
+  // 살덩이: 껍질이 벗겨진 듯한 붉은 고깃덩이, 온몸에서 점액이 흘러내림
+  flesh: { skin: '#b4474b', topColor: '#9a3439', pants: '#7c2a2f', shoes: '#5e2024', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
 };
 
 export function hunterSpec(cls) {
@@ -599,6 +601,38 @@ export function dressHunter(cls, h) {
         [-0.03, 0.1, -0.125],
         [0.03, 0.1, -0.125],
       ], '#e8e8ff', 0.007);
+      break;
+    }
+    case 'flesh': {
+      // 울퉁불퉁한 살덩이 혹, 갈라진 입, 노란 눈, 몸에서 뚝뚝 떨어지는 초록빛 점액
+      const meat = solid('#b4474b', 0.45);
+      const dark = solid('#6e1d22', 0.5);
+      const slime = new THREE.MeshStandardMaterial({ color: '#9bd34a', roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
+      const lumps = [
+        [0.12, 1.35, -0.08, 0.11],
+        [-0.14, 1.25, -0.06, 0.1],
+        [0.05, 1.05, -0.12, 0.12],
+        [-0.08, 1.48, 0.1, 0.12],
+        [0.16, 1.12, 0.08, 0.1],
+        [-0.17, 0.98, 0.04, 0.09],
+        [0, 1.2, 0.14, 0.13],
+      ];
+      for (const [x, y, z, r] of lumps) root.add(mesh(new THREE.SphereGeometry(r, 10, 8), meat, x, y, z));
+      head.add(mesh(new THREE.SphereGeometry(0.13, 12, 10), meat, 0.02, 0.06, 0.01));
+      head.add(mesh(new THREE.SphereGeometry(0.07, 10, 8), meat, -0.08, 0.15, 0.02));
+      const mouth = mesh(new THREE.BoxGeometry(0.12, 0.025, 0.02), dark, 0, 0.0, -0.125);
+      mouth.rotation.z = 0.12;
+      head.add(mouth);
+      addGlowEyes(h, [
+        [-0.04, 0.09, -0.12],
+        [0.035, 0.07, -0.125],
+      ], '#ffe14a', 0.014);
+      // 흘러내리는 점액 방울
+      for (let i = 0; i < 8; i++) {
+        const drip = mesh(new THREE.SphereGeometry(0.025 + (i % 3) * 0.01, 8, 6), slime, -0.18 + i * 0.05, 0.85 + ((i * 37) % 7) * 0.08, -0.13 + (i % 2) * 0.26);
+        drip.scale.y = 1.8;
+        root.add(drip);
+      }
       break;
     }
     default:

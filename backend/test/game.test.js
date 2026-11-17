@@ -95,7 +95,7 @@ test('덫: 술래는 자기 덫을 밟지 않는다', () => {
   assert.ok(!game.isStunned(hunter));
 });
 
-test('방망이: 3번 맞으면 잡힘, 맞은 뒤 1초 무적, 공격 쿨타임 1초', () => {
+test('방망이: 3번 맞으면 잡힘, 맞은 뒤 1.5초 무적, 공격 쿨타임 1초', () => {
   const { game, hunter, s1 } = makeGame();
   faceOff(game, hunter, s1);
   game.handleAttack('p1');
@@ -103,14 +103,14 @@ test('방망이: 3번 맞으면 잡힘, 맞은 뒤 1초 무적, 공격 쿨타임
   game.handleAttack('p1'); // 쿨타임 중
   assert.equal(s1.hits, 1);
   hunter.attackReadyAt = game.time + 0.5; // 쿨타임을 앞당겨 무적만 확인
-  run(game, 0.55);
-  game.handleAttack('p1'); // 쿨타임은 끝났지만 무적 1초
+  run(game, 1.4);
+  game.handleAttack('p1'); // 쿨타임은 끝났지만 무적 1.5초
   assert.equal(s1.hits, 1);
   hunter.attackReadyAt = 0; // 헛스윙 쿨타임은 무시
-  run(game, 0.5);
+  run(game, 0.15);
   game.handleAttack('p1');
   assert.equal(s1.hits, 2);
-  run(game, 1.05);
+  run(game, 1.55);
   game.handleAttack('p1');
   assert.equal(s1.hits, 3);
   assert.equal(s1.status, STATUS.CAUGHT);
@@ -849,13 +849,13 @@ function field(cls, n = 3) {
   return g;
 }
 
-test('근접 공격 사거리·쿨타임: 미치광이 3m/1초, 선장 3m/0.5초, 유령 3m/0.5초, 살가죽 4m/1.5초, 질주자 4m/1초', () => {
+test('근접 공격 사거리·쿨타임: 미치광이 3m/1초, 선장 3m/0.5초, 유령 3m/0.5초, 살가죽 4m/1.5초, 질주자 4m/2.7초', () => {
   for (const [cls, range, cd] of [
     ['maniac', 3, 1],
     ['captain', 3, 0.5],
     ['ghost', 3, 0.5],
     ['skinwalker', 4, 1.5],
-    ['sprinter', 4, 1],
+    ['sprinter', 4, 2.7],
   ]) {
     const { game, hunter, s1 } = field(cls);
     s1.x = 0;
@@ -968,7 +968,7 @@ test('선장: 날아가는 닻의 밧줄에 닿아도 끌려옴 (닻은 계속 �
   {
     const { game, hunter, s1 } = field('captain');
     game.handleSkill('p1', { yaw: 0 });
-    run(game, 0.3);
+    run(game, 0.15); // 초속 50m: 약 8m
     // 선장이 옆으로 비켜서 밧줄이 벽 너머를 지나게 됨
     hunter.x = 6;
     game.world.add({ x: 4, z: -1.5, w: 0.3, d: 6, h: 1.9 });
@@ -1221,24 +1221,24 @@ test('음성: 투명화 중인 암살자는 생존자에게 안 들리고 동료
   assert.ok(game.voiceFor('p1').p3[0] > 0, '암살자는 생존자 목소리를 들음');
 });
 
-test('밸런스: 술래 20km/h, 생존자 1초 무적', () => {
+test('밸런스: 술래 20km/h, 생존자 1.5초 무적', () => {
   assert.ok(Math.abs(RULES.HUNTER_SPEED - 20 / 3.6) < 1e-9);
-  assert.equal(RULES.HIT_INVULNERABLE, 1);
+  assert.equal(RULES.HIT_INVULNERABLE, 1.5);
   const { game, hunter } = field('maniac');
   run(game, 2);
   assert.ok(Math.abs(hunter.budget - (20 / 3.6) * 0.6) < 0.01, '술래 이동 허용량');
 });
 
-test('푸드파이터: 걷기·달리기 모두 이동 속도 20% 감소', () => {
+test('푸드파이터: 걷기·달리기 모두 이동 속도 10% 감소', () => {
   const { game, s1, s2 } = makeGame();
   s1.scls = 'foodfighter';
   run(game, 2);
-  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_WALK_SPEED * 0.8 * 0.6) < 0.01, '걷기 -20%');
+  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_WALK_SPEED * 0.9 * 0.6) < 0.01, '걷기 -10%');
   assert.ok(Math.abs(s2.budget - RULES.SURVIVOR_WALK_SPEED * 0.6) < 0.01, '다른 직업은 그대로');
   s1.wantsRun = true;
   s1.stamina = 5;
   run(game, 1);
-  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_RUN_SPEED * 0.8 * 0.6) < 0.01, '달리기 -20%');
+  assert.ok(Math.abs(s1.budget - RULES.SURVIVOR_RUN_SPEED * 0.9 * 0.6) < 0.01, '달리기 -10%');
 });
 
 test('살가죽: 변장 중 발전기 옆에 멈춰 서 있으면 수리하는 척 (진행도는 그대로)', () => {

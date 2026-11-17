@@ -89,6 +89,7 @@ export class Controls {
     const k = this.keys;
     if (name === 'action') return this.isHunter ? k.has('KeyE') : k.has('ShiftLeft') || k.has('ShiftRight');
     if (name === 'main') return !this.isHunter && k.has('KeyE');
+    if (name === 'sskill') return !this.isHunter && k.has('KeyQ'); // 군인 소총: 누르고 있으면 연사
     return false;
   }
 

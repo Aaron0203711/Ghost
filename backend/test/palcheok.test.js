@@ -52,7 +52,7 @@ test('팔척귀신: 직업 목록, 주먹 3m 쿨타임 1.3초, 눈높이 2.3m', 
   run(game, 1.1);
   game.handleAttack('p1');
   assert.equal(s.hits, 1, '쿨타임 1.3초');
-  run(game, 0.3);
+  run(game, 0.45); // 무적 1.5초가 끝난 뒤
   game.handleAttack('p1');
   assert.equal(s.hits, 2);
 });

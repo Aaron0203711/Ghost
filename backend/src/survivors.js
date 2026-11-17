@@ -1,5 +1,5 @@
-// 생존자 직업 스킬: 의사(회복), 경찰(테이저건), 군인(연막탄), 닌자(분신), 엔지니어(로봇).
-// 푸드파이터는 패시브(체력 +4칸, 스태미나 5초)라 스킬이 없다. 판정은 모두 서버가 한다.
+// 생존자 직업 스킬: 의사(회복), 경찰(테이저건), 군인(소총), 닌자(분신), 엔지니어(로봇).
+// 푸드파이터는 패시브(체력 +4칸, 스태미나 8초)라 스킬이 없다. 판정은 모두 서버가 한다.
 
 import {
   RULES,
@@ -40,7 +40,7 @@ export function useSurvivorSkill(game, p, msg = {}) {
       ok = fireTaser(game, p);
       break;
     case SURVIVOR_CLASS.SOLDIER:
-      ok = throwSmoke(game, p);
+      ok = fireRifle(game, p);
       break;
     case SURVIVOR_CLASS.NINJA:
       ok = summonClone(game, p);
@@ -51,7 +51,7 @@ export function useSurvivorSkill(game, p, msg = {}) {
     default:
       return false; // 푸드파이터: 패시브
   }
-  if (ok) p.sskillReadyAt = game.time + survivorSkillCooldown(p.scls);
+  if (ok) p.sskillReadyAt = Math.max(game.time + survivorSkillCooldown(p.scls), p.reloadUntil); // 군인: 장전 중이면 장전이 끝난 뒤
   return ok;
 }
 
@@ -137,20 +137,50 @@ function stunHunter(game, h) {
 
 // ───────────── 군인 ─────────────
 
-function throwSmoke(game, p) {
-  const s = { id: ++game.smokeSeq, owner: p.id, x: p.x, z: p.z, until: game.time + SOLDIER.DURATION };
-  game.smokes.push(s);
-  game.emit(null, { t: 'event', kind: 'smoke', id: p.id, sid: s.id, x: r2(s.x), z: r2(s.z) });
+/** 소총 한 발: 10발을 다 쓰면 5초 동안 자동 장전 (무제한). 장전 중이면 쏠 수 없다 */
+function fireRifle(game, p) {
+  if (game.time < p.reloadUntil || p.ammo <= 0) return false;
+  p.ammo--;
+  if (p.ammo === 0) p.reloadUntil = game.time + SOLDIER.RELOAD;
+  const dir = forward(p.yaw);
+  const b = { id: ++game.rifleSeq, owner: p.id, x: p.x + dir.x * 0.3, z: p.z + dir.z * 0.3, dir, traveled: 0 };
+  game.rifleShots.push(b);
+  game.emit(null, { t: 'event', kind: 'rifle', id: p.id, rid: b.id, x: r2(b.x), z: r2(b.z), dx: r2(dir.x), dz: r2(dir.z), ammo: p.ammo });
   return true;
 }
 
-/** 연막 안의 술래는 화면이 뿌옇게 되고, 나오면 1초 뒤 풀린다 */
-export function stepSmokes(game) {
-  game.smokes = game.smokes.filter((s) => game.time < s.until);
-  for (const s of game.smokes) {
-    for (const h of game.players.values()) {
-      if (h.role !== ROLE.HUNTER || !alive(h)) continue;
-      if (Math.hypot(h.x - s.x, h.z - s.z) <= SOLDIER.RADIUS) h.smokeUntil = game.time + SOLDIER.LINGER;
+/** 소총 탄: 초속 150m로 30m까지, 벽에 막힘. 맞은 술래는 2초 동안 29.74% 감속 (다시 맞으면 2초로 초기화). 장전 완료 처리 */
+export function stepRifles(game, dt) {
+  for (const p of game.players.values()) {
+    if (p.reloadUntil > 0 && game.time >= p.reloadUntil) {
+      p.reloadUntil = 0;
+      p.ammo = SOLDIER.MAG;
+      game.emit(p.id, { t: 'event', kind: 'reloaded', id: p.id, ammo: p.ammo });
+    }
+  }
+  const STEP = 0.25;
+  for (const b of [...game.rifleShots]) {
+    let remain = SOLDIER.SPEED * dt;
+    let end = null;
+    while (remain > 0 && !end) {
+      const s = Math.min(STEP, remain);
+      remain -= s;
+      b.x += b.dir.x * s;
+      b.z += b.dir.z * s;
+      b.traveled += s;
+      for (const h of game.players.values()) {
+        if (h.role !== ROLE.HUNTER || !alive(h) || h.dive) continue; // 땅속의 익사자는 안 맞음
+        if (Math.hypot(h.x - b.x, h.z - b.z) > SOLDIER.RADIUS + RULES.PLAYER_RADIUS) continue;
+        h.rifleSlowUntil = game.time + SOLDIER.SLOW_TIME;
+        end = { hit: h.id };
+        break;
+      }
+      if (!end && game.world.pointBlocked(b.x, 1.2, b.z)) end = { hit: null };
+      if (!end && b.traveled >= SOLDIER.RANGE) end = { hit: null };
+    }
+    if (end) {
+      game.rifleShots.splice(game.rifleShots.indexOf(b), 1);
+      game.emit(null, { t: 'event', kind: 'rifleEnd', rid: b.id, id: b.owner, x: r2(b.x), z: r2(b.z), hit: end.hit });
     }
   }
 }

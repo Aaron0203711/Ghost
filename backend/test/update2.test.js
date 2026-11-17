@@ -378,44 +378,72 @@ test('경찰: 테이저건은 10m까지, 맞은 술래는 4초간 이동·공격
   assert.equal(c.hits, 1);
 });
 
-test('군인: 지름 3m 연막이 5초 유지, 안에 있는 술래는 화면이 뿌옇고 나오면 1초 뒤 풀림 (쿨타임 25초)', () => {
-  const { game, p } = makeGame({ n: 2, scls: ['soldier'] });
+test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 10발 쓰면 5초 장전', () => {
+  const { game, p, ev } = makeGame({ n: 2, scls: ['soldier'] });
   const h = p('p1');
   const so = p('p2');
   const spot = clearSpot(game, [h, so]);
-  Object.assign(so, { x: spot.x, z: spot.z });
-  h.x = spot.x + 1;
-  h.z = spot.z;
-  game.handleSkill('p2');
-  game.tick(DT);
-  assert.equal(game.snapshotFor('p1').me.smoke, 1);
-  h.x = spot.x + 3;
-  run(game, 0.9);
-  assert.equal(game.snapshotFor('p1').me.smoke, 1, '나와도 1초간 유지');
-  run(game, 0.2);
-  assert.equal(game.snapshotFor('p1').me.smoke, 0);
-  h.x = spot.x + 1;
-  run(game, SOLDIER.DURATION);
-  assert.equal(game.smokes.length, 0, '5초 뒤 사라짐');
-  run(game, 1.1);
-  assert.equal(game.snapshotFor('p1').me.smoke, 0);
-  game.handleSkill('p2');
-  assert.equal(game.smokes.length, 0, '쿨타임 25초');
+  Object.assign(so, { x: spot.x, z: spot.z, yaw: 0 });
+  Object.assign(h, { x: spot.x, z: spot.z - 10 });
+  assert.equal(so.ammo, SOLDIER.MAG);
+  game.handleSkill('p2', { yaw: 0 });
+  assert.equal(so.ammo, 9);
+  game.handleSkill('p2', { yaw: 0 });
+  assert.equal(so.ammo, 9, '연사 간격 0.5초');
+  run(game, 0.15);
+  assert.equal(ev('rifleEnd')[0].msg.hit, 'p1');
+  assert.equal(h.hits, 0, '피해 없음');
+  assert.ok(Math.abs(h.rifleSlowUntil - game.time - SOLDIER.SLOW_TIME) < 0.11);
+  run(game, 1); // 이동 허용량이 다 찰 때까지
+  const full = speedFor('hunter', false, { cls: 'maniac' });
+  assert.ok(Math.abs(h.budget - full * SOLDIER.SLOW_FACTOR * 0.6) < 0.01, '이동 속도 29.74% 감소');
+  assert.ok(Math.abs(SOLDIER.SLOW_FACTOR - 0.7026) < 1e-9);
+  // 감속 중 다시 맞으면 2초로 초기화
+  run(game, 0.5);
+  game.handleSkill('p2', { yaw: 0 });
+  run(game, 0.15);
+  assert.ok(Math.abs(h.rifleSlowUntil - game.time - SOLDIER.SLOW_TIME) < 0.11, '다시 2초');
+  run(game, SOLDIER.SLOW_TIME + 0.1);
+  assert.ok(Math.abs(h.budget - full * 0.6) < 0.01, '2초 뒤 원래 속도');
+  // 30m 밖은 안 닿음
+  h.z = spot.z - 33;
+  game.handleSkill('p2', { yaw: 0 });
+  run(game, 0.4);
+  assert.equal(ev('rifleEnd').at(-1).msg.hit, null, '30m까지');
+  // 남은 탄을 다 쓰면 5초 장전
+  while (so.ammo > 0) {
+    so.sskillReadyAt = 0;
+    game.handleSkill('p2', { yaw: Math.PI });
+  }
+  so.sskillReadyAt = 0;
+  game.handleSkill('p2', { yaw: Math.PI });
+  assert.equal(ev('rifle').length, SOLDIER.MAG, '10발까지');
+  assert.ok(so.reloadUntil > game.time);
+  run(game, SOLDIER.RELOAD - 0.2);
+  assert.equal(so.ammo, 0, '장전 중');
+  run(game, 0.3);
+  assert.equal(so.ammo, SOLDIER.MAG, '5초 뒤 10발');
+  assert.equal(ev('reloaded').length, 1);
+  game.handleSkill('p2', { yaw: Math.PI });
+  assert.equal(so.ammo, 9, '장전은 무제한');
 });
 
-test('푸드파이터: 체력 +4칸(7칸, 5인 규칙이면 6칸), 스태미나 5초, 7.5초에 가득', () => {
+test('푸드파이터: 체력 +4칸(7칸, 5인 규칙이면 6칸), 스태미나 8초, 12초에 가득', () => {
   const { game, p } = makeGame({ n: 3, scls: ['foodfighter', 'doctor'] });
   const f = p('p2');
   assert.equal(f.maxHits, 7);
   assert.equal(p('p3').maxHits, 3);
-  assert.equal(f.stamina, 5);
+  assert.equal(f.stamina, 8);
   f.wantsRun = true;
   f.moving = true;
-  run(game, 6);
-  assert.equal(f.stamina, 0);
+  run(game, 8.05);
+  assert.equal(f.stamina, 0, '8초 달리면 바닥');
   f.wantsRun = false;
-  run(game, 1 + 7.5 + 0.1);
-  assert.equal(f.stamina, 5);
+  f.regenWait = RULES.STAMINA_REGEN_DELAY;
+  run(game, 1 + 11.8);
+  assert.ok(f.stamina < 8, '12초 전에는 덜 참');
+  run(game, 0.3);
+  assert.equal(f.stamina, 8);
   f.hits = 6;
   f.invulnUntil = 0;
   game.damage(f, 'p1', 1);

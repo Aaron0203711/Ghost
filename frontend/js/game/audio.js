@@ -151,9 +151,14 @@ export const sfx = {
     noiseBurst(0.08, 0.5 * vol, 3000);
     tone({ freq: 120, to: 40, dur: 0.3, type: 'square', vol: 0.25 * vol });
   },
-  hit: () => {
-    tone({ freq: 160, to: 60, dur: 0.25, type: 'square', vol: 0.25 });
-    noiseBurst(0.1, 0.35, 400);
+  hit: (vol = 1) => {
+    tone({ freq: 160, to: 60, dur: 0.25, type: 'square', vol: 0.25 * vol });
+    noiseBurst(0.1, 0.35 * vol, 400);
+  },
+  // 군인 소총: 탄창을 다 쓰면 철컥
+  reload: () => {
+    tone({ freq: 700, to: 500, dur: 0.06, type: 'square', vol: 0.1 });
+    tone({ freq: 500, to: 900, dur: 0.08, type: 'square', vol: 0.1, delay: 0.12 });
   },
   trapSnap: () => {
     noiseBurst(0.08, 0.5, 2500);

@@ -34,7 +34,7 @@ export const RULES = Object.freeze({
   ATTACK_RANGE: 3.0,
   ATTACK_HALF_ANGLE: (55 * Math.PI) / 180,
   HITS_TO_CATCH: 3, // 4명 이하일 때 (5명 이상이면 matchRules 참고)
-  HIT_INVULNERABLE: 1,
+  HIT_INVULNERABLE: 1.5, // 맞은 뒤 1.5초 무적 (살덩이 점액은 무시)
 
   // 제한 시간: 7분 안에 아무도 탈출하지 못하면 술래 승리
   MATCH_TIME: 7 * 60,
@@ -64,7 +64,7 @@ export const STATUS = Object.freeze({
 
 /**
  * 스태미나 1틱 갱신. 서버와 클라이언트 예측이 같은 계산을 쓴다.
- * max: 최대 스태미나(초). 푸드파이터는 5초. 초당 회복량은 모두 같다 (10초분을 15초에)
+ * max: 최대 스태미나(초). 푸드파이터는 8초. 초당 회복량은 모두 같다 (10초분을 15초에)
  */
 export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
   const running = wantsRun && moving && s.stamina > 0;
@@ -83,23 +83,30 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
  * 이동 속도 (m/s). 술래는 직업과 상태에 따라 달라진다.
  * mods: { cls, aiming(저격수 조준 → 절반), invisible(암살자 투명 → 1.5배),
  *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도),
- *         scls(생존자 직업: 푸드파이터는 20% 느림),
- *         slowFactor(생존자 감속 배율: 덫이 풀린 뒤, 조준 저격, 실 함정), noRun(생존자 달리기 불가) }
+ *         scls(생존자 직업: 푸드파이터는 10% 느림),
+ *         slowFactor(생존자 감속 배율: 덫이 풀린 뒤, 조준 저격, 실 함정), noRun(생존자 달리기 불가),
+ *         rushing(살덩이 스킬 → 40km/h), rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐) }
  * 질주자는 기본 10% 빠르다.
  */
 export function speedFor(role, running, mods = {}) {
   if (role === ROLE.HUNTER) {
-    if (mods.aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
-    if (mods.slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
-    if (mods.wallSlowed) return RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR;
-    if (mods.invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
-    if (mods.disguised) return RULES.SURVIVOR_WALK_SPEED; // 변장 중에는 생존자 걷기 속도 그대로
-    if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
-    return RULES.HUNTER_SPEED;
+    // 군인 소총에 맞은 술래: 그때 속도에서 29.74% 감소 (다른 속도 변화와 곱해짐)
+    return hunterBaseSpeed(mods) * (mods.rifleSlowed ? SOLDIER.SLOW_FACTOR : 1);
   }
   const base = running && !mods.noRun ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
   const cls = mods.scls === SURVIVOR_CLASS.FOODFIGHTER ? FOODFIGHTER.SPEED_FACTOR : 1;
   return base * cls * (mods.slowFactor ?? 1);
+}
+
+function hunterBaseSpeed(mods) {
+  if (mods.aiming) return RULES.HUNTER_SPEED * SNIPER.AIM_SPEED_FACTOR;
+  if (mods.slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
+  if (mods.wallSlowed) return RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR;
+  if (mods.invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
+  if (mods.disguised) return RULES.SURVIVOR_WALK_SPEED; // 변장 중에는 생존자 걷기 속도 그대로
+  if (mods.rushing) return FLESH.RUSH_SPEED; // 살덩이 스킬: 시속 40km
+  if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
+  return RULES.HUNTER_SPEED;
 }
 
 /** 딱 5명(술래 포함)이면 발전기 7개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
@@ -138,6 +145,7 @@ export const HUNTER_CLASS = Object.freeze({
   CLOWN: 'clown',
   DROWNED: 'drowned',
   PALCHEOK: 'palcheok',
+  FLESH: 'flesh',
 });
 
 /** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
@@ -147,7 +155,7 @@ export const MELEE = Object.freeze({
   captain: { range: 3.0, cooldown: 0.5 }, // 후크
   ghost: { range: 3.0, cooldown: 0.5 }, // 할퀴기
   skinwalker: { range: 4.0, cooldown: 1.5 }, // 갈고리
-  sprinter: { range: 4.0, cooldown: 1 }, // 발차기
+  sprinter: { range: 4.0, cooldown: 2.7 }, // 발차기
   drowned: { range: 3.0, cooldown: 1.5 }, // 작살 (미치광이와 같은 사거리)
   palcheok: { range: 3.0, cooldown: 1.3 }, // 주먹
 });
@@ -224,7 +232,7 @@ export const SYNERGY_INFO = Object.freeze({
 
 /** 도시괴담: 술래 2명이 처녀귀신(ghost)과 팔척귀신일 때.
  *  처녀귀신 유도탄이 시야와 상관없이 살아 있는 모든 생존자에게 시속 14km로 5초 동안 날아간다.
- *  팔척귀신이 던진 생존자가 멈춘 자리(충돌·벽·착지 모두)에 지름 5m로 땅이 갈라져 원 안 생존자 모두 1칸 (맞은 뒤 1초 무적이면 막힘) */
+ *  팔척귀신이 던진 생존자가 멈춘 자리(충돌·벽·착지 모두)에 지름 5m로 땅이 갈라져 원 안 생존자 모두 1칸 (맞은 뒤 1.5초 무적이면 막힘) */
 export const URBAN_LEGEND = Object.freeze({ WISP_SPEED: kmh(14), CRACK_RADIUS: 2.5, CRACK_DAMAGE: 1 });
 
 /** 익사자: 작살 근접 공격 + 다이빙.
@@ -266,6 +274,9 @@ export const PALCHEOK = Object.freeze({
   SKILL_COOLDOWN: 9,
 });
 
+/** 생존자 지도: 시야(바라보는 방향 ±60°, 맵 시야 거리 안, 벽에 가리지 않음)에 들어온 발전기를 표시 */
+export const MAP_SIGHT = Object.freeze({ HALF_ANGLE: (60 * Math.PI) / 180, RANGE: { village: 75, mine: 60, backrooms: 75 } });
+
 /** 시점 높이: 술래 직업(cls)이 있으면 1.8m(팔척귀신 2.3m), 생존자(cls 없음)는 1.6m */
 export function eyeHeightFor(cls) {
   if (cls === HUNTER_CLASS.PALCHEOK) return PALCHEOK.EYE_HEIGHT;
@@ -274,7 +285,7 @@ export function eyeHeightFor(cls) {
 
 /** 선장: 닻을 던져 맞은 생존자를 1.5초 동안 자기 앞까지 끌고 온다 (피해 없음) */
 export const CAPTAIN = Object.freeze({
-  ANCHOR_SPEED: 25,
+  ANCHOR_SPEED: 50,
   ANCHOR_RANGE: 20,
   ANCHOR_RADIUS: 0.8,
   ROPE_RADIUS: 0.15, // 날아가는 닻과 선장 사이 밧줄. 닿아도 끌려온다
@@ -326,6 +337,28 @@ export const SPRINTER = Object.freeze({
   SKILL_COOLDOWN: 15,
 });
 
+/**
+ * 살덩이: 기본 공격 없음. 패시브로 움직이는 동안 1초마다 발밑에 점액 웅덩이(처음 반경 2m)를 남긴다.
+ * 웅덩이는 사라지지 않고 매초 반경이 0.05m씩 커진다(최대 없음). 웅덩이 안의 생존자는 매초 0.2칸
+ * (여러 웅덩이에 걸쳐도 0.2칸, 점프 중에도 받음, 맞은 뒤 무적 시간을 무시하고 무적도 주지 않음).
+ * 스킬: 7.5초 동안 이동 속도 시속 40km. 쿨타임 7초(끝난 뒤부터)
+ */
+export const FLESH = Object.freeze({
+  SLIME_INTERVAL: 1, // 움직인 시간 1초마다 웅덩이 하나
+  SLIME_RADIUS: 2,
+  SLIME_GROWTH: 0.05, // 매초 반경 +0.05m
+  SLIME_DAMAGE: 0.2, // 매초 0.2칸
+  SLIME_TICK: 1,
+  RUSH_SPEED: kmh(40),
+  RUSH_TIME: 7.5,
+  SKILL_COOLDOWN: 7, // 스킬이 끝난 뒤부터
+});
+
+/** 점액 웅덩이 반경: born은 생긴 시각 */
+export function slimeRadius(born, now) {
+  return FLESH.SLIME_RADIUS + FLESH.SLIME_GROWTH * Math.max(0, now - born);
+}
+
 /** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
 export const CLASS_PICK_TIME = 15;
 
@@ -365,6 +398,7 @@ export const CLASS_INFO = Object.freeze({
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
   drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 4m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
+  flesh: { name: '살덩이', icon: '🫀', desc: '기본 공격 없음 · 움직이면 매초 점액 웅덩이(반경 2m, 계속 커짐), 안의 생존자 매초 0.2칸(무적 무시) · 7.5초 동안 시속 40km (쿨타임 7초)' },
   palcheok: { name: '팔척귀신', icon: '👒', desc: '키가 커서 담장 너머가 보임 · 주먹 3m (쿨타임 1.3초) · 생존자를 5초까지 들고 다니다 15m 던짐, 다른 생존자를 맞히면 둘 다 1칸 (쿨타임 9초)' },
 });
 
@@ -385,11 +419,21 @@ export const DOCTOR = Object.freeze({ COOLDOWN: 23, RANGE: 5, HEAL: 1, AIM_HALF_
 /** 경찰: 테이저건. 초속 30m로 10m까지, 벽에 막힘. 맞은 술래는 4초 스턴 (이동·공격·스킬 불가) */
 export const POLICE = Object.freeze({ COOLDOWN: 24.5, RANGE: 10, SPEED: 30, RADIUS: 0.3, STUN: 4 });
 
-/** 군인: 연막탄. 지름 3m 연막이 5초 유지, 안에 있는 술래는 화면이 매우 뿌옇게 (나오면 1초 뒤 풀림) */
-export const SOLDIER = Object.freeze({ COOLDOWN: 28, RADIUS: 1.5, DURATION: 5, LINGER: 1 });
+/** 군인: 소총 10발. 0.5초마다 한 발, 총알은 초속 150m로 30m까지(벽에 막힘), 피해 없음.
+ *  맞은 술래는 2초 동안 이동 속도 29.74% 감소(다시 맞으면 2초로 초기화). 10발을 다 쓰면 5초 동안 자동 장전(무제한) */
+export const SOLDIER = Object.freeze({
+  MAG: 10,
+  FIRE_INTERVAL: 0.5,
+  RELOAD: 5,
+  SPEED: 150,
+  RANGE: 30,
+  RADIUS: 0.2,
+  SLOW_FACTOR: 1 - 0.2974,
+  SLOW_TIME: 2,
+});
 
-/** 푸드파이터: 체력 +4칸 (보통 7칸, 5인 규칙이면 6칸), 스태미나 최대 5초, 이동 속도 20% 감소 */
-export const FOODFIGHTER = Object.freeze({ BONUS_HP: 4, STAMINA_MAX: 5, SPEED_FACTOR: 0.8 });
+/** 푸드파이터: 체력 +4칸 (보통 7칸, 5인 규칙이면 6칸), 스태미나 최대 8초, 이동 속도 10% 감소 */
+export const FOODFIGHTER = Object.freeze({ BONUS_HP: 4, STAMINA_MAX: 8, SPEED_FACTOR: 0.9 });
 
 /** 닌자: 분신이 5초 동안 소환한 방향으로 걷기 속도로 직진. 술래 공격에 맞으면 사라짐 */
 export const NINJA = Object.freeze({ COOLDOWN: 13, LIFE: 5, HIT_RADIUS: 0.45 });
@@ -400,8 +444,8 @@ export const ENGINEER = Object.freeze({ COOLDOWN: 13, DURATION: 5, RATE: 0.04, R
 export const SURVIVOR_CLASS_INFO = Object.freeze({
   doctor: { name: '의사', icon: '🩺', skill: '회복', desc: '5m 안의 생존자(없으면 자신)를 한 칸 회복 · 쿨타임 23초' },
   police: { name: '경찰', icon: '👮', skill: '테이저건', desc: '테이저건 10m · 맞은 술래 4초 스턴 · 쿨타임 24.5초' },
-  soldier: { name: '군인', icon: '🪖', skill: '연막탄', desc: '지름 3m 연막 5초 · 안에 있는 술래 화면이 뿌옇게 · 쿨타임 28초' },
-  foodfighter: { name: '푸드파이터', icon: '🍔', skill: null, desc: '체력 +4칸 (보통 7칸) · 대신 스태미나 5초 · 이동 속도 -20%' },
+  soldier: { name: '군인', icon: '🪖', skill: '소총', desc: '소총 10발(0.5초마다, 30m) · 맞은 술래 2초간 이동 속도 -29.74% · 다 쓰면 5초 장전' },
+  foodfighter: { name: '푸드파이터', icon: '🍔', skill: null, desc: '체력 +4칸 (보통 7칸) · 대신 스태미나 8초 · 이동 속도 -10%' },
   ninja: { name: '닌자', icon: '🌀', skill: '분신', desc: '5초 동안 앞으로 걸어가는 분신 소환 · 쿨타임 13초' },
   engineer: { name: '엔지니어', icon: '🔧', skill: '로봇', desc: '발전기에 로봇 부착, 5초간 20% 수리 · 쿨타임 13초' },
 });
@@ -414,7 +458,7 @@ export function validSurvivorClass(c) {
 
 /** 생존자 직업 스킬 쿨타임 (푸드파이터는 패시브) */
 export function survivorSkillCooldown(cls) {
-  return { doctor: DOCTOR.COOLDOWN, police: POLICE.COOLDOWN, soldier: SOLDIER.COOLDOWN, ninja: NINJA.COOLDOWN, engineer: ENGINEER.COOLDOWN }[cls] ?? 0;
+  return { doctor: DOCTOR.COOLDOWN, police: POLICE.COOLDOWN, soldier: SOLDIER.FIRE_INTERVAL, ninja: NINJA.COOLDOWN, engineer: ENGINEER.COOLDOWN }[cls] ?? 0;
 }
 
 /** 생존자 최대 체력(칸)과 스태미나(초) */
@@ -456,7 +500,7 @@ export function voiceGain(dist) {
 /**
  * 훈련장: 혼자 들어가 술래나 생존자 직업을 체험한다. 제한 시간·승패 없음, 판 규칙은 기본(체력 3칸, 발전기 5개, 피해 감소 없음).
  * - 술래 체험: 생존자 모양 허수아비가 내 시작 위치 주변 여러 거리에 제자리로 서 있다. 체력을 다 깎으면 쓰러졌다가 3초 뒤 제자리에서 다시 일어남
- * - 생존자 체험: 공격하지 않는 술래 허수아비(테이저건·연막 대상)와 발전기. 발전기를 다 켜고 탈출하면 처음부터 다시
+ * - 생존자 체험: 공격하지 않는 술래 허수아비(테이저건·소총 대상)와 발전기. 발전기를 다 켜고 탈출하면 처음부터 다시
  */
 export const TRAINING = Object.freeze({
   DUMMY_DISTANCES: [4, 7, 11, 16, 24, 35], // 술래 체험: 허수아비 6개 (저격 30m 연습용으로 먼 것도)

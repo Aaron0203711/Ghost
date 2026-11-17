@@ -2347,7 +2347,7 @@ body.touch #cd-sskill,
 /* 반 칸 하트 (광대 공) */
 #hearts i {
   font-style: normal;
-  background: linear-gradient(90deg, #ff4d5e 50%, rgba(40, 40, 40, 0.8) 50%);
+  background: linear-gradient(90deg, #ff4d5e var(--p, 50%), rgba(40, 40, 40, 0.8) var(--p, 50%));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -2358,20 +2358,70 @@ body.touch #cd-sskill,
   letter-spacing: 1px;
 }
 
-/* 술래: 군인 연막 속이면 화면이 매우 뿌옇게 */
-#vignette-smoke {
+/* 생존자: 살덩이 점액 웅덩이 안이면 화면 가장자리가 초록빛으로 끈적하게 */
+#vignette-ooze {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.35s ease;
-  background: rgba(205, 208, 212, 0.86);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  transition: opacity 0.3s ease;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(110, 160, 40, 0.5));
 }
 
-#screen-game.smoked #vignette-smoke {
+#screen-game.in-slime #vignette-ooze {
   opacity: 1;
+}
+
+#vignette-slime {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(150, 200, 60, 0.6));
+}
+
+/* 맞으면 체력 칸이 하얗게 번쩍였다가 다시 까매진다 */
+#hearts.flash .lost {
+  animation: heart-flash 0.9s ease-out;
+}
+
+@keyframes heart-flash {
+  0%,
+  30% {
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    text-shadow: 0 0 10px #fff, 0 0 3px #fff;
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+#hearts b,
+#hearts i,
+#hearts s {
+  display: inline-block;
+}
+
+/* 술래: 군인 소총에 맞아 느려진 동안 / 살덩이 돌진 중 */
+#screen-game.h-slowed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(255, 170, 60, 0.28));
+}
+
+#screen-game.rushing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(180, 40, 50, 0.3));
+}
+
+/* 살덩이: 기본 공격 버튼 없음 */
+#screen-game.cls-noattack #btn-main,
+#screen-game.cls-noattack #cd-main {
+  opacity: 0.25;
+  pointer-events: none;
 }
 
 /* 생존자 감속 중 (덫이 풀린 뒤, 조준 저격, 광대 실) */

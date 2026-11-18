@@ -6,6 +6,7 @@ import { matchRules, LARGE_MATCH, DUO_MATCH, DUEL_MATCH, CLASS_INFO, SURVIVOR_CL
 import { Voice } from './game/voice.js';
 import { initPWA } from './pwa.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
+import { GFX_HIGH, GFX_NORMAL, webgpuSupport, preloadHQ, supportText } from './game/gfx.js';
 
 const $ = (id) => document.getElementById(id);
 const net = new Net();
@@ -496,7 +497,36 @@ function syncSettingsUi() {
   setBgmEnabled(settings.bgm);
   setSoundEnabled(settings.sound);
   syncGyroUi();
+  syncGfxUi();
 }
+
+// 그래픽 품질: 고품질(WebGPU)은 지원하는 기기에서만 고를 수 있고, 다음 판부터 적용된다.
+// 고품질 모듈은 크기가 커서 고품질을 고른 사람만 미리 내려받는다.
+let gfxSupport = null;
+webgpuSupport().then((s) => {
+  gfxSupport = s;
+  syncGfxUi();
+});
+if (settings.graphics === GFX_HIGH) preloadHQ();
+
+function syncGfxUi() {
+  const ok = !!gfxSupport?.ok;
+  const cur = settings.graphics === GFX_HIGH && ok ? GFX_HIGH : GFX_NORMAL;
+  for (const b of $('gfx-choices').querySelectorAll('[data-gfx]')) {
+    b.classList.toggle('on', b.dataset.gfx === cur);
+    if (b.dataset.gfx === GFX_HIGH) b.disabled = !ok;
+  }
+  let text = supportText(gfxSupport, window.matchMedia?.('(pointer: coarse)').matches);
+  if (ok && session && session.gfxMode !== cur) text = `바뀐 화질은 다음 판부터 적용돼요. ${text}`;
+  $('gfx-status').textContent = text;
+}
+$('gfx-choices').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-gfx]');
+  if (!b || b.disabled) return;
+  saveSettings({ graphics: b.dataset.gfx });
+  if (settings.graphics === GFX_HIGH) preloadHQ();
+  syncGfxUi();
+});
 
 function syncGyroUi() {
   const box = $('gyro-settings');

@@ -1,0 +1,312 @@
+// 고품질 그래픽 (WebGPU 렌더러)
+// 장면을 한 번 그리면서 색·확산색·노멀(+반사 세기)·속도를 함께 기록(MRT)하고,
+//   SSGI: 화면에 보이는 빛이 주변 벽·바닥으로 번지는 간접광 + 구석·틈의 그늘(AO)
+//   SSR : 물웅덩이·논에 비치는 반사
+//   TRAA: 여러 프레임을 겹쳐 계단 현상과 노이즈를 지움
+// 순서로 합성한다. 프레임이 낮으면 해상도와 효과 단계를 스스로 낮춘다.
+// 공정성: 고품질이 어둠 속을 더 잘(또는 덜) 보이게 하면 안 되므로, 그늘로 줄어든 화면 평균 밝기를
+// 맵별 보정값(comp)으로 되돌려 보통 화질과 같게 맞춘다.
+import * as THREE from 'three';
+
+const FPS_LOW = 40; // 이보다 느리면 효과 단계를 한 단계 낮춘다
+const WARMUP = 4; // 시작·단계 변경 뒤 셰이더를 준비하는 동안은 재지 않음 (초)
+const WINDOW = 3; // 이 시간 동안의 평균 프레임으로 판단 (초)
+
+// 맵별 효과 세기: radius(m)·gi(간접광)·ao(그늘을 얼마나 적용할지 0~1).
+// 보통 화질과 화면 전체 밝기가 비슷하도록 맞춘 값 (고품질이 더 밝거나 어두우면 불공평)
+const HQ_PRESET = {
+  village: { radius: 1, gi: 6, ao: 0.85, comp: 1.1 },
+  mine: { radius: 1, gi: 6, ao: 0.85, comp: 1.3 },
+  backrooms: { radius: 1, gi: 6, ao: 0.85, comp: 1.17 },
+};
+
+export class HQRenderer {
+  /**
+   * @param {*} mods gfx.js의 preloadHQ()로 불러온 모듈
+   * @param {{ theme: string, onDowngrade?: (level:number, fps:number) => void, onFail?: (why:string) => void }} opts
+   *   onFail: WebGPU를 시작하지 못했거나 게임 중에 GPU 장치가 끊겼을 때
+   */
+  constructor(mods, { theme = 'village', onDowngrade, onFail } = {}) {
+    this.mods = mods;
+    this.theme = theme;
+    this.onDowngrade = onDowngrade;
+    this.onFail = onFail;
+    this.disposed = false;
+    const renderer = new mods.WG.WebGPURenderer({ antialias: false, powerPreference: 'high-performance' });
+    // 효과 비용이 픽셀 수에 비례하므로 휴대폰은 1배, PC는 최대 1.5배로 그리고 계단 현상은 TRAA가 지운다
+    const mobile = window.matchMedia?.('(pointer: coarse)').matches;
+    renderer.setPixelRatio(mobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer = renderer;
+    // GPU 장치가 끊기면 (드라이버 재시작 등) 알린다. 정리하려고 직접 닫은 경우는 제외
+    const defaultLost = renderer.onDeviceLost;
+    renderer.onDeviceLost = (info) => {
+      defaultLost.call(renderer, info);
+      if (!this.disposed && info?.reason !== 'destroyed') this.onFail?.('lost');
+    };
+    this.ready = false;
+    this.level = 2; // 2: 간접광+반사+TRAA, 1: 간접광(가볍게)+TRAA, 0: 효과 없음
+    this.perf = { warm: 0, frames: 0, time: 0 };
+  }
+
+  /** 장면과 카메라가 준비되면 후처리를 만든다 */
+  setup(scene, camera) {
+    this.scene = scene;
+    this.camera = camera;
+    const { WG, TSL, ssgi, ssr, traa } = this.mods;
+    const { pass, mrt, output, normalView, diffuseColor, velocity, float, vec4, packNormalToRGB, unpackRGBToNormal, sample, select, isBackgroundDepth, mix, uniform, luminance, max } = TSL;
+
+    // WebGPU는 한 번에 쓰는 렌더 타깃이 픽셀당 32바이트로 제한된다 (rgba16f·rgba8 모두 8바이트로 계산).
+    // 그래서 출력은 4개만: 물의 반사 세기는 노멀 버퍼의 남는 알파 채널에 넣는다
+    const scenePass = pass(scene, camera);
+    // 속도 버퍼의 b 채널: 반투명 효과(빛 번짐·이름표·빛줄기)가 그 픽셀에 보탠 밝기 (아래 clearMRT)
+    scenePass.setMRT(
+      mrt({
+        output,
+        diffuseColor,
+        normal: vec4(packNormalToRGB(normalView), 0),
+        velocity: vec4(velocity.xy, 0, 0),
+      }),
+    );
+    // 메모리 대역폭 절약: 색이 아닌 정보는 8비트로
+    for (const name of ['diffuseColor', 'normal']) scenePass.getTexture(name).type = THREE.UnsignedByteType;
+
+    const color = scenePass.getTextureNode('output');
+    const diffuse = scenePass.getTextureNode('diffuseColor');
+    const depth = scenePass.getTextureNode('depth');
+    const normalTex = scenePass.getTextureNode('normal');
+    const vel = scenePass.getTextureNode('velocity');
+    const sceneNormal = sample((uv) => unpackRGBToNormal(normalTex.sample(uv)));
+
+    // 간접광 + 구석 그늘. 사람 키에 맞춘 반경 (크면 낮은 갱도 천장·벽 때문에 화면 전체가 어두워진다)
+    const preset = HQ_PRESET[this.theme] ?? HQ_PRESET.village;
+    const gi = ssgi(color, depth, sceneNormal, camera);
+    gi.sliceCount.value = 2;
+    gi.stepCount.value = 8;
+    gi.radius.value = preset.radius;
+    gi.thickness.value = 0.5;
+    gi.aoIntensity.value = 1;
+    gi.giIntensity.value = preset.gi;
+    this.gi = gi;
+    // 그늘은 벽·바닥에만: 그 위에 겹친 반투명 효과(빛 번짐 등)가 차지하는 밝기만큼은 그늘을 빼고,
+    // 강도도 일부만 적용 (직접 비추는 빛까지 다 가리면 실제보다 어둡다)
+    this.aoStrength = uniform(preset.ao);
+    const overlay = vel.b.div(max(luminance(color.rgb), 1e-4)).clamp(0, 1);
+    const ao = mix(float(1), gi.getAONode().r, this.aoStrength.mul(overlay.oneMinus()));
+    const giColor = gi.getGINode().rgb;
+    // 그늘로 줄어든 평균 밝기를 되돌리는 보정 (맵별로 측정해 맞춤)
+    this.exposure = uniform(preset.comp);
+    // 하늘처럼 깊이가 없는 배경은 원래 색 그대로 (간접광 버퍼가 흰색으로 비워져 있음)
+    const lit = color.rgb.mul(ao).add(diffuse.rgb.mul(giColor)).mul(this.exposure);
+    const composite = vec4(select(isBackgroundDepth(depth.r), color.rgb, lit), color.a);
+
+    // 물 반사: 물 재질만 반사 세기(노멀 알파)를 가지므로 나머지 화면은 바로 건너뛴다
+    const refl = ssr(color, depth, sceneNormal, { metalnessNode: normalTex.a, roughnessNode: float(0.05) });
+    refl.maxDistance.value = 24;
+    refl.thickness.value = 0.35;
+    refl.quality.value = 0.4;
+    const withRefl = vec4(composite.rgb.add(refl.rgb), composite.a);
+
+    this.nodes = { color, diffuse, depth, ao, giColor, composite, refl }; // 시험·조정용
+    this.outputs = {
+      2: traa(withRefl, depth, vel, camera),
+      1: traa(composite, depth, vel, camera),
+    };
+    const pipeline = new WG.RenderPipeline(this.renderer);
+    pipeline.outputNode = this.outputs[2];
+    this.pipeline = pipeline;
+
+    // 반투명한 것(이름표·빛줄기·먼지·번쩍임)은 색만 더하고, 간접광·반사·TRAA가 쓰는 정보는 건드리지 않는다.
+    // 대신 자기가 보탠 밝기를 속도 버퍼 b 채널에 더해 둔다 (합성할 때 그만큼 그늘을 빼려고)
+    const blend = (src, dst) => {
+      const b = new WG.BlendMode(THREE.CustomBlending);
+      b.blendSrc = b.blendSrcAlpha = src;
+      b.blendDst = b.blendDstAlpha = dst;
+      return b;
+    };
+    const keep = blend(THREE.ZeroFactor, THREE.OneFactor);
+    const add = blend(THREE.OneFactor, THREE.OneFactor);
+    const zero = vec4(0);
+    this.clearMRT = mrt({ diffuseColor: zero, normal: zero, velocity: vec4(0, 0, luminance(output.rgb).mul(output.a), 0) });
+    this.clearMRT.setBlendMode('diffuseColor', keep);
+    this.clearMRT.setBlendMode('normal', keep);
+    this.clearMRT.setBlendMode('velocity', add);
+    // 물: 비스듬히 볼수록 더 많이 비친다 (프레넬). 바로 내려다보면 은은하게
+    const { dot, pow, positionView } = TSL;
+    const facing = dot(normalView, positionView.negate().normalize()).clamp(0, 1);
+    const reflectivity = mix(float(0.12), float(0.65), pow(facing.oneMinus(), 3));
+    this.waterMRT = mrt({ normal: vec4(packNormalToRGB(normalView), reflectivity) });
+
+    this.renderer
+      .init()
+      .then(() => {
+        const r = this.renderer;
+        // 간접광은 rg11b10 렌더 타깃이 필요 (거의 모든 데스크톱 GPU가 지원)
+        if (r.backend.isWebGPUBackend && !r.hasFeature('rg11b10ufloat-renderable')) this.level = 0;
+        console.info(`[gfx] 고품질: ${r.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2'} 단계 ${this.level}`);
+        this.ready = true;
+      })
+      .catch((e) => {
+        console.error('[gfx] WebGPU 렌더러를 시작하지 못했어요', e);
+        this.onFail?.('init');
+      });
+  }
+
+  /** 매 프레임. rawDt: 실제 경과 시간(초, 자르지 않은 값) */
+  render(rawDt) {
+    if (!this.ready) return;
+    this.syncMaterials();
+    if (this.level === 0) this.renderer.render(this.scene, this.camera);
+    else this.pipeline.render();
+    this.watchPerf(rawDt);
+  }
+
+  /** 새로 생기거나 반투명 여부가 바뀐 재질에 맞는 MRT 출력을 붙인다 */
+  syncMaterials() {
+    this.scene.traverse((o) => {
+      const m = o.material;
+      if (!m) return;
+      if (Array.isArray(m)) for (const x of m) this.syncMaterial(x);
+      else this.syncMaterial(m);
+    });
+  }
+
+  syncMaterial(m) {
+    // 효과를 끈 단계 0은 MRT 없이 그리므로 재질에도 MRT 출력을 붙이지 않는다
+    const want = this.level === 0 ? 0 : m.transparent ? 1 : m.userData.water ? 2 : 0;
+    if (m.userData.hqMrt === want) return;
+    m.userData.hqMrt = want;
+    m.mrtNode = want === 1 ? this.clearMRT : want === 2 ? this.waterMRT : null;
+    m.needsUpdate = true;
+  }
+
+  watchPerf(dt) {
+    if (this.level === 0 || !(dt > 0) || dt > 0.5) return; // 탭 전환 등으로 멈췄던 프레임은 무시
+    const p = this.perf;
+    if (p.warm < WARMUP) {
+      p.warm += dt;
+      return;
+    }
+    p.frames++;
+    p.time += dt;
+    if (p.time < WINDOW) return;
+    const fps = p.frames / p.time;
+    p.frames = 0;
+    p.time = 0;
+    if (fps < FPS_LOW) this.setLevel(this.level - 1, fps);
+  }
+
+  setLevel(level, fps = 0) {
+    this.level = Math.max(0, level);
+    this.renderer.setPixelRatio(1); // 해상도부터 낮춘다
+    if (this.level === 1) {
+      this.gi.sliceCount.value = 1;
+      this.gi.stepCount.value = 8;
+      this.pipeline.outputNode = this.outputs[1];
+      this.pipeline.needsUpdate = true;
+    }
+    this.perf = { warm: 0, frames: 0, time: 0 };
+    this.onDowngrade?.(this.level, fps);
+  }
+
+  // ───────────── WebGPU용 재질 (WebGL 버전은 GLSL로 따로 있음) ─────────────
+
+  /** 마을 해질녘 하늘 (world.js buildSky의 GLSL과 같은 색) */
+  skyMaterial() {
+    const { WG, TSL } = this.mods;
+    const { positionLocal, vec3, mix, clamp, select, sRGBTransferEOTF } = TSL;
+    const m = new WG.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false });
+    const h = positionLocal.normalize().y;
+    const horizon = vec3(0.86, 0.52, 0.36);
+    const mid = vec3(0.42, 0.33, 0.48);
+    const top = vec3(0.1, 0.11, 0.22);
+    const c = select(
+      h.lessThan(0),
+      horizon.mul(0.6),
+      select(h.lessThan(0.25), mix(horizon, mid, h.div(0.25)), mix(mid, top, clamp(h.sub(0.25).div(0.6), 0, 1))),
+    );
+    // 기존 하늘은 sRGB 값을 그대로 화면에 썼으므로 선형으로 바꿔 넣는다
+    m.colorNode = sRGBTransferEOTF(c);
+    return m;
+  }
+
+  /** 헤드램프 빛줄기 (headlamp.js makeBeamMesh의 GLSL과 같은 모양). opacity.value로 세기 조절 */
+  beamMaterial(length, hex) {
+    const { WG, TSL } = this.mods;
+    const { uniform, abs, dot, pow, smoothstep, positionLocal, positionView, normalView, color, float, sRGBTransferEOTF } = TSL;
+    const opacity = uniform(0.22);
+    const m = new WG.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    const facing = abs(dot(normalView, positionView.negate().normalize()));
+    const axial = positionLocal.z.negate().div(length).clamp(0, 1);
+    const along = pow(axial.oneMinus(), 2.2).mul(smoothstep(0, 0.06, axial));
+    const fade = smoothstep(18, 55, positionView.length()).oneMinus();
+    const a = opacity.mul(pow(facing, 1.6)).mul(along).mul(fade);
+    // WebGL 버전은 색을 화면 밝기 그대로 더했다. 여기서는 선형 공간에서 더한 뒤 sRGB로 바뀌므로
+    // 옅은 빛이 몇 배 밝아진다: 화면에 더해질 밝기를 선형 값으로 되돌려 넣어 같은 느낌으로 맞춘다
+    m.colorNode = sRGBTransferEOTF(color(new THREE.Color(hex)).mul(a));
+    m.opacityNode = float(1);
+    return { material: m, opacity };
+  }
+
+  /**
+   * 갱도 먼지 (mine.js Dust + headlamp.js litDustMaterial과 같은 모습).
+   * WebGPU의 점은 1픽셀이라 인스턴싱한 스프라이트로 그린다.
+   */
+  makeDust(scene, count, lampAngle) {
+    const { WG, TSL } = this.mods;
+    const { instancedBufferAttribute, uniform, uv, positionWorld, smoothstep, dot, max, float, color } = TSL;
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 24;
+      pos[i * 3 + 1] = 0.3 + Math.random() * 6;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 24;
+    }
+    const mat = new WG.PointsNodeMaterial({ transparent: true, depthWrite: false, sizeAttenuation: true });
+    mat.size = 0.035;
+    mat.positionNode = instancedBufferAttribute(new THREE.InstancedBufferAttribute(pos, 3));
+    const lampPos = uniform(new THREE.Vector3());
+    const lampDir = uniform(new THREE.Vector3(0, 0, -1));
+    const dl = positionWorld.sub(lampPos);
+    const dd = dl.length();
+    const cone = smoothstep(Math.cos(lampAngle), Math.cos(lampAngle * 0.35), dot(dl.div(max(dd, 1e-3)), lampDir));
+    const lit = cone.div(dd.mul(dd).mul(0.04).add(1));
+    const round = float(1).sub(smoothstep(0, 0.5, uv().sub(0.5).length())); // 동그랗게 번지는 점
+    mat.colorNode = color(new THREE.Color('#d8c7a8')).mul(lit.mul(3.2).add(0.35));
+    mat.opacityNode = round.mul(0.5).mul(lit.mul(1.1).add(0.18));
+    const sprite = new THREE.Sprite(mat);
+    sprite.count = count;
+    sprite.frustumCulled = false;
+    const group = new THREE.Group();
+    group.add(sprite);
+    scene.add(group);
+    let t = 0;
+    return {
+      points: group,
+      // 카메라 근처 24m 칸 단위로 따라다닌다 (mine.js Dust와 같음)
+      update(dt, cam) {
+        t += dt;
+        group.position.set(Math.round(cam.x / 24) * 24, Math.sin(t * 0.3) * 0.15, Math.round(cam.z / 24) * 24);
+        group.rotation.y = Math.sin(t * 0.05) * 0.2;
+      },
+      setLamp(lamp) {
+        lampPos.value.copy(lamp.position);
+        lampDir.value.copy(lamp.target.position).sub(lamp.position).normalize();
+      },
+    };
+  }
+
+  setSize(w, h) {
+    this.renderer.setSize(w, h);
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.pipeline?.dispose();
+    this.renderer.dispose();
+  }
+}

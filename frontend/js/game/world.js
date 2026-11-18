@@ -104,6 +104,12 @@ export class Batch {
 }
 
 export const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
+/** 물(논·물웅덩이): 고품질 화질에서 화면 반사(SSR)가 비치도록 표시해 둔다 */
+export const waterMaterial = (opts) => {
+  const m = new THREE.MeshPhongMaterial(opts);
+  m.userData.water = true;
+  return m;
+};
 
 export function buildWorld(scene, map) {
   if (map.theme === 'mine') return buildMineWorld(scene, map);
@@ -226,7 +232,7 @@ export function buildWorld(scene, map) {
     B.road.mesh(lambert({ map: T.asphalt() })),
     B.ground.dirt.mesh(lambert({ map: T.dirt() })),
     B.ground.gravel.mesh(lambert({ map: T.gravel() })),
-    B.ground.paddy.mesh(new THREE.MeshPhongMaterial({ vertexColors: true, map: T.paddy(), shininess: 80, specular: 0x556677 })),
+    B.ground.paddy.mesh(waterMaterial({ vertexColors: true, map: T.paddy(), shininess: 80, specular: 0x556677 })),
     B.block.mesh(lambert({ map: T.blockWall() })),
     B.stone.mesh(lambert({ map: T.stoneWall() })),
     B.house.mesh(lambert({ map: T.houseWall() })),

@@ -12,7 +12,7 @@ const MOBILE = typeof window !== 'undefined' && window.matchMedia?.('(pointer: c
 
 // 램프 수치 (화면 효과만, 게임 판정과 무관)
 const LAMP_COLOR = '#fff1dc';
-const LAMP_ANGLE = 0.56; // 원뿔 반각 (rad). 쿠키 텍스처가 이 원뿔 전체에 펼쳐진다
+export const LAMP_ANGLE = 0.56; // 원뿔 반각 (rad). 쿠키 텍스처가 이 원뿔 전체에 펼쳐진다
 const LAMP_PENUMBRA = 0.35;
 const MY_INTENSITY = 150;
 const MY_DISTANCE = 40;
@@ -144,12 +144,23 @@ function makeSpot(intensity, distance) {
   return l;
 }
 
-/** 공기 중 먼지에 산란되어 보이는 빛줄기 (꼭짓점이 원점, -z 방향) */
-function makeBeamMesh() {
+/**
+ * 공기 중 먼지에 산란되어 보이는 빛줄기 (꼭짓점이 원점, -z 방향).
+ * hq: 고품질(WebGPU)이면 같은 모양의 노드 재질을 쓴다. mesh.userData.opacity.value로 세기 조절
+ */
+function makeBeamMesh(hq) {
   const r = Math.tan(LAMP_ANGLE * 0.8) * BEAM_LENGTH;
   const geo = new THREE.ConeGeometry(r, BEAM_LENGTH, 28, 1, true);
   geo.translate(0, -BEAM_LENGTH / 2, 0); // 꼭짓점을 원점으로
   geo.rotateX(Math.PI / 2); // 원뿔이 -z로 퍼지게 (꼭짓점은 원점)
+  if (hq) {
+    const { material, opacity } = hq.beamMaterial(BEAM_LENGTH, '#ffe7c4');
+    const m = new THREE.Mesh(geo, material);
+    m.userData.opacity = opacity;
+    m.frustumCulled = false;
+    m.renderOrder = 5;
+    return m;
+  }
   const mat = new THREE.ShaderMaterial({
     uniforms: { uOpacity: { value: 0.22 }, uLen: { value: BEAM_LENGTH }, uColor: { value: new THREE.Color('#ffe7c4') } },
     vertexShader: /* glsl */ `
@@ -187,6 +198,7 @@ function makeBeamMesh() {
     side: THREE.DoubleSide,
   });
   const m = new THREE.Mesh(geo, mat);
+  m.userData.opacity = mat.uniforms.uOpacity;
   m.frustumCulled = false; // 원뿔이 화면 밖에서 들어올 때 깜빡이지 않게
   m.renderOrder = 5;
   return m;
@@ -198,16 +210,19 @@ function makeBeamMesh() {
  *  - 다른 사람 램프: 아바타 머리에 붙는 모델 + 빛줄기 + 렌즈 빛, 가까운 몇 명은 실제 빛
  */
 export class Headlamps {
-  constructor(scene, renderer) {
+  /** hq: 고품질(WebGPU) 렌더러 (hq.js). 없으면 보통 화질(WebGL) */
+  constructor(scene, renderer, hq = null) {
     this.scene = scene;
+    this.hq = hq;
     this.t = 0;
     // 그림자: 내 램프 하나만 (모바일은 작은 그림자 지도)
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // r187부터 PCF가 부드러운 그림자 (radius로 조절)
 
     const lamp = makeSpot(MY_INTENSITY, MY_DISTANCE);
     lamp.castShadow = true;
-    lamp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024);
+    const shadowSize = hq ? 2048 : MOBILE ? 512 : 1024; // 고품질은 그림자 가장자리도 더 선명하게
+    lamp.shadow.mapSize.set(shadowSize, shadowSize);
     lamp.shadow.camera.near = 0.2;
     lamp.shadow.camera.far = MY_DISTANCE;
     lamp.shadow.bias = -0.0006;
@@ -245,7 +260,7 @@ export class Headlamps {
     const lens = new THREE.Mesh(new THREE.CircleGeometry(0.019, 16), new THREE.MeshBasicMaterial({ color: '#fffaf0' }));
     lens.position.z = -0.0285;
     lens.rotation.y = Math.PI;
-    const beam = makeBeamMesh();
+    const beam = makeBeamMesh(this.hq);
     beam.position.z = -0.03;
     const glowMat = new THREE.SpriteMaterial({
       map: lensGlow(),
@@ -329,7 +344,7 @@ export class Headlamps {
       const size = (0.12 + glare * 1.4) * Math.min(2.2, 0.6 + dist * 0.08);
       l.glow.scale.setScalar(size / (avatar.body.scale.x || 1));
       // 빛줄기: 정면에서 보면 원뿔이 겹쳐 너무 진해지므로 살짝 줄인다
-      l.beam.material.uniforms.uOpacity.value = (0.34 - glare * 0.14) * flicker(t, l.seed);
+      l.beam.userData.opacity.value = (0.34 - glare * 0.14) * flicker(t, l.seed);
       cand.push({ avatar, l, dist, pos: _v.clone(), dir: _v2.clone() });
     }
 

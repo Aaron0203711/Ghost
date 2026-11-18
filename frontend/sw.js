@@ -3,8 +3,10 @@
 // - 네트워크가 안 되면 캐시에 있는 파일로 화면을 띄운다. (게임 자체는 서버 연결이 있어야 한다)
 // - three.js(/vendor/)는 버전이 고정이라 "캐시 먼저"로 내려받는 시간을 줄인다.
 // 파일 구성이 크게 바뀌면 CACHE 이름의 숫자를 올린다.
+// three.js 버전을 바꾸면 index.html import map의 three 주소 뒤 ?v= 도 함께 바꾼다
+// (캐시 먼저라서, 주소가 같으면 예전 버전이 계속 쓰인다).
 
-const CACHE = 'ghost-v1';
+const CACHE = 'ghost-v2';
 const SHELL = [
   './',
   './index.html',

@@ -57,7 +57,10 @@ import {
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
 import { BACKROOMS_FOG, makeBackroomsExit } from './backrooms.js';
-import { Headlamps, enableShadows, litDustMaterial } from './headlamp.js';
+import { Headlamps, enableShadows, litDustMaterial, LAMP_ANGLE } from './headlamp.js';
+import { GFX_HIGH, GFX_NORMAL, hqModules } from './gfx.js';
+import { saveSettings } from '../settings.js';
+import { HQRenderer } from './hq.js';
 import { Bgm } from './bgm.js';
 import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
@@ -212,22 +215,40 @@ export class GameSession {
     this.setupHud();
     this.setupControls(onOpenSettings);
 
-    this.clock = new THREE.Clock();
+    this.clock = new THREE.Timer();
+    this.clock.connect(document); // 탭이 숨겨졌다 돌아와도 시간이 크게 튀지 않게
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
   }
 
   setupThree(start) {
     const wrap = $('game-canvas-wrap');
-    const renderer = new THREE.WebGLRenderer({ antialias: window.devicePixelRatio < 2, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.theme = ['mine', 'backrooms'].includes(start.map.theme) ? start.map.theme : 'village';
+    // 그래픽 품질: 고품질(WebGPU + 간접광·반사)을 골랐고 모듈이 준비됐으면 WebGPU 렌더러, 아니면 WebGL
+    const hqMods = this.settings.graphics === GFX_HIGH ? hqModules() : null;
+    if (this.settings.graphics === GFX_HIGH && !hqMods) console.info('[gfx] 고품질을 쓸 수 없어 보통 화질로 시작해요');
+    this.hq = hqMods
+      ? new HQRenderer(hqMods, {
+          theme: this.theme,
+          onDowngrade: (level) => this.gfxNotice(level),
+          // WebGPU를 못 쓰게 되면 다음 판부터 보통 화질로
+          onFail: () => {
+            saveSettings({ graphics: GFX_NORMAL });
+            this.gfxNotice(-1);
+          },
+        })
+      : null;
+    this.gfxMode = this.hq ? GFX_HIGH : GFX_NORMAL; // 설정 화면에서 '다음 판부터 적용' 안내에 씀
+    const renderer = this.hq
+      ? this.hq.renderer
+      : new THREE.WebGLRenderer({ antialias: window.devicePixelRatio < 2, powerPreference: 'high-performance' });
+    if (!this.hq) renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     wrap.appendChild(renderer.domElement);
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
-    this.theme = ['mine', 'backrooms'].includes(start.map.theme) ? start.map.theme : 'village';
     this.startMap = start.map;
     this.isMine = this.theme === 'mine';
     this.isBackrooms = this.theme === 'backrooms';
@@ -249,9 +270,15 @@ export class GameSession {
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.45;
       // 헤드램프: 렌즈 무늬·실제 그림자·빛줄기·눈부심 (headlamp.js). 다른 사람의 램프도 보인다
-      this.headlamps = new Headlamps(scene, renderer);
-      this.dust = new Dust(scene, 700);
-      this.litDust = litDustMaterial(this.dust.points.material, this.headlamps.mine);
+      this.headlamps = new Headlamps(scene, renderer, this.hq);
+      if (this.hq) {
+        const dust = this.hq.makeDust(scene, 700, LAMP_ANGLE);
+        this.dust = dust;
+        this.litDust = { update: (lamp) => dust.setLamp(lamp) };
+      } else {
+        this.dust = new Dust(scene, 700);
+        this.litDust = litDustMaterial(this.dust.points.material, this.headlamps.mine);
+      }
     } else if (this.isBackrooms) {
       // 형광등 아래 밋밋하고 누런 빛
       scene.add(new THREE.HemisphereLight('#fff4c8', '#8f7d42', 2.1));
@@ -265,6 +292,11 @@ export class GameSession {
     }
 
     this.sky = buildSky(scene, this.theme);
+    if (this.hq && this.sky.material.isShaderMaterial) {
+      // WebGPU는 GLSL 셰이더를 못 쓰므로 같은 색의 노드 재질로 바꾼다
+      this.sky.material.dispose();
+      this.sky.material = this.hq.skyMaterial();
+    }
     this.worldGroup = buildWorld(scene, start.map);
     if (this.headlamps) enableShadows(this.worldGroup);
 
@@ -314,6 +346,22 @@ export class GameSession {
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', this.onResize);
+    this.hq?.setup(scene, camera); // 후처리(간접광·반사·TRAA) 준비, WebGPU 초기화
+  }
+
+  /** 고품질 효과를 줄였을 때(level 1·0) 또는 고품질을 쓸 수 없게 됐을 때(-1) 알림 */
+  gfxNotice(level) {
+    const el = $('toast');
+    if (!el) return;
+    el.textContent =
+      level < 0
+        ? '고품질 화면을 쓸 수 없어 다음 판부터 보통 화질로 바꿨어요'
+        : level > 0
+          ? '프레임이 낮아 고품질 효과를 줄였어요'
+          : '프레임이 낮아 고품질 효과를 껐어요';
+    el.className = 'show';
+    clearTimeout(this.gfxToastTimer);
+    this.gfxToastTimer = setTimeout(() => (el.className = ''), 2600);
   }
 
   setupHud() {
@@ -1475,13 +1523,16 @@ export class GameSession {
   loop() {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
-    const dt = Math.min(0.05, this.clock.getDelta());
+    this.clock.update();
+    const rawDt = this.clock.getDelta();
+    const dt = Math.min(0.05, rawDt);
     this.update(dt);
     if (this.headlamps) {
       this.headlamps.update(dt, this.camera, this.collision);
       this.litDust.update(this.headlamps.mine);
     }
-    this.renderer.render(this.scene, this.camera);
+    if (this.hq) this.hq.render(rawDt);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   update(dt) {
@@ -1852,6 +1903,7 @@ export class GameSession {
     for (const [who, by] of this.pulls) seg(posOf(by), posOf(who));
     this.chain.geometry.setDrawRange(0, n * 2);
     this.chain.geometry.attributes.position.needsUpdate = true;
+    this.chain.visible = n > 0; // 사슬이 없으면 빈 선을 그리지 않는다
   }
 
   /** 날아가는 닻에서 가장 가까운 선장 (사슬을 그릴 시작점) */
@@ -2173,8 +2225,11 @@ export class GameSession {
         mats.forEach((m) => m.dispose());
       }
     });
-    this.renderer.dispose();
+    if (this.hq) this.hq.dispose();
+    else this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.clock.disconnect();
+    clearTimeout(this.gfxToastTimer);
     $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'rushing', 'cls-noattack');
   }
 }

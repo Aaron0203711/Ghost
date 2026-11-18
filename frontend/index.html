@@ -17,7 +17,9 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "./vendor/three/build/three.module.js",
+          "three": "./vendor/three/build/three.module.js?v=0.187.0",
+          "three/webgpu": "./vendor/three/build/three.webgpu.js",
+          "three/tsl": "./vendor/three/build/three.tsl.js",
           "three/addons/": "./vendor/three/examples/jsm/",
           "@shared/": "./shared/"
         }
@@ -252,6 +254,14 @@
             <label class="toggle"><input id="input-gyro-inv-y" type="checkbox" /> <span>상하 반전</span></label>
           </div>
           <p class="gyro-status" id="gyro-status"></p>
+        </div>
+        <div class="field gfx-field">
+          <span>그래픽 품질</span>
+          <div class="map-choices gfx-choices" id="gfx-choices">
+            <button type="button" class="map-choice" data-gfx="normal">보통</button>
+            <button type="button" class="map-choice" data-gfx="high">고품질 (WebGPU)</button>
+          </div>
+          <p class="gyro-status" id="gfx-status"></p>
         </div>
         <div class="row">
           <label class="toggle"><input id="input-sound" type="checkbox" /> <span>효과음</span></label>

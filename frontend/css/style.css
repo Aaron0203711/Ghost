@@ -1383,6 +1383,16 @@ body.touch #pc-hint {
   color: var(--muted);
 }
 
+.gfx-field .map-choices {
+  justify-content: flex-start;
+  margin: 2px 0 4px;
+}
+
+.gfx-choices .map-choice:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* 설정 창이 화면보다 길면 내용이 눌리지 않고 스크롤되게 */
 .modal-card > * {
   flex-shrink: 0;

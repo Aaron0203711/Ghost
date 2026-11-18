@@ -12,6 +12,7 @@ const DEFAULTS = {
   gyroSensitivity: 1.0,
   gyroInvertX: false,
   gyroInvertY: false,
+  graphics: 'normal', // 그래픽 품질: normal(WebGL) | high(WebGPU + 간접광·반사)
 };
 
 function load() {

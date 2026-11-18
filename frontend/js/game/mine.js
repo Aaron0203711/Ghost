@@ -1,7 +1,7 @@
 // 폐광산 테마: 마을 맵과 같은 배치(충돌 박스)를 갱도 안의 폐광 분위기로 그린다.
 // 암반 벽, 녹슨 함석 건물, 광차, 레일, 갱도 버팀목, 랜턴, 바위 천장.
 import * as THREE from 'three';
-import { Batch, texturedBox, place, gableRoof, groundPlane, lambert } from './world.js';
+import { Batch, texturedBox, place, gableRoof, groundPlane, lambert, waterMaterial } from './world.js';
 import { canvasTexture, noise, wood as woodTex } from './textures.js';
 
 export const MINE_CEILING = 11;
@@ -356,7 +356,7 @@ export function buildMineWorld(scene, map) {
     B.path.mesh(lambert({ map: mineGround() })),
     B.coal.mesh(lambert({ map: coal() })),
     B.ore.mesh(lambert({ map: ore() })),
-    B.water.mesh(new THREE.MeshPhongMaterial({ vertexColors: true, map: water(), shininess: 120, specular: 0x667777 })),
+    B.water.mesh(waterMaterial({ vertexColors: true, map: water(), shininess: 120, specular: 0x667777 })),
     B.rock.mesh(lambert({ map: rock(), side: THREE.DoubleSide })),
     B.rust.mesh(lambert({ map: rustMetal() })),
     B.plank.mesh(lambert({ map: oldPlank() })),

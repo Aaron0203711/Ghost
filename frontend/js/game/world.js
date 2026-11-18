@@ -104,9 +104,29 @@ export class Batch {
   }
 }
 
-export const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
-/** 물(논·물웅덩이): 고품질 화질에서 물처럼 비치도록 표시해 둔다 */
-export const waterMaterial = (opts) => reflect(new THREE.MeshPhongMaterial(opts), 'water');
+/**
+ * 질감에 굴곡(노멀 맵, textures.js reliefTexture)이 있으면 재질에 붙인다.
+ * 탄젠트 없이 화면 미분으로 쓰므로 보통·고품질 모두 가볍다.
+ */
+export function withRelief(m, scale = 1) {
+  const nm = m.map?.userData?.normalMap;
+  if (nm) {
+    m.normalMap = nm;
+    m.normalScale.set(scale, scale);
+  }
+  return m;
+}
+/**
+ * 고품질 화질에서 시차(패럴랙스) 매핑으로 굴곡을 실제 깊이처럼 보이게 할 재질.
+ * depth: 질감 한 장 크기에 대한 굴곡 깊이 비율 (예: 1.6m 질감에 4cm면 0.025)
+ */
+export function deep(m, depth) {
+  m.userData.parallax = depth;
+  return m;
+}
+export const lambert = (opts) => withRelief(new THREE.MeshLambertMaterial({ vertexColors: true, ...opts }));
+/** 물(논·물웅덩이): 잔물결 굴곡 + 고품질 화질에서 물처럼 비치도록 표시 */
+export const waterMaterial = (opts) => reflect(withRelief(new THREE.MeshPhongMaterial(opts)), 'water');
 
 export function buildWorld(scene, map) {
   if (map.theme === 'mine') return buildMineWorld(scene, map);
@@ -231,10 +251,11 @@ export function buildWorld(scene, map) {
     B.ground.dirt.mesh(reflect(lambert({ map: T.dirt() }), 'matte')),
     B.ground.gravel.mesh(reflect(lambert({ map: T.gravel() }), 'stone')),
     B.ground.paddy.mesh(waterMaterial({ vertexColors: true, map: T.paddy(), shininess: 80, specular: 0x556677 })),
-    B.block.mesh(reflect(lambert({ map: T.blockWall() }), 'stone')),
-    B.stone.mesh(reflect(lambert({ map: T.stoneWall() }), 'stone')),
-    B.house.mesh(reflect(lambert({ map: T.houseWall() }), 'wood', T.houseWallGlass())), // 창유리만 유리처럼
-    B.roof.mesh(reflect(lambert({ map: T.roofTiles() }), 'tile')),
+    // deep(): 고품질에서 시차 매핑 (블록 줄눈 1.2cm/0.8m, 돌 4cm/1.6m, 기와 5cm/2m)
+    B.block.mesh(deep(reflect(lambert({ map: T.blockWall() }), 'stone'), 0.015)),
+    B.stone.mesh(deep(reflect(lambert({ map: T.stoneWall() }), 'stone'), 0.025)),
+    B.house.mesh(reflect(houseMaterial(), 'wood', T.houseWallGlass())), // 창유리만 유리처럼
+    B.roof.mesh(deep(reflect(lambert({ map: T.roofTiles() }), 'tile'), 0.025)),
     B.wood.mesh(reflect(lambert({ map: T.wood() }), 'wood')),
     B.plain.mesh(reflect(lambert({}), 'painted')),
     B.foliage.mesh(reflect(lambert({ flatShading: true }), 'matte')),
@@ -337,6 +358,22 @@ function buildMountains(size) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
   return m;
+}
+
+/**
+ * 집 외벽: 판자·회벽·창틀 굴곡(노멀 맵) + 창유리만 매끈하게 빛이 반짝이는 스페큘러 맵 (보통·고품질 공통).
+ * 고품질에서는 창유리 마스크로 유리 부분만 또렷하게 비친다 (reflect)
+ */
+function houseMaterial() {
+  return withRelief(
+    new THREE.MeshPhongMaterial({
+      vertexColors: true,
+      map: T.houseWall(),
+      specularMap: T.houseWallGlass(),
+      specular: '#a0a0a0',
+      shininess: 120,
+    }),
+  );
 }
 
 /** 해질녘 하늘 */

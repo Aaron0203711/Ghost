@@ -1,30 +1,36 @@
 // 백룸 테마: 끝없이 이어지는 노란 벽지 사무실 방. 눅눅한 카펫, 천장 타일, 형광등.
 import * as THREE from 'three';
 import { Batch, texturedBox, place, groundPlane, lambert } from './world.js';
-import { canvasTexture, noise } from './textures.js';
+import { canvasTexture, reliefTexture, noise, hNoise, hFill } from './textures.js';
 import { reflect } from './reflect.js';
 
 export const BACKROOMS_FOG = { color: '#cdbf86', near: 12, far: 78 }; // 시야 약 75m
 
 // ───────────── 텍스처 ─────────────
 
-/** 노란 벽지: 희미한 세로 무늬 + 아래쪽 얼룩. 1장 = 가로 1.2m × 세로 1.9m */
+/** 노란 벽지: 희미한 세로 무늬 + 아래쪽 얼룩. 1장 = 가로 1.2m × 세로 1.9m.
+ * 굴곡: 종이 결, 살짝 도드라진(엠보싱) 줄무늬·마름모 무늬, 튀어나온 걸레받이 */
 const wallpaper = () =>
-  canvasTexture('br-wall', 128, 256, (g, w, h) => {
+  reliefTexture('br-wall', 128, 256, (g, w, h, hg) => {
     g.fillStyle = '#d2c374';
     g.fillRect(0, 0, w, h);
+    hNoise(hg, w, h, 22, 2500, 1);
     // 세로 줄무늬와 작은 마름모 무늬
     for (let x = 0; x < w; x += 16) {
       g.fillStyle = 'rgba(150,130,50,0.12)';
       g.fillRect(x, 0, 2, h);
+      hg.fillStyle = 'rgba(160,160,160,0.8)';
+      hg.fillRect(x, 0, 2, h);
       for (let y = 8; y < h; y += 24) {
-        g.fillStyle = 'rgba(160,140,60,0.18)';
-        g.beginPath();
-        g.moveTo(x + 8, y - 4);
-        g.lineTo(x + 12, y);
-        g.lineTo(x + 8, y + 4);
-        g.lineTo(x + 4, y);
-        g.fill();
+        for (const [c, fill] of [[g, 'rgba(160,140,60,0.18)'], [hg, 'rgba(170,170,170,0.8)']]) {
+          c.fillStyle = fill;
+          c.beginPath();
+          c.moveTo(x + 8, y - 4);
+          c.lineTo(x + 12, y);
+          c.lineTo(x + 8, y + 4);
+          c.lineTo(x + 4, y);
+          c.fill();
+        }
       }
     }
     // 습기 얼룩 (아래로 갈수록 누렇게)
@@ -37,32 +43,50 @@ const wallpaper = () =>
     // 걸레받이
     g.fillStyle = '#8e7a45';
     g.fillRect(0, h - 10, w, 10);
-  });
+    hg.fillStyle = 'rgb(220,220,220)';
+    hg.fillRect(0, h - 10, w, 10);
+    hg.fillStyle = 'rgb(180,180,180)';
+    hg.fillRect(0, h - 11, w, 1);
+  }, { strength: 1.4 });
 
-/** 겨자색 카펫 */
+/** 겨자색 카펫. 굴곡: 촘촘한 카펫 올 */
 const carpet = () =>
-  canvasTexture('br-carpet', 256, 256, (g, w, h) => {
+  reliefTexture('br-carpet', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#a69152';
     g.fillRect(0, 0, w, h);
     for (let i = 0; i < 9000; i++) {
       const v = Math.random();
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const len = 1 + Math.random() * 2;
       g.fillStyle = v < 0.5 ? 'rgba(130,112,55,0.5)' : v < 0.85 ? 'rgba(185,165,95,0.45)' : 'rgba(90,78,40,0.5)';
-      g.fillRect(Math.random() * w, Math.random() * h, 1, 1 + Math.random() * 2);
+      g.fillRect(x, y, 1, len);
+      const hv = v < 0.5 ? 110 : v < 0.85 ? 175 : 70;
+      hg.fillStyle = `rgba(${hv},${hv},${hv},0.6)`;
+      hg.fillRect(x, y, 1, len);
     }
-  });
+  }, { strength: 1.2 });
 
-/** 천장 타일 (0.6m 격자). 1장 = 1.2m */
+/** 천장 타일 (0.6m 격자). 1장 = 1.2m. 굴곡: 타일 사이 홈(금속 틀), 흡음 타일의 작은 구멍 */
 const ceilingTiles = () =>
-  canvasTexture('br-ceiling', 128, 128, (g, w, h) => {
+  reliefTexture('br-ceiling', 128, 128, (g, w, h, hg) => {
     g.fillStyle = '#d9d2ae';
     g.fillRect(0, 0, w, h);
     noise(g, w, h, 0.12, 1800);
+    const grid = (v) => (v % (w / 2)) < 3;
+    hFill(hg, w, h, (x, y) => (grid(x) || grid(y) ? 70 : 165));
+    // 흡음 타일 구멍
+    for (let i = 0; i < 260; i++) {
+      hg.fillStyle = 'rgb(100,100,100)';
+      hg.fillRect(4 + Math.random() * (w - 8), 4 + Math.random() * (h - 8), 1, 1);
+    }
+    hNoise(hg, w, h, 20, 1200, 1);
     g.fillStyle = '#9d957a';
     g.fillRect(0, 0, w, 3);
     g.fillRect(0, h / 2, w, 3);
     g.fillRect(0, 0, 3, h);
     g.fillRect(w / 2, 0, 3, h);
-  });
+  }, { strength: 1.6 });
 
 /** 형광등 패널 */
 const lightPanel = () =>

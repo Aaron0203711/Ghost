@@ -1,8 +1,8 @@
 // 폐광산 테마: 마을 맵과 같은 배치(충돌 박스)를 갱도 안의 폐광 분위기로 그린다.
 // 암반 벽, 녹슨 함석 건물, 광차, 레일, 갱도 버팀목, 랜턴, 바위 천장.
 import * as THREE from 'three';
-import { Batch, texturedBox, place, gableRoof, groundPlane, lambert, waterMaterial } from './world.js';
-import { canvasTexture, noise, wood as woodTex } from './textures.js';
+import { Batch, texturedBox, place, gableRoof, groundPlane, lambert, waterMaterial, deep } from './world.js';
+import { canvasTexture, reliefTexture, noise, hNoise, hBump, hFill, hLine, wood as woodTex } from './textures.js';
 import { reflect } from './reflect.js';
 
 export const MINE_CEILING = 11;
@@ -10,32 +10,50 @@ export const MINE_FOG = { color: '#2a221c', near: 8, far: 60 };
 
 // ───────────── 텍스처 ─────────────
 
+// 굴곡: 갈라진 암반 덩어리가 제각각 튀어나오고 틈은 깊다 (고품질에서는 시차 매핑)
 const rock = () =>
-  canvasTexture('mine-rock', 256, 256, (g, w, h) => {
+  reliefTexture('mine-rock', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#5a5047';
     g.fillRect(0, 0, w, h);
+    hg.fillStyle = 'rgb(70,70,70)';
+    hg.fillRect(0, 0, w, h);
     // 갈라진 암반 덩어리
     for (let i = 0; i < 40; i++) {
       const x = Math.random() * w;
       const y = Math.random() * h;
       const r = 14 + Math.random() * 34;
       const v = 60 + Math.floor(Math.random() * 45);
-      g.fillStyle = `rgb(${v + 10},${v},${v - 8})`;
-      g.beginPath();
-      g.moveTo(x, y - r);
+      const pts = [[x, y - r]];
       for (let k = 1; k < 7; k++) {
         const a = (k / 7) * Math.PI * 2;
         const rr = r * (0.6 + Math.random() * 0.5);
-        g.lineTo(x + Math.sin(a) * rr, y - Math.cos(a) * rr);
+        pts.push([x + Math.sin(a) * rr, y - Math.cos(a) * rr]);
       }
+      g.fillStyle = `rgb(${v + 10},${v},${v - 8})`;
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1]);
+      for (const [px, py] of pts.slice(1)) g.lineTo(px, py);
       g.closePath();
       g.fill();
       g.strokeStyle = 'rgba(20,15,10,0.7)';
       g.lineWidth = 2;
       g.stroke();
+      // 덩어리: 가운데가 솟은 각진 면 + 갈라진 틈
+      const top = 170 + Math.random() * 70;
+      const grd = hg.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, `rgb(${top},${top},${top})`);
+      grd.addColorStop(1, 'rgb(110,110,110)');
+      hg.fillStyle = grd;
+      hg.beginPath();
+      hg.moveTo(pts[0][0], pts[0][1]);
+      for (const [px, py] of pts.slice(1)) hg.lineTo(px, py);
+      hg.closePath();
+      hg.fill();
+      hLine(hg, [...pts, pts[0]], 40, 2);
     }
     noise(g, w, h, 0.35, 4000);
     noise(g, w, h, 0.08, 1500, true);
+    hNoise(hg, w, h, 55, 5000, 2);
     // 광맥(희미한 광물 줄)
     g.strokeStyle = 'rgba(180,140,70,0.25)';
     g.lineWidth = 2;
@@ -51,12 +69,14 @@ const rock = () =>
       }
       g.stroke();
     }
-  });
+  }, { strength: 3.2 });
 
+// 굴곡: 골함석 세로 주름, 녹이 슬어 오돌토돌한 자국, 판자로 막은 창문
 const rustMetal = () =>
-  canvasTexture('mine-rust', 256, 256, (g, w, h) => {
+  reliefTexture('mine-rust', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#c9c2b6';
     g.fillRect(0, 0, w, h);
+    hFill(hg, w, h, (x) => 128 + 70 * Math.sin(((x % 12) / 12) * Math.PI * 2 - Math.PI / 2));
     // 골함석 세로 주름
     for (let x = 0; x < w; x += 12) {
       const grd = g.createLinearGradient(x, 0, x + 12, 0);
@@ -74,26 +94,44 @@ const rustMetal = () =>
       grd.addColorStop(0, 'rgba(140,60,20,0.7)');
       grd.addColorStop(1, 'rgba(140,60,20,0)');
       g.fillStyle = grd;
-      g.fillRect(x, y, 6 + Math.random() * 26, 120);
+      const sw = 6 + Math.random() * 26;
+      g.fillRect(x, y, sw, 120);
+      // 녹 슨 자리는 부식으로 오돌토돌
+      for (let k = 0; k < 60; k++) {
+        const v = 128 + (Math.random() - 0.5) * 120;
+        hg.fillStyle = `rgba(${v},${v},${v},0.35)`;
+        hg.fillRect(x + Math.random() * sw, y + Math.random() * 100, 1 + Math.random() * 2, 1 + Math.random() * 2);
+      }
     }
     noise(g, w, h, 0.3, 3000);
-    // 판자로 막은 창문
+    hNoise(hg, w, h, 25, 1500, 2);
+    // 판자로 막은 창문 (창 구멍은 움푹, 판자는 튀어나옴)
     g.fillStyle = '#2a211a';
     g.fillRect(w * 0.3, h * 0.25, w * 0.4, h * 0.3);
+    hg.fillStyle = 'rgb(30,30,30)';
+    hg.fillRect(w * 0.3, h * 0.25, w * 0.4, h * 0.3);
     g.fillStyle = '#6b5236';
     for (let k = 0; k < 3; k++) {
-      g.save();
-      g.translate(w * 0.5, h * (0.3 + k * 0.1));
-      g.rotate((k - 1) * 0.12);
-      g.fillRect(-w * 0.23, -6, w * 0.46, 12);
-      g.restore();
+      for (const [c, fill] of [[g, '#6b5236'], [hg, 'rgb(215,215,215)']]) {
+        c.save();
+        c.translate(w * 0.5, h * (0.3 + k * 0.1));
+        c.rotate((k - 1) * 0.12);
+        c.fillStyle = fill;
+        c.fillRect(-w * 0.23, -6, w * 0.46, 12);
+        c.restore();
+      }
     }
-  });
+  }, { strength: 2.2 });
 
+// 굴곡: 겹친 판자 사이 홈, 박힌 못 머리, 거친 나뭇결
 const oldPlank = () =>
-  canvasTexture('mine-plank', 128, 128, (g, w, h) => {
+  reliefTexture('mine-plank', 128, 128, (g, w, h, hg) => {
     g.fillStyle = '#4a3828';
     g.fillRect(0, 0, w, h);
+    hFill(hg, w, h, (x, y) => {
+      const k = y % 16;
+      return k >= 14 ? 60 : k === 0 || k === 13 ? 125 : 150;
+    });
     for (let y = 0; y < h; y += 16) {
       g.fillStyle = `rgba(${30 + Math.random() * 30},${20 + Math.random() * 20},10,0.5)`;
       g.fillRect(0, y, w, 14);
@@ -103,58 +141,99 @@ const oldPlank = () =>
       g.fillStyle = 'rgba(70,60,50,0.9)';
       g.fillRect(6, y + 6, 2, 2);
       g.fillRect(w - 8, y + 6, 2, 2);
+      hBump(hg, w, h, 7, y + 7, 2, 2, 225, 150);
+      hBump(hg, w, h, w - 7, y + 7, 2, 2, 225, 150);
+      // 결 방향(가로)으로 긁힌 자국
+      for (let k = 0; k < 5; k++) hLine(hg, [[0, y + 2 + Math.random() * 11], [w, y + 2 + Math.random() * 11]], 135, 1);
     }
     noise(g, w, h, 0.25, 900);
-  });
+    hNoise(hg, w, h, 30, 900, 2);
+  }, { strength: 2 });
 
+// 굴곡: 다져진 흙바닥에 박힌 잔돌
 const mineGround = () =>
-  canvasTexture('mine-ground', 256, 256, (g, w, h) => {
+  reliefTexture('mine-ground', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#3a3029';
     g.fillRect(0, 0, w, h);
+    hNoise(hg, w, h, 40, 3000, 3);
     for (let i = 0; i < 900; i++) {
       const v = 30 + Math.floor(Math.random() * 50);
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const r = 1 + Math.random() * 3.5;
       g.fillStyle = `rgb(${v + 8},${v + 2},${v - 4})`;
       g.beginPath();
-      g.arc(Math.random() * w, Math.random() * h, 1 + Math.random() * 3.5, 0, Math.PI * 2);
+      g.arc(x, y, r, 0, Math.PI * 2);
       g.fill();
+      hBump(hg, w, h, x, y, r + 0.5, r + 0.5, 190 + Math.random() * 40, 128);
     }
     noise(g, w, h, 0.3, 4000);
-  });
+  }, { strength: 1.6 });
 
+// 굴곡: 각진 석탄 덩어리
 const coal = () =>
-  canvasTexture('mine-coal', 256, 256, (g, w, h) => {
+  reliefTexture('mine-coal', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#16141a';
     g.fillRect(0, 0, w, h);
+    hg.fillStyle = 'rgb(80,80,80)';
+    hg.fillRect(0, 0, w, h);
     for (let i = 0; i < 1400; i++) {
       const v = 15 + Math.floor(Math.random() * 40);
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const rw = 2 + Math.random() * 4;
+      const rh = 2 + Math.random() * 4;
       g.fillStyle = `rgb(${v},${v},${v + 6})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 4, 2 + Math.random() * 4);
+      g.fillRect(x, y, rw, rh);
+      const hv = 140 + Math.random() * 100;
+      hg.fillStyle = `rgb(${hv},${hv},${hv})`;
+      hg.fillRect(x, y, rw, rh);
     }
     noise(g, w, h, 0.25, 1500, true);
-  });
+  }, { strength: 2.2 });
 
+// 굴곡: 광석 알갱이가 박힌 거친 면
 const ore = () =>
-  canvasTexture('mine-ore', 256, 256, (g, w, h) => {
+  reliefTexture('mine-ore', 256, 256, (g, w, h, hg) => {
     g.fillStyle = '#5e5348';
     g.fillRect(0, 0, w, h);
+    hg.fillStyle = 'rgb(100,100,100)';
+    hg.fillRect(0, 0, w, h);
     for (let i = 0; i < 2500; i++) {
       const r = Math.random();
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const rw = 2 + Math.random() * 3;
+      const rh = 2 + Math.random() * 3;
       g.fillStyle = r < 0.08 ? '#b7893a' : r < 0.15 ? '#7a8a8a' : `rgb(${70 + Math.random() * 50},${60 + Math.random() * 40},${50 + Math.random() * 30})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 3, 2 + Math.random() * 3);
+      g.fillRect(x, y, rw, rh);
+      const hv = r < 0.15 ? 220 : 120 + Math.random() * 70; // 광석 알갱이는 더 솟음
+      hg.fillStyle = `rgb(${hv},${hv},${hv})`;
+      hg.fillRect(x, y, rw, rh);
     }
-  });
+  }, { strength: 2 });
 
+// 굴곡: 고인 물의 잔물결 (고품질 반사가 물결 따라 일렁임)
 const water = () =>
-  canvasTexture('mine-water', 128, 128, (g, w, h) => {
+  reliefTexture('mine-water', 128, 128, (g, w, h, hg) => {
     g.fillStyle = '#1d2a2c';
     g.fillRect(0, 0, w, h);
+    const k = (n) => (n * Math.PI * 2) / w;
+    hFill(hg, w, h, (x, y) => 128 + 6 * Math.sin(k(2) * x + 1.5 * Math.sin(k(3) * y)) + 5 * Math.sin(k(3) * y + 1.2 * Math.sin(k(2) * x)));
     g.strokeStyle = 'rgba(120,150,150,0.18)';
+    hg.strokeStyle = 'rgba(165,165,165,0.6)';
     for (let i = 0; i < 20; i++) {
-      g.beginPath();
-      g.ellipse(Math.random() * w, Math.random() * h, 6 + Math.random() * 14, 2 + Math.random() * 4, 0, 0, Math.PI * 2);
-      g.stroke();
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const rx = 6 + Math.random() * 14;
+      const ry = 2 + Math.random() * 4;
+      for (const c of [g, hg]) {
+        c.beginPath();
+        c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+        c.stroke();
+      }
     }
-  });
+  }, { strength: 1.4 });
 
 const warningSign = () =>
   canvasTexture(
@@ -360,7 +439,7 @@ export function buildMineWorld(scene, map) {
     B.coal.mesh(reflect(lambert({ map: coal() }), 'stone')),
     B.ore.mesh(reflect(lambert({ map: ore() }), 'stone')),
     B.water.mesh(waterMaterial({ vertexColors: true, map: water(), shininess: 120, specular: 0x667777 })),
-    B.rock.mesh(reflect(lambert({ map: rock(), side: THREE.DoubleSide }), 'stone')),
+    B.rock.mesh(deep(reflect(lambert({ map: rock(), side: THREE.DoubleSide }), 'stone'), 0.04)), // 고품질: 시차 매핑
     B.rust.mesh(reflect(lambert({ map: rustMetal() }), 'rust')),
     B.plank.mesh(reflect(lambert({ map: oldPlank() }), 'wood')),
     B.wood.mesh(reflect(lambert({ map: woodTex() }), 'wood')),

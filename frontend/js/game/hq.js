@@ -3,6 +3,7 @@
 //   SSGI: 화면에 보이는 빛이 주변 벽·바닥으로 번지는 간접광 + 구석·틈의 그늘(AO)
 //   SSR : 모든 표면의 반사 (재질마다 세기·흐림이 다름, reflect.js)
 //   TRAA: 여러 프레임을 겹쳐 계단 현상과 노이즈를 지움
+// 깊은 굴곡이 있는 재질(돌담·블록·기와·암반)은 시차 차폐 매핑으로 굴곡이 실제 깊이처럼 보인다.
 // 순서로 합성한다. 프레임이 낮으면 해상도와 효과 단계를 스스로 낮춘다.
 // 공정성: 고품질이 어둠 속을 더 잘(또는 덜) 보이게 하면 안 되므로, 그늘로 줄어든 화면 평균 밝기를
 // 맵별 보정값(comp)으로 되돌려 보통 화질과 같게 맞춘다.
@@ -178,13 +179,80 @@ export class HQRenderer {
   }
 
   syncMaterial(m) {
-    // 효과를 끈 단계 0은 MRT 없이 그리므로 재질에도 MRT 출력을 붙이지 않는다
+    // 효과를 끈 단계 0은 MRT 없이 그리므로 재질에도 MRT 출력을 붙이지 않는다 (시차 매핑도 끔)
     const kind = reflectKind(m);
-    const want = this.level === 0 ? 'none' : m.transparent ? 'clear' : m.userData.reflectMask ? `mask:${kind}` : kind;
+    const pom = this.level > 0 && !m.transparent && m.userData.parallax > 0 && !!m.map?.userData?.heightMap;
+    const base = this.level === 0 ? 'none' : m.transparent ? 'clear' : m.userData.reflectMask ? `mask:${kind}` : kind;
+    const want = pom ? `${base}+pom` : base;
     if (m.userData.hqMrt === want) return;
     m.userData.hqMrt = want;
-    m.mrtNode = want === 'none' ? null : want === 'clear' ? this.clearMRT : this.reflectMRT(kind, m);
+    m.mrtNode = base === 'none' ? null : base === 'clear' ? this.clearMRT : this.reflectMRT(kind, m);
+    if (pom) this.applyParallax(m);
+    else if (m.userData.hqPom) {
+      m.colorNode = null;
+      m.normalNode = null;
+      m.userData.hqPom = false;
+    }
+    // WebGPU 렌더러는 일반 재질의 셰이더 캐시 키를 재질 종류·속성 유무로만 만들어서,
+    // 여기서 붙인 노드(반사 MRT·시차 매핑)가 달라도 같은 종류 재질끼리 먼저 컴파일된 셰이더를 함께 쓴다.
+    // 그래서 붙인 노드에 맞는 키를 준다: 고정 질감을 쓰는 시차 매핑·마스크 재질은 재질마다 따로
+    const key = `hq:${want}:${pom || m.userData.reflectMask ? m.uuid : ''}`;
+    m.customProgramCacheKey = () => key;
     m.needsUpdate = true;
+  }
+
+  /**
+   * 시차 차폐 매핑(POM): 높이 지도를 따라 시선을 12단계로 들어가 표면에 닿는 곳을 찾고,
+   * 직전 단계와 보간해 계단 현상을 없앤다. 색·노멀 질감을 모두 그 자리에서 읽어 굴곡이 실제 깊이처럼 보인다.
+   * 탄젠트 없이 화면 미분으로 접선 공간을 만든다 (노멀 맵을 적용하기 전의 면 노멀 기준).
+   */
+  applyParallax(m) {
+    const { TSL } = this.mods;
+    const { Fn, texture, uv, float, vec2, vec3, positionView, positionViewDirection, normalViewGeometry, Loop, If, Break, mix, max, select, normalMap } = TSL;
+    const map = m.map;
+    const heightTex = map.userData.heightMap;
+    const normalTex = m.normalMap ?? map.userData.normalMap;
+    const depth = m.userData.parallax;
+    const STEPS = 12;
+    const pomUV = Fn(() => {
+      const uv0 = uv();
+      const V = positionViewDirection;
+      const Ng = normalViewGeometry;
+      const N = select(Ng.dot(V).lessThan(0), Ng.negate(), Ng); // 뒷면에서 볼 때도 바깥쪽으로
+      const q0 = positionView.dFdx();
+      const q1 = positionView.dFdy();
+      const st0 = uv0.dFdx();
+      const st1 = uv0.dFdy();
+      const q1perp = q1.cross(N);
+      const q0perp = N.cross(q0);
+      const T = q1perp.mul(st0.x).add(q0perp.mul(st1.x));
+      const B = q1perp.mul(st0.y).add(q0perp.mul(st1.y));
+      const inv = max(T.dot(T), B.dot(B)).max(1e-12).inverseSqrt();
+      const Vt = vec3(V.dot(T.mul(inv)), V.dot(B.mul(inv)), V.dot(N)).toVar();
+      // 한 단계에 움직일 UV (비스듬할수록 멀리, 너무 비스듬하면 제한)
+      const shift = Vt.xy.div(max(Vt.z, 0.3)).mul(depth / STEPS).toVar();
+      // 반복문 안에서는 밉맵 선택용 미분을 미리 구한 값으로 (WGSL 제약)
+      const depthAt = (p) => float(1).sub(texture(heightTex, p).grad(st0, st1).r);
+      const cur = uv0.toVar();
+      const d = depthAt(cur).toVar();
+      const layer = float(0).toVar();
+      Loop(STEPS, () => {
+        If(layer.greaterThanEqual(d), () => {
+          Break();
+        });
+        cur.subAssign(shift);
+        layer.addAssign(1 / STEPS);
+        d.assign(depthAt(cur));
+      });
+      const prev = cur.add(shift);
+      const after = d.sub(layer);
+      const before = depthAt(prev).sub(layer).add(1 / STEPS);
+      const w = after.div(after.sub(before).min(-1e-5)).clamp(0, 1);
+      return mix(cur, prev, w);
+    })();
+    m.colorNode = texture(map, pomUV); // 정점 색은 렌더러가 따로 곱한다
+    if (normalTex) m.normalNode = normalMap(texture(normalTex, pomUV), vec2(m.normalScale.x, m.normalScale.y));
+    m.userData.hqPom = true;
   }
 
   /** 재질의 반사 세기(노멀 알파)·흐림(확산색 알파)을 쓰는 MRT. 마스크가 있으면 흰 곳만 다른 종류로 */

@@ -85,8 +85,8 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
  *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도),
  *         scls(생존자 직업: 푸드파이터는 10% 느림),
  *         slowFactor(생존자 감속 배율: 덫이 풀린 뒤, 조준 저격, 실 함정), noRun(생존자 달리기 불가),
- *         rushing(살덩이 스킬 → 40km/h), rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐) }
- * 질주자는 기본 10% 빠르다.
+ *         rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐) }
+ * 질주자는 기본 10% 빠르고, 살덩이는 기본 5% 느리다.
  */
 export function speedFor(role, running, mods = {}) {
   if (role === ROLE.HUNTER) {
@@ -104,8 +104,8 @@ function hunterBaseSpeed(mods) {
   if (mods.wallSlowed) return RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR;
   if (mods.invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
   if (mods.disguised) return RULES.SURVIVOR_WALK_SPEED; // 변장 중에는 생존자 걷기 속도 그대로
-  if (mods.rushing) return FLESH.RUSH_SPEED; // 살덩이 스킬: 시속 40km
   if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
+  if (mods.cls === 'flesh') return RULES.HUNTER_SPEED * FLESH.SPEED_FACTOR;
   return RULES.HUNTER_SPEED;
 }
 
@@ -355,7 +355,8 @@ export const SPRINTER = Object.freeze({
  * 살덩이: 기본 공격 없음. 패시브로 움직이는 동안 1초마다 발밑에 점액 웅덩이(처음 반경 2m)를 남긴다.
  * 웅덩이는 사라지지 않고 매초 반경이 0.05m씩 커진다(최대 없음). 웅덩이 안의 생존자는 매초 0.2칸
  * (여러 웅덩이에 걸쳐도 0.2칸, 점프 중에도 받음, 맞은 뒤 무적 시간을 무시하고 무적도 주지 않음).
- * 스킬: 7.5초 동안 이동 속도 시속 40km. 쿨타임 7초(끝난 뒤부터)
+ * 스킬: 발밑에 반경 6m 점액 웅덩이를 뿌린다(패시브 웅덩이와 똑같이 사라지지 않고 매초 0.05m씩 커지며 피해도 같음).
+ * 쿨타임 20초. 이동 속도는 기본 5% 느리다(19km/h).
  */
 export const FLESH = Object.freeze({
   SLIME_INTERVAL: 1, // 움직인 시간 1초마다 웅덩이 하나
@@ -363,14 +364,14 @@ export const FLESH = Object.freeze({
   SLIME_GROWTH: 0.05, // 매초 반경 +0.05m
   SLIME_DAMAGE: 0.2, // 매초 0.2칸
   SLIME_TICK: 1,
-  RUSH_SPEED: kmh(40),
-  RUSH_TIME: 7.5,
-  SKILL_COOLDOWN: 7, // 스킬이 끝난 뒤부터
+  SPRAY_RADIUS: 6, // 스킬로 뿌리는 웅덩이의 처음 반경
+  SKILL_COOLDOWN: 20,
+  SPEED_FACTOR: 0.95, // 기본 이동 속도 5% 감소
 });
 
-/** 점액 웅덩이 반경: born은 생긴 시각 */
-export function slimeRadius(born, now) {
-  return FLESH.SLIME_RADIUS + FLESH.SLIME_GROWTH * Math.max(0, now - born);
+/** 점액 웅덩이 반경: born은 생긴 시각, r0는 처음 반경(패시브 2m, 스킬 6m) */
+export function slimeRadius(born, now, r0 = FLESH.SLIME_RADIUS) {
+  return r0 + FLESH.SLIME_GROWTH * Math.max(0, now - born);
 }
 
 /** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
@@ -412,7 +413,7 @@ export const CLASS_INFO = Object.freeze({
   sprinter: { name: '질주자', icon: '⚡', desc: '이동 속도 +10% · 발차기 4m (쿨타임 1초) · 30m 질주 (쿨타임 15초)' },
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
   drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 4m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
-  flesh: { name: '살덩이', icon: '🫀', desc: '기본 공격 없음 · 움직이면 매초 점액 웅덩이(반경 2m, 계속 커짐), 안의 생존자 매초 0.2칸(무적 무시) · 7.5초 동안 시속 40km (쿨타임 7초)' },
+  flesh: { name: '살덩이', icon: '🫀', desc: '기본 공격 없음 · 움직이면 매초 점액 웅덩이(반경 2m, 계속 커짐), 안의 생존자 매초 0.2칸(무적 무시) · 스킬: 발밑에 반경 6m 점액 뿌리기 (쿨타임 20초) · 이동 속도 5% 느림' },
   palcheok: { name: '팔척귀신', icon: '👒', desc: '키가 커서 담장 너머가 보임 · 주먹 3m (쿨타임 1.3초) · 생존자를 5초까지 들고 다니다 15m 던짐, 다른 생존자를 맞히면 둘 다 1칸 (쿨타임 9초)' },
 });
 

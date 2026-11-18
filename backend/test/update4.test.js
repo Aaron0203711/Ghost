@@ -153,30 +153,50 @@ test('살덩이 점액: 2인 규칙이면 50% 감소(0.1칸)', () => {
   assert.ok(Math.abs(s.hits - 0.1) < 1e-9);
 });
 
-test('살덩이 스킬: 7.5초 동안 시속 40km, 쿨타임 7초는 끝난 뒤부터', () => {
-  const { game, p, ev } = makeGame();
+test('살덩이 이동 속도: 기본 5% 느림 (19km/h)', () => {
+  assert.ok(Math.abs(speedFor('hunter', false, { cls: 'flesh' }) - RULES.HUNTER_SPEED * 0.95) < 1e-9);
+  const { game, p } = makeGame();
   const h = p('p1');
   const spot = clearSpot(game, [h]);
   Object.assign(h, { x: spot.x, z: spot.z });
   run(game, 1);
-  assert.ok(Math.abs(h.budget - RULES.HUNTER_SPEED * 0.6) < 0.01, '평소 20km/h');
-  game.handleSkill('p1', { yaw: 0 });
-  assert.equal(ev('rush')[0].msg.on, true);
-  run(game, 1);
-  assert.ok(Math.abs(h.budget - (40 / 3.6) * 0.6) < 0.01, '스킬 중 40km/h');
-  assert.ok(Math.abs(speedFor('hunter', false, { cls: 'flesh', rushing: true }) - 40 / 3.6) < 1e-9);
-  run(game, FLESH.RUSH_TIME - 1 + 0.1);
-  assert.equal(ev('rush').at(-1).msg.on, false, '7.5초 뒤 끝남');
-  run(game, 0.5);
-  assert.ok(h.budget <= RULES.HUNTER_SPEED * 0.6 + 1e-6, '다시 20km/h');
-  game.handleSkill('p1', { yaw: 0 });
-  assert.equal(ev('rush').length, 2, '쿨타임 중');
-  run(game, FLESH.SKILL_COOLDOWN - 0.5);
-  game.handleSkill('p1', { yaw: 0 });
-  assert.equal(ev('rush').length, 3, '끝나고 7초 뒤 다시 사용');
+  assert.ok(Math.abs(h.budget - RULES.HUNTER_SPEED * 0.95 * 0.6) < 0.01);
 });
 
-test('군인 소총 감속은 다른 속도 변화와 곱해짐 (살덩이 스킬 중 40 → 약 28km/h)', () => {
-  const v = speedFor('hunter', false, { cls: 'flesh', rushing: true, rifleSlowed: true }) * 3.6;
-  assert.ok(Math.abs(v - 40 * 0.7026) < 1e-6);
+test('살덩이 스킬: 발밑에 반경 6m 점액, 패시브처럼 커지고 쿨타임 20초', () => {
+  const { game, p, ev } = makeGame();
+  const h = p('p1');
+  const s = p('p2');
+  const spot = clearSpot(game, [h, s]);
+  Object.assign(h, { x: spot.x, z: spot.z });
+  s.x = s.z = 900;
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(game.slimes.length, 1);
+  const w = game.slimes[0];
+  assert.equal(w.r0, FLESH.SPRAY_RADIUS);
+  assert.equal(ev('slime')[0].msg.spray, 1);
+  assert.equal(ev('slime')[0].msg.r0, 6);
+  assert.ok(Math.abs(w.x - spot.x) < 1e-9 && Math.abs(w.z - spot.z) < 1e-9, '발밑');
+  assert.ok(Math.abs(slimeRadius(w.born, w.born, w.r0) - 6) < 1e-9, '처음 반경 6m');
+  // 5.5m 떨어진 생존자는 점액 피해
+  h.x = h.z = 900;
+  Object.assign(s, { x: w.x + 5.5, z: w.z });
+  game.tick(DT);
+  assert.ok(Math.abs(s.hits - FLESH.SLIME_DAMAGE) < 1e-9);
+  run(game, 10);
+  assert.ok(Math.abs(slimeRadius(w.born, game.time, w.r0) - (6 + 0.05 * (game.time - w.born))) < 1e-9, '매초 0.05m씩 커짐');
+  // 쿨타임 20초
+  Object.assign(s, { x: 900, z: 900 });
+  h.x = spot.x; h.z = spot.z;
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(ev('slime').filter((e) => e.msg.spray).length, 1, '쿨타임 중');
+  run(game, FLESH.SKILL_COOLDOWN - 10);
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(ev('slime').filter((e) => e.msg.spray).length, 2, '20초 뒤 다시 사용');
 });
+
+test('군인 소총 감속은 다른 속도 변화와 곱해짐 (살덩이 19 → 약 13.3km/h)', () => {
+  const v = speedFor('hunter', false, { cls: 'flesh', rifleSlowed: true }) * 3.6;
+  assert.ok(Math.abs(v - 19 * 0.7026) < 1e-6);
+});
+

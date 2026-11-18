@@ -100,7 +100,6 @@ export class GameSession {
     this.isDrowned = this.isHunter && this.hunterClass === HUNTER_CLASS.DROWNED;
     this.isPalcheok = this.isHunter && this.hunterClass === HUNTER_CLASS.PALCHEOK;
     this.isFlesh = this.isHunter && this.hunterClass === HUNTER_CLASS.FLESH;
-    this.rushLeft = 0; // 살덩이: 스킬(시속 40km) 남은 시간
     this.rifleSlowLeft = 0; // 술래: 군인 소총에 맞아 느려진 남은 시간
     this.carrying = null; // 팔척귀신: 들고 있는 생존자 id
     this.carryLeft = 0;
@@ -139,7 +138,7 @@ export class GameSession {
       sprinter: SPRINTER.SKILL_COOLDOWN,
       drowned: DROWNED.SKILL_COOLDOWN,
       palcheok: PALCHEOK.SKILL_COOLDOWN,
-      flesh: FLESH.RUSH_TIME + FLESH.SKILL_COOLDOWN, // 쓰는 순간부터 끝나고 7초 뒤까지
+      flesh: FLESH.SKILL_COOLDOWN,
     }[this.hunterClass] || 1;
     this.attackCooldown = this.isSniper
       ? SNIPER.SHOT_COOLDOWN
@@ -398,7 +397,7 @@ export class GameSession {
       sprinter: { main: ['🦵', '발차기'], action: ['💨', '질주'] },
       drowned: { main: ['🔱', '작살'], action: ['🌊', '다이빙'] },
       palcheok: { main: ['👊', '주먹'], action: ['🫳', '납치'] },
-      flesh: { main: ['🚫', '없음'], action: ['💨', '돌진'] },
+      flesh: { main: ['🚫', '없음'], action: ['🟢', '점액'] },
     };
     if (this.isClown) classLabels.clown = { main: ['🤹', '공'], action: ['🧵', '실'] };
     const labels = this.hasClassSkill || this.isClown
@@ -431,7 +430,7 @@ export class GameSession {
         : this.isPalcheok
           ? '좌클릭 주먹 · E 납치, 들고 있을 때 E 던지기'
           : this.isFlesh
-            ? '기본 공격 없음 · E 돌진 (시속 40km)'
+            ? '기본 공격 없음 · E 발밑에 반경 6m 점액 뿌리기'
             : '좌클릭 공격 · E 스킬';
     }
     $('hud-feed').innerHTML = '';
@@ -631,11 +630,7 @@ export class GameSession {
     } else if (this.isGhost) sfx.wisp();
     else if (this.isSkin) this.setDisguised(true);
     else if (this.isSprinter) sfx.dashCharge();
-    else if (this.isFlesh) {
-      this.rushLeft = FLESH.RUSH_TIME;
-      this.skillLeft = this.skillCooldown;
-      sfx.dashCharge();
-    }
+    else if (this.isFlesh) this.skillLeft = this.skillCooldown;
     else if (this.isPalcheok && this.carrying) {
       // 던지기: 그때부터 쿨타임
       this.carrying = null;
@@ -814,7 +809,6 @@ export class GameSession {
         this.noRun = !!s.me.noRun;
       }
       if (this.isHunter) this.rifleSlowLeft = s.me.rifleSlow ?? 0;
-      if (this.isFlesh && !fresh(this.lastSkillAt)) this.rushLeft = s.me.rushLeft ?? 0;
       if (this.isSoldier && s.me.ammo != null && !fresh(this.lastSSkillAt)) {
         this.ammo = s.me.ammo;
         this.reloadLeft = s.me.reloadLeft ?? 0;
@@ -917,19 +911,19 @@ export class GameSession {
     const mesh = makeSlime();
     mesh.position.set(w.x, 0.03 + (w.id % 7) * 0.002, w.z); // 겹친 웅덩이가 깜빡이지 않게 높이를 조금씩
     this.scene.add(mesh);
-    this.slimeMeshes.set(w.id, { mesh, born: w.born });
+    this.slimeMeshes.set(w.id, { mesh, born: w.born, r0: w.r0 });
   }
 
   updateSlimes() {
     const now = this.matchTime || 0;
-    for (const w of this.slimeMeshes.values()) w.mesh.scale.setScalar(slimeRadius(w.born, now));
+    for (const w of this.slimeMeshes.values()) w.mesh.scale.setScalar(slimeRadius(w.born, now, w.r0));
   }
 
   /** 지금 내가 점액 웅덩이 안에 있는가 (화면 효과용) */
   inSlime() {
     const now = this.matchTime || 0;
     for (const w of this.slimeMeshes.values()) {
-      if (Math.hypot(w.mesh.position.x - this.pos.x, w.mesh.position.z - this.pos.z) <= slimeRadius(w.born, now)) return true;
+      if (Math.hypot(w.mesh.position.x - this.pos.x, w.mesh.position.z - this.pos.z) <= slimeRadius(w.born, now, w.r0)) return true;
     }
     return false;
   }
@@ -1361,14 +1355,12 @@ export class GameSession {
         }
         break;
       case 'slime':
-        this.addSlime({ id: e.sid, x: e.x, z: e.z, born: e.born });
-        break;
-      case 'rush':
-        if (e.on) {
-          if (me) this.centerMsg(`💨 돌진! ${e.time}초 동안 시속 40km`, 1.2);
+        this.addSlime({ id: e.sid, x: e.x, z: e.z, born: e.born, r0: e.r0 });
+        if (e.spray) {
+          if (me) this.centerMsg('🟢 점액을 뿌렸다!', 1.2);
           else if (this.distTo(e.id) < 30) sfx.dashCharge();
-          if (!this.isHunter && this.status === STATUS.ALIVE) this.feed('🫀 살덩이가 빨라졌다!', 'bad');
-        } else if (me) this.rushLeft = 0;
+          if (!this.isHunter && this.status === STATUS.ALIVE) this.feed('🫀 살덩이가 점액을 뿌렸다!', 'bad');
+        }
         break;
       case 'clone':
         sfx.poof();
@@ -1595,7 +1587,6 @@ export class GameSession {
         slowed: this.isAssassin && this.slowLeft > 0,
         wallSlowed: this.isGhost && this.wallSlowLeft > 0,
         disguised: this.disguised,
-        rushing: this.isFlesh && this.rushLeft > 0,
         rifleSlowed: this.isHunter && this.rifleSlowLeft > 0,
         slowFactor: this.isHunter ? 1 : this.slowFactor,
         noRun: this.noRun,
@@ -1618,7 +1609,6 @@ export class GameSession {
 
     this.attackLeft = Math.max(0, this.attackLeft - dt);
     this.sskillLeft = Math.max(0, this.sskillLeft - dt);
-    this.rushLeft = Math.max(0, this.rushLeft - dt);
     this.rifleSlowLeft = Math.max(0, this.rifleSlowLeft - dt);
     if (this.reloadLeft > 0) {
       this.reloadLeft = Math.max(0, this.reloadLeft - dt);
@@ -1737,7 +1727,7 @@ export class GameSession {
     const rz = -Math.sin(this.yaw) * sway;
     cam.position.set(this.pos.x + sx + rx, eye + bob + sy - dip, this.pos.z + rz);
     cam.rotation.set(this.pitch, this.yaw, this.camRoll);
-    const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running || this.rushLeft > 0 ? 82 : 75;
+    const targetFov = this.aiming ? SNIPER.AIM_FOV : this.running ? 82 : 75;
     if (Math.abs(cam.fov - targetFov) > 0.1) {
       cam.fov += (targetFov - cam.fov) * Math.min(1, dt * (this.aiming ? 14 : 8));
       cam.updateProjectionMatrix();
@@ -1833,7 +1823,6 @@ export class GameSession {
     const screen = $('screen-game');
     screen.classList.toggle('h-slowed', this.isHunter && alive && this.rifleSlowLeft > 0);
     screen.classList.toggle('in-slime', !this.isHunter && alive && this.slimeMeshes.size > 0 && this.inSlime());
-    screen.classList.toggle('rushing', this.isFlesh && alive && this.rushLeft > 0);
     screen.classList.toggle('s-slowed', !this.isHunter && alive && this.slowFactor < 1);
     screen.classList.toggle('no-run', !this.isHunter && alive && this.noRun);
     if (this.isHunter || !alive) this.danger = 0; // 술래와 관전자는 늘 보통 배경음악
@@ -1960,7 +1949,7 @@ export class GameSession {
     btnA.classList.toggle('cooling', this.attackLeft > 0);
     if (this.hasClassSkill) {
       // 선장·유령·살가죽·질주자: 스킬 쿨타임 링과 남은 초
-      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim || !!this.carrying || (this.isFlesh && this.rushLeft > 0);
+      const active = this.disguised || (this.isSprinter && !!this.myDash) || !!this.diveAim || !!this.carrying;
       if (this.isPalcheok) {
         // 들고 있으면 스킬 버튼이 던지기로 바뀐다
         const lbl = this.carrying ? ['🌀', '던지기'] : ['🫳', '납치'];
@@ -1978,9 +1967,7 @@ export class GameSession {
             ? '조준'
             : this.carrying
               ? `${Math.ceil(this.carryLeft)}s`
-              : this.isFlesh
-                ? `${Math.ceil(this.rushLeft)}s`
-                : '질주!'
+              : '질주!'
         : this.skillLeft > 0
           ? `${Math.ceil(this.skillLeft)}s`
           : '';
@@ -2236,7 +2223,7 @@ export class GameSession {
     this.renderer.domElement.remove();
     this.clock.disconnect();
     clearTimeout(this.gfxToastTimer);
-    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'rushing', 'cls-noattack');
+    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'cls-noattack');
   }
 }
 

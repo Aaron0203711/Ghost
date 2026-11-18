@@ -2419,14 +2419,6 @@ body.touch #cd-sskill,
   background: radial-gradient(ellipse at center, transparent 60%, rgba(255, 170, 60, 0.28));
 }
 
-#screen-game.rushing::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(180, 40, 50, 0.3));
-}
-
 /* 살덩이: 기본 공격 버튼 없음 */
 #screen-game.cls-noattack #btn-main,
 #screen-game.cls-noattack #cd-main {

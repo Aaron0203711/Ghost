@@ -31,7 +31,7 @@ import {
   MAP_SIGHT,
   SOLDIER,
 } from '../../shared/constants.js';
-import { stepSlime, isRushing } from './flesh.js';
+import { stepSlime } from './flesh.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
 import { trainingRoster, placeDummies } from './training.js';
@@ -158,7 +158,6 @@ export class Game {
         revealUntil: 0, // 광대 실에 걸려 몸이 빛나는 동안
         sskillReadyAt: 0, // 생존자 직업 스킬 쿨타임
         rifleSlowUntil: 0, // 술래: 군인 소총에 맞아 느려진 동안
-        rushUntil: 0, // 살덩이: 스킬(시속 40km) 끝나는 시각
         slimeTimer: 0, // 살덩이: 움직인 시간 (1초마다 웅덩이)
         lastMovedAt: -1, // 마지막으로 위치가 바뀐 시각
         slimeNextAt: 0, // 생존자: 다음 점액 피해를 받을 수 있는 시각
@@ -190,7 +189,7 @@ export class Game {
     this.taserSeq = 0;
     this.rifleShots = [];
     this.rifleSeq = 0;
-    this.slimes = []; // 살덩이 점액 웅덩이 { id, owner, x, z, born }
+    this.slimes = []; // 살덩이 점액 웅덩이 { id, owner, x, z, born, r0(처음 반경) }
     this.slimeSeq = 0;
     this.clones = [];
     this.cloneSeq = 0;
@@ -238,7 +237,7 @@ export class Game {
       hunterClass: this.players.get(forId)?.cls ?? this.hunterClass,
       map: this.map,
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
-      slimes: this.slimes.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z), born: r2(w.born) })),
+      slimes: this.slimes.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z), born: r2(w.born), r0: w.r0 })),
       synergies: this.synergies,
       ...(this.training ? { training: this.training } : {}),
       players: [...this.players.values()].map((p) => ({
@@ -648,7 +647,6 @@ export class Game {
         slowed: this.time < p.slowUntil,
         wallSlowed: this.time < p.wallSlowUntil,
         disguised: !!p.disguiseAs,
-        rushing: isRushing(this, p),
         rifleSlowed: p.role === ROLE.HUNTER && this.time < p.rifleSlowUntil,
         slowFactor: slow.factor,
         noRun: slow.noRun,
@@ -941,7 +939,6 @@ export class Game {
         disguised: me.disguiseAs ? 1 : 0,
         sskillLeft: r2(Math.max(0, me.sskillReadyAt - this.time)), // 생존자 직업 스킬 쿨타임
         rifleSlow: r2(Math.max(0, me.rifleSlowUntil - this.time)), // 술래: 군인 소총에 맞아 느려진 남은 시간
-        rushLeft: r2(Math.max(0, me.rushUntil - this.time)), // 살덩이 스킬 남은 시간
         ...(me.scls === 'soldier' ? { ammo: me.ammo, reloadLeft: r2(Math.max(0, me.reloadUntil - this.time)) } : {}),
         ...(me.carrying ? { carrying: me.carrying, carryLeft: r2(Math.max(0, me.carryUntil - this.time)) } : {}), // 팔척귀신
       };

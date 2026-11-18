@@ -126,6 +126,40 @@ export const houseWall = () =>
     g.stroke();
   });
 
+/** 집 외벽(houseWall)에서 창유리 자리만 흰색인 마스크: 고품질 화질에서 유리만 또렷하게 비치게 */
+export const houseWallGlass = () =>
+  canvasTexture(
+    'house-glass',
+    256,
+    256,
+    (g, w, h) => {
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, w, h);
+      const wx = w * 0.32;
+      const wy = h * 0.2;
+      const ww = w * 0.42;
+      const wh = h * 0.42;
+      g.fillStyle = '#fff';
+      g.fillRect(wx + 4, wy + 4, ww - 8, wh - 8);
+      // 창살은 나무라서 비치지 않게
+      g.strokeStyle = '#000';
+      g.lineWidth = 5;
+      g.strokeRect(wx, wy, ww, wh);
+      g.lineWidth = 3;
+      for (let k = 1; k < 3; k++) {
+        g.beginPath();
+        g.moveTo(wx + (ww * k) / 3, wy);
+        g.lineTo(wx + (ww * k) / 3, wy + wh);
+        g.stroke();
+      }
+      g.beginPath();
+      g.moveTo(wx, wy + wh / 2);
+      g.lineTo(wx + ww, wy + wh / 2);
+      g.stroke();
+    },
+    { srgb: false },
+  );
+
 /** 기와 지붕 */
 export const roofTiles = () =>
   canvasTexture('roof', 128, 128, (g, w, h) => {

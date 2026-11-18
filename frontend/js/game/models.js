@@ -3,8 +3,15 @@ import * as THREE from 'three';
 import { labelTexture, generatorPanel } from './textures.js';
 import { RULES, jumpHeight } from '@shared/constants.js';
 import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS, survivorSpec, dressSurvivor } from './characters.js';
+import { reflect } from './reflect.js';
 
 const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+// 고품질 화질의 반사 종류 (reflect.js): 쇠붙이는 또렷하게, 나무·칠은 약하게
+const metal = (color, extra) => reflect(mat(color, extra), 'metal');
+const rusty = (color, extra) => reflect(mat(color, extra), 'rust');
+const shiny = (color, extra) => reflect(mat(color, extra), 'gloss');
+const woody = (color, extra) => reflect(mat(color, extra), 'wood');
+const painted = (color, extra) => reflect(mat(color, extra), 'painted');
 
 
 /** 방망이: 손잡이가 원점, +y 방향으로 뻗음 */
@@ -12,13 +19,13 @@ export function makeBat() {
   const g = new THREE.Group();
   const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.025, 0.22, 8), mat('#2b2b2b'));
   grip.position.y = 0.05;
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.024, 0.62, 10), mat('#b98a55'));
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.024, 0.62, 10), woody('#b98a55'));
   body.position.y = 0.47;
   const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 8), mat('#2b2b2b'));
   knob.position.y = -0.06;
   // 못 박힌 느낌
   for (let i = 0; i < 5; i++) {
-    const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.06, 4), mat('#c9c9c9'));
+    const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.06, 4), metal('#c9c9c9'));
     const a = i * 1.3;
     nail.position.set(Math.cos(a) * 0.045, 0.58 + i * 0.04, Math.sin(a) * 0.045);
     nail.rotation.z = Math.PI / 2;
@@ -32,10 +39,10 @@ export function makeBat() {
 /** 익사자 작살: 손잡이가 원점, +y 방향으로 길게 뻗고 끝에 미늘 달린 촉 */
 export function makeHarpoon() {
   const g = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 1.2, 8), mat('#5b4630'));
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.018, 1.2, 8), woody('#5b4630'));
   shaft.position.y = 0.3;
-  const steel = mat('#9aa3a8');
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 8), mat('#b08a3e'));
+  const steel = metal('#9aa3a8');
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 8), metal('#b08a3e'));
   collar.position.y = 0.88;
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.2, 6), steel);
   tip.position.y = 1.0;
@@ -56,7 +63,7 @@ export function makeHarpoon() {
 /** 선장 후크: 손잡이가 원점, 갈고리가 +y 끝에서 휘어짐 */
 export function makeHook() {
   const g = new THREE.Group();
-  const steel = mat('#c9cdd2');
+  const steel = metal('#c9cdd2');
   const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.12, 10), mat('#5a3b22'));
   cuff.position.y = 0.04;
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.22, 8), steel);
@@ -74,11 +81,11 @@ export function makeHook() {
 /** 유령 손톱: 손가락 끝에 길고 하얀 손톱 세 개 (+y 방향) */
 export function makeClaws() {
   const g = new THREE.Group();
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.05), mat('#e8eef4', { emissive: '#3a4a5a' }));
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.05), shiny('#e8eef4', { emissive: '#3a4a5a' }));
   palm.position.y = 0.03;
   g.add(palm);
   for (const x of [-0.035, 0, 0.035]) {
-    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.22, 5), mat('#f4f8ff', { emissive: '#4a6a8a' }));
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.22, 5), shiny('#f4f8ff', { emissive: '#4a6a8a' }));
     claw.position.set(x, 0.17, 0);
     claw.rotation.z = -x * 2;
     g.add(claw);
@@ -89,17 +96,17 @@ export function makeClaws() {
 /** 살가죽 갈고리: 쇠사슬 끝에 매달린 녹슨 갈고리 (+y 방향) */
 export function makeChainHook() {
   const g = new THREE.Group();
-  const iron = mat('#6f5a48');
+  const iron = rusty('#6f5a48');
   for (let i = 0; i < 5; i++) {
     const link = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.007, 4, 10), iron);
     link.position.y = 0.03 + i * 0.045;
     link.rotation.y = i % 2 ? Math.PI / 2 : 0;
     g.add(link);
   }
-  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.016, 6, 16, Math.PI * 1.3), mat('#8a6b52'));
+  const hook = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.016, 6, 16, Math.PI * 1.3), rusty('#8a6b52'));
   hook.position.set(0.06, 0.33, 0);
   hook.rotation.z = Math.PI * 0.9;
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 6), mat('#8a6b52'));
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 6), rusty('#8a6b52'));
   tip.position.set(0.15, 0.29, 0);
   tip.rotation.z = Math.PI;
   g.add(hook, tip);
@@ -109,7 +116,7 @@ export function makeChainHook() {
 /** 선장의 닻 (날아가는 모양) */
 export function makeAnchor() {
   const g = new THREE.Group();
-  const iron = mat('#4a4f57', { emissive: '#111' });
+  const iron = metal('#4a4f57', { emissive: '#111' });
   const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 8), iron);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 6, 14), iron);
   ring.position.y = 0.52;
@@ -154,7 +161,7 @@ export function makeWisp() {
 /** 쿠나이: 손잡이 끝(고리)이 원점, 날이 +y 방향 */
 export function makeKunai() {
   const g = new THREE.Group();
-  const steel = mat('#b9c0c8');
+  const steel = metal('#b9c0c8');
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 14), steel);
   ring.position.y = -0.03;
   const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.12, 8), mat('#2b1f1a'));
@@ -168,7 +175,7 @@ export function makeKunai() {
   }
   const guard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), steel);
   guard.position.y = 0.125;
-  const blade = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), mat('#d7dde3', { emissive: '#101418' }));
+  const blade = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), metal('#d7dde3', { emissive: '#101418' }));
   blade.scale.set(0.034, 0.12, 0.01);
   blade.position.y = 0.24;
   g.add(ring, grip, guard, blade);
@@ -178,8 +185,8 @@ export function makeKunai() {
 /** 저격총: 개머리판이 원점, 총구가 -z 방향 */
 export function makeRifle() {
   const g = new THREE.Group();
-  const dark = mat('#22262b');
-  const wood = mat('#6b4a2f');
+  const dark = metal('#22262b');
+  const wood = woody('#6b4a2f');
   const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.32), wood);
   stock.position.set(0, -0.02, 0.0);
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.5), wood);
@@ -205,10 +212,10 @@ export function makeRifle() {
 /** 광대 공: 알록달록한 고무공 */
 export function makeBall() {
   const g = new THREE.Group();
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), mat('#e0393e', { emissive: '#3a0808' }));
-  const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 20), mat('#f2c230', { emissive: '#3a2a00' }));
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), shiny('#e0393e', { emissive: '#3a0808' }));
+  const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 20), shiny('#f2c230', { emissive: '#3a2a00' }));
   const stripe2 = stripe.clone();
-  stripe2.material = mat('#2f6fd6', { emissive: '#08183a' });
+  stripe2.material = shiny('#2f6fd6', { emissive: '#08183a' });
   stripe2.rotation.y = Math.PI / 2;
   g.add(ball, stripe, stripe2);
   return g;
@@ -234,9 +241,9 @@ export function makeThread(faint) {
 /** 엔지니어 소형 로봇: 발전기 위에 붙어 불빛을 깜빡이며 수리한다 */
 export function makeRobot() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), mat('#e3802a'));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), painted('#e3802a'));
   body.position.y = 0.09;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), mat('#d9dde2'));
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), metal('#d9dde2'));
   head.position.y = 0.23;
   const eye = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.01), new THREE.MeshBasicMaterial({ color: '#4ff2ff' }));
   eye.position.set(0, 0.24, -0.075);
@@ -246,7 +253,7 @@ export function makeRobot() {
   tip.position.y = 0.41;
   g.add(body, head, eye, antenna, tip);
   for (const s of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.16), mat('#9aa1a8'));
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.16), metal('#9aa1a8'));
     arm.position.set(0.15 * s, 0.1, -0.08);
     g.add(arm);
   }
@@ -709,15 +716,15 @@ export class GeneratorModel {
     this.group.position.set(g.x, 0, g.z);
     this.group.rotation.y = g.rot;
     const panel = generatorPanel();
-    const bodyMat = [mat('#4a5a48'), mat('#4a5a48'), mat('#3e4a3c'), mat('#3e4a3c'), mat('#ffffff', { map: panel }), mat('#4a5a48')];
+    const bodyMat = [painted('#4a5a48'), painted('#4a5a48'), painted('#3e4a3c'), painted('#3e4a3c'), shiny('#ffffff', { map: panel }), painted('#4a5a48')];
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.8), bodyMat);
     body.position.y = 0.55;
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), mat('#2a2a2a'));
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 0.9), metal('#2a2a2a'));
     base.position.y = 0.06;
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), mat('#555'));
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), metal('#555'));
     pipe.position.set(0.4, 1.15, 0.2);
     // 담장 너머로도 보이는 표시등 기둥
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 6), mat('#666'));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 6), metal('#666'));
     pole.position.set(-0.45, 2.1, -0.25);
     this.bulbMat = new THREE.MeshBasicMaterial({ color: '#ff3a2a' });
     this.bulb = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), this.bulbMat);
@@ -763,7 +770,7 @@ export class GeneratorModel {
 
 export function makeTrap(faint) {
   const g = new THREE.Group();
-  const m = mat('#7b7f86', { transparent: faint, opacity: faint ? 0.35 : 1 });
+  const m = metal('#7b7f86', { transparent: faint, opacity: faint ? 0.35 : 1 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.03, 6, 20), m);
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.04;
@@ -784,8 +791,8 @@ export function makeExit(exit) {
   const g = new THREE.Group();
   g.position.set(exit.x, 0, exit.z);
   g.rotation.y = exit.rot;
-  const red = mat('#d2452b');
-  const black = mat('#1d1d1d');
+  const red = painted('#d2452b');
+  const black = painted('#1d1d1d');
   for (const s of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 4.2, 10), red);
     post.position.set(1.6 * s, 2.1, 0);

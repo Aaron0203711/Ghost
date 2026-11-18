@@ -1,12 +1,13 @@
 // 고품질 그래픽 (WebGPU 렌더러)
 // 장면을 한 번 그리면서 색·확산색·노멀(+반사 세기)·속도를 함께 기록(MRT)하고,
 //   SSGI: 화면에 보이는 빛이 주변 벽·바닥으로 번지는 간접광 + 구석·틈의 그늘(AO)
-//   SSR : 물웅덩이·논에 비치는 반사
+//   SSR : 모든 표면의 반사 (재질마다 세기·흐림이 다름, reflect.js)
 //   TRAA: 여러 프레임을 겹쳐 계단 현상과 노이즈를 지움
 // 순서로 합성한다. 프레임이 낮으면 해상도와 효과 단계를 스스로 낮춘다.
 // 공정성: 고품질이 어둠 속을 더 잘(또는 덜) 보이게 하면 안 되므로, 그늘로 줄어든 화면 평균 밝기를
 // 맵별 보정값(comp)으로 되돌려 보통 화질과 같게 맞춘다.
 import * as THREE from 'three';
+import { REFLECT, reflectKind } from './reflect.js';
 
 const FPS_LOW = 40; // 이보다 느리면 효과 단계를 한 단계 낮춘다
 const WARMUP = 4; // 시작·단계 변경 뒤 셰이더를 준비하는 동안은 재지 않음 (초)
@@ -16,7 +17,7 @@ const WINDOW = 3; // 이 시간 동안의 평균 프레임으로 판단 (초)
 // 보통 화질과 화면 전체 밝기가 비슷하도록 맞춘 값 (고품질이 더 밝거나 어두우면 불공평)
 const HQ_PRESET = {
   village: { radius: 1, gi: 6, ao: 0.85, comp: 1.1 },
-  mine: { radius: 1, gi: 6, ao: 0.85, comp: 1.3 },
+  mine: { radius: 1, gi: 6, ao: 0.85, comp: 1.38 },
   backrooms: { radius: 1, gi: 6, ao: 0.85, comp: 1.17 },
 };
 
@@ -55,15 +56,23 @@ export class HQRenderer {
     const { WG, TSL, ssgi, ssr, traa } = this.mods;
     const { pass, mrt, output, normalView, diffuseColor, velocity, float, vec4, packNormalToRGB, unpackRGBToNormal, sample, select, isBackgroundDepth, mix, uniform, luminance, max } = TSL;
 
+    // 재질의 반사 세기: 정면은 base, 스치듯 볼수록 edge (프레넬). 아주 약하면 0으로 (반사 계산을 건너뜀)
+    const { dot, pow, positionView } = TSL;
+    const grazing = pow(dot(normalView, positionView.negate().normalize()).clamp(0, 1).oneMinus(), 4);
+    this.reflectivity = (p) => {
+      const r = mix(float(p.base), float(p.edge), grazing);
+      return select(r.lessThan(0.015), float(0), r);
+    };
+
     // WebGPU는 한 번에 쓰는 렌더 타깃이 픽셀당 32바이트로 제한된다 (rgba16f·rgba8 모두 8바이트로 계산).
-    // 그래서 출력은 4개만: 물의 반사 세기는 노멀 버퍼의 남는 알파 채널에 넣는다
+    // 그래서 출력은 4개만: 반사 세기는 노멀 버퍼의 알파, 반사 흐림은 확산색 버퍼의 알파에 넣는다
     const scenePass = pass(scene, camera);
     // 속도 버퍼의 b 채널: 반투명 효과(빛 번짐·이름표·빛줄기)가 그 픽셀에 보탠 밝기 (아래 clearMRT)
     scenePass.setMRT(
       mrt({
         output,
-        diffuseColor,
-        normal: vec4(packNormalToRGB(normalView), 0),
+        diffuseColor: vec4(diffuseColor.rgb, REFLECT.default.rough),
+        normal: vec4(packNormalToRGB(normalView), this.reflectivity(REFLECT.default)),
         velocity: vec4(velocity.xy, 0, 0),
       }),
     );
@@ -83,6 +92,8 @@ export class HQRenderer {
     gi.sliceCount.value = 2;
     gi.stepCount.value = 8;
     gi.radius.value = preset.radius;
+    // 반경을 화면 픽셀이 아닌 실제 거리(m)로: 화면 기준이면 먼 벽의 그늘이 바닥으로 몇 m씩 길게 뻗는다
+    gi.useScreenSpaceSampling.value = false;
     gi.thickness.value = 0.5;
     gi.aoIntensity.value = 1;
     gi.giIntensity.value = preset.gi;
@@ -99,8 +110,8 @@ export class HQRenderer {
     const lit = color.rgb.mul(ao).add(diffuse.rgb.mul(giColor)).mul(this.exposure);
     const composite = vec4(select(isBackgroundDepth(depth.r), color.rgb, lit), color.a);
 
-    // 물 반사: 물 재질만 반사 세기(노멀 알파)를 가지므로 나머지 화면은 바로 건너뛴다
-    const refl = ssr(color, depth, sceneNormal, { metalnessNode: normalTex.a, roughnessNode: float(0.05) });
+    // 반사: 세기는 노멀 알파, 흐림은 확산색 알파 (재질마다 다름). 세기가 0인 곳은 바로 건너뛴다
+    const refl = ssr(color, depth, sceneNormal, { metalnessNode: normalTex.a, roughnessNode: diffuse.a });
     refl.maxDistance.value = 24;
     refl.thickness.value = 0.35;
     refl.quality.value = 0.4;
@@ -130,11 +141,7 @@ export class HQRenderer {
     this.clearMRT.setBlendMode('diffuseColor', keep);
     this.clearMRT.setBlendMode('normal', keep);
     this.clearMRT.setBlendMode('velocity', add);
-    // 물: 비스듬히 볼수록 더 많이 비친다 (프레넬). 바로 내려다보면 은은하게
-    const { dot, pow, positionView } = TSL;
-    const facing = dot(normalView, positionView.negate().normalize()).clamp(0, 1);
-    const reflectivity = mix(float(0.12), float(0.65), pow(facing.oneMinus(), 3));
-    this.waterMRT = mrt({ normal: vec4(packNormalToRGB(normalView), reflectivity) });
+    this.reflectMRTs = new Map(); // 반사 종류별 MRT (재질끼리 공유)
 
     this.renderer
       .init()
@@ -172,11 +179,39 @@ export class HQRenderer {
 
   syncMaterial(m) {
     // 효과를 끈 단계 0은 MRT 없이 그리므로 재질에도 MRT 출력을 붙이지 않는다
-    const want = this.level === 0 ? 0 : m.transparent ? 1 : m.userData.water ? 2 : 0;
+    const kind = reflectKind(m);
+    const want = this.level === 0 ? 'none' : m.transparent ? 'clear' : m.userData.reflectMask ? `mask:${kind}` : kind;
     if (m.userData.hqMrt === want) return;
     m.userData.hqMrt = want;
-    m.mrtNode = want === 1 ? this.clearMRT : want === 2 ? this.waterMRT : null;
+    m.mrtNode = want === 'none' ? null : want === 'clear' ? this.clearMRT : this.reflectMRT(kind, m);
     m.needsUpdate = true;
+  }
+
+  /** 재질의 반사 세기(노멀 알파)·흐림(확산색 알파)을 쓰는 MRT. 마스크가 있으면 흰 곳만 다른 종류로 */
+  reflectMRT(kind, m) {
+    const { mrt, vec4, float, mix, normalView, packNormalToRGB, diffuseColor, texture, uv } = this.mods.TSL;
+    const p = REFLECT[kind] ?? REFLECT.default;
+    const mask = m.userData.reflectMask;
+    if (mask) {
+      if (!m.userData.hqMaskMRT) {
+        const q = REFLECT[mask.kind] ?? REFLECT.glass;
+        const w = texture(mask.texture, uv()).r;
+        m.userData.hqMaskMRT = mrt({
+          normal: vec4(packNormalToRGB(normalView), mix(this.reflectivity(p), this.reflectivity(q), w)),
+          diffuseColor: vec4(diffuseColor.rgb, mix(float(p.rough), float(q.rough), w)),
+        });
+      }
+      return m.userData.hqMaskMRT;
+    }
+    let node = this.reflectMRTs.get(kind);
+    if (!node) {
+      node = mrt({
+        normal: vec4(packNormalToRGB(normalView), this.reflectivity(p)),
+        diffuseColor: vec4(diffuseColor.rgb, float(p.rough)),
+      });
+      this.reflectMRTs.set(kind, node);
+    }
+    return node;
   }
 
   watchPerf(dt) {

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { Batch, texturedBox, place, gableRoof, groundPlane, lambert, waterMaterial } from './world.js';
 import { canvasTexture, noise, wood as woodTex } from './textures.js';
+import { reflect } from './reflect.js';
 
 export const MINE_CEILING = 11;
 export const MINE_FOG = { color: '#2a221c', near: 8, far: 60 };
@@ -221,6 +222,7 @@ export function buildMineWorld(scene, map) {
     plank: new Batch(),
     wood: new Batch(),
     plain: new Batch(),
+    rail: new Batch(), // 레일 (고품질 화질에서 금속처럼 비침)
     glow: new Batch(),
     sign: new Batch(),
   };
@@ -352,18 +354,20 @@ export function buildMineWorld(scene, map) {
   }
 
   const meshes = [
-    B.ground.mesh(lambert({ map: mineGround() })),
-    B.path.mesh(lambert({ map: mineGround() })),
-    B.coal.mesh(lambert({ map: coal() })),
-    B.ore.mesh(lambert({ map: ore() })),
+    // reflect(): 고품질 화질의 반사 종류 (reflect.js)
+    B.ground.mesh(reflect(lambert({ map: mineGround() }), 'matte')),
+    B.path.mesh(reflect(lambert({ map: mineGround() }), 'matte')),
+    B.coal.mesh(reflect(lambert({ map: coal() }), 'stone')),
+    B.ore.mesh(reflect(lambert({ map: ore() }), 'stone')),
     B.water.mesh(waterMaterial({ vertexColors: true, map: water(), shininess: 120, specular: 0x667777 })),
-    B.rock.mesh(lambert({ map: rock(), side: THREE.DoubleSide })),
-    B.rust.mesh(lambert({ map: rustMetal() })),
-    B.plank.mesh(lambert({ map: oldPlank() })),
-    B.wood.mesh(lambert({ map: woodTex() })),
-    B.plain.mesh(lambert({})),
-    B.glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })),
-    B.sign.mesh(lambert({ map: warningSign() })),
+    B.rock.mesh(reflect(lambert({ map: rock(), side: THREE.DoubleSide }), 'stone')),
+    B.rust.mesh(reflect(lambert({ map: rustMetal() }), 'rust')),
+    B.plank.mesh(reflect(lambert({ map: oldPlank() }), 'wood')),
+    B.wood.mesh(reflect(lambert({ map: woodTex() }), 'wood')),
+    B.plain.mesh(reflect(lambert({}), 'painted')),
+    B.rail.mesh(reflect(lambert({}), 'metal')),
+    B.glow.mesh(reflect(new THREE.MeshBasicMaterial({ vertexColors: true }), 'matte')),
+    B.sign.mesh(reflect(lambert({ map: warningSign() }), 'painted')),
   ];
   for (const m of meshes) if (m) group.add(m);
 
@@ -393,7 +397,7 @@ function addRails(B, r) {
   const len = alongX ? r.w : r.d;
   for (const s of [-0.55, 0.55]) {
     const rail = new THREE.BoxGeometry(alongX ? len : 0.07, 0.09, alongX ? 0.07 : len);
-    B.plain.add(place(rail, r.x + (alongX ? 0 : s), 0.13, r.z + (alongX ? s : 0)), '#5b5550');
+    B.rail.add(place(rail, r.x + (alongX ? 0 : s), 0.13, r.z + (alongX ? s : 0)), '#5b5550');
   }
   const n = Math.floor(len / 0.9);
   for (let i = 0; i < n; i++) {

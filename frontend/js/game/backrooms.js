@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Batch, texturedBox, place, groundPlane, lambert } from './world.js';
 import { canvasTexture, noise } from './textures.js';
+import { reflect } from './reflect.js';
 
 export const BACKROOMS_FOG = { color: '#cdbf86', near: 12, far: 78 }; // 시야 약 75m
 
@@ -142,16 +143,17 @@ export function buildBackroomsWorld(scene, map) {
     B.stain.add(place(groundPlane(d.r * 2, d.r * 2, d.r * 2), d.x, 0.015, d.z));
   }
 
-  const flickerMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: lightPanel() });
+  const flickerMat = reflect(new THREE.MeshBasicMaterial({ vertexColors: true, map: lightPanel() }), 'gloss');
+  // reflect(): 고품질 화질의 반사 종류 (reflect.js)
   const meshes = [
-    B.floor.mesh(lambert({ map: carpet() })),
-    B.wall.mesh(lambert({ map: wallpaper() })),
+    B.floor.mesh(reflect(lambert({ map: carpet() }), 'matte')),
+    B.wall.mesh(reflect(lambert({ map: wallpaper() }), 'wood')),
     // 천장은 아래(카펫)에서 오는 빛만 받아 칙칙해지므로 스스로 조금 밝힌다
-    B.ceiling.mesh(lambert({ map: ceilingTiles(), emissive: '#8a8364', emissiveMap: ceilingTiles() })),
-    B.light.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, map: lightPanel() })),
+    B.ceiling.mesh(reflect(lambert({ map: ceilingTiles(), emissive: '#8a8364', emissiveMap: ceilingTiles() }), 'matte')),
+    B.light.mesh(reflect(new THREE.MeshBasicMaterial({ vertexColors: true, map: lightPanel() }), 'gloss')),
     B.flicker.mesh(flickerMat),
     B.stain.mesh(lambert({ map: stain(), transparent: true, depthWrite: false })),
-    B.trim.mesh(lambert({})),
+    B.trim.mesh(reflect(lambert({}), 'painted')),
   ];
   for (const m of meshes) if (m) group.add(m);
 
@@ -185,7 +187,7 @@ export function makeBackroomsExit(exit) {
   const g = new THREE.Group();
   g.position.set(exit.x, 0, exit.z);
   g.rotation.y = exit.rot;
-  const frameMat = new THREE.MeshLambertMaterial({ color: '#8e7a45' });
+  const frameMat = reflect(new THREE.MeshLambertMaterial({ color: '#8e7a45' }), 'painted');
   for (const s of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.3, 0.2), frameMat);
     post.position.set(0.62 * s, 1.15, 0);

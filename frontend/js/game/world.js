@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as T from './textures.js';
+import { reflect } from './reflect.js';
 import { buildMineWorld, buildMineSky } from './mine.js';
 import { buildBackroomsWorld, buildBackroomsSky } from './backrooms.js';
 
@@ -104,12 +105,8 @@ export class Batch {
 }
 
 export const lambert = (opts) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
-/** 물(논·물웅덩이): 고품질 화질에서 화면 반사(SSR)가 비치도록 표시해 둔다 */
-export const waterMaterial = (opts) => {
-  const m = new THREE.MeshPhongMaterial(opts);
-  m.userData.water = true;
-  return m;
-};
+/** 물(논·물웅덩이): 고품질 화질에서 물처럼 비치도록 표시해 둔다 */
+export const waterMaterial = (opts) => reflect(new THREE.MeshPhongMaterial(opts), 'water');
 
 export function buildWorld(scene, map) {
   if (map.theme === 'mine') return buildMineWorld(scene, map);
@@ -228,20 +225,21 @@ export function buildWorld(scene, map) {
   const mountains = buildMountains(size);
 
   const meshes = [
-    B.grass.mesh(lambert({ map: T.grass() })),
-    B.road.mesh(lambert({ map: T.asphalt() })),
-    B.ground.dirt.mesh(lambert({ map: T.dirt() })),
-    B.ground.gravel.mesh(lambert({ map: T.gravel() })),
+    // reflect(): 고품질 화질의 반사 종류 (reflect.js)
+    B.grass.mesh(reflect(lambert({ map: T.grass() }), 'matte')),
+    B.road.mesh(reflect(lambert({ map: T.asphalt() }), 'stone')),
+    B.ground.dirt.mesh(reflect(lambert({ map: T.dirt() }), 'matte')),
+    B.ground.gravel.mesh(reflect(lambert({ map: T.gravel() }), 'stone')),
     B.ground.paddy.mesh(waterMaterial({ vertexColors: true, map: T.paddy(), shininess: 80, specular: 0x556677 })),
-    B.block.mesh(lambert({ map: T.blockWall() })),
-    B.stone.mesh(lambert({ map: T.stoneWall() })),
-    B.house.mesh(lambert({ map: T.houseWall() })),
-    B.roof.mesh(lambert({ map: T.roofTiles() })),
-    B.wood.mesh(lambert({ map: T.wood() })),
-    B.plain.mesh(lambert({})),
-    B.foliage.mesh(lambert({ flatShading: true })),
-    B.glow.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })),
-    B.vending.mesh(new THREE.MeshBasicMaterial({ vertexColors: true, map: T.vendingFront() })),
+    B.block.mesh(reflect(lambert({ map: T.blockWall() }), 'stone')),
+    B.stone.mesh(reflect(lambert({ map: T.stoneWall() }), 'stone')),
+    B.house.mesh(reflect(lambert({ map: T.houseWall() }), 'wood', T.houseWallGlass())), // 창유리만 유리처럼
+    B.roof.mesh(reflect(lambert({ map: T.roofTiles() }), 'tile')),
+    B.wood.mesh(reflect(lambert({ map: T.wood() }), 'wood')),
+    B.plain.mesh(reflect(lambert({}), 'painted')),
+    B.foliage.mesh(reflect(lambert({ flatShading: true }), 'matte')),
+    B.glow.mesh(reflect(new THREE.MeshBasicMaterial({ vertexColors: true }), 'matte')),
+    B.vending.mesh(reflect(new THREE.MeshBasicMaterial({ vertexColors: true, map: T.vendingFront() }), 'glass')),
     mountains,
   ];
   for (const m of meshes) if (m) group.add(m);

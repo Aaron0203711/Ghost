@@ -17,7 +17,7 @@ const WINDOW = 3; // 이 시간 동안의 평균 프레임으로 판단 (초)
 // 보통 화질과 화면 전체 밝기가 비슷하도록 맞춘 값 (고품질이 더 밝거나 어두우면 불공평)
 const HQ_PRESET = {
   village: { radius: 1, gi: 6, ao: 0.85, comp: 1.1 },
-  mine: { radius: 1, gi: 6, ao: 0.85, comp: 1.38 },
+  mine: { radius: 1, gi: 6, ao: 0.85, comp: 1.34 },
   backrooms: { radius: 1, gi: 6, ao: 0.85, comp: 1.17 },
 };
 

@@ -313,20 +313,28 @@ export class HQRenderer {
 
   // ───────────── WebGPU용 재질 (WebGL 버전은 GLSL로 따로 있음) ─────────────
 
-  /** 마을 해질녘 하늘 (world.js buildSky의 GLSL과 같은 색) */
-  skyMaterial() {
+  /** 마을 해질녘 하늘 (world.js buildSky의 GLSL과 같은 색). sunDir이 있으면 해 원반과 해 쪽 노을 번짐 */
+  skyMaterial(sunDir = null) {
     const { WG, TSL } = this.mods;
-    const { positionLocal, vec3, mix, clamp, select, sRGBTransferEOTF } = TSL;
+    const { positionLocal, vec3, mix, clamp, select, sRGBTransferEOTF, uniform, max, dot, pow, smoothstep, float } = TSL;
     const m = new WG.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false });
-    const h = positionLocal.normalize().y;
+    const d = positionLocal.normalize();
+    const h = d.y;
     const horizon = vec3(0.86, 0.52, 0.36);
     const mid = vec3(0.42, 0.33, 0.48);
     const top = vec3(0.1, 0.11, 0.22);
-    const c = select(
+    let c = select(
       h.lessThan(0),
       horizon.mul(0.6),
       select(h.lessThan(0.25), mix(horizon, mid, h.div(0.25)), mix(mid, top, clamp(h.sub(0.25).div(0.6), 0, 1))),
     );
+    if (sunDir) {
+      const s = max(dot(d, uniform(sunDir.clone())), 0);
+      const low = float(1).sub(smoothstep(-0.05, 0.55, h));
+      c = c.add(vec3(1, 0.55, 0.28).mul(pow(s, 6).mul(0.32).mul(low).add(pow(s, 48).mul(0.35))));
+      c = c.add(vec3(1, 0.8, 0.55).mul(pow(s, 900).mul(0.9)));
+      c = mix(c, vec3(1, 0.9, 0.72), smoothstep(0.99955, 0.99975, s));
+    }
     // 기존 하늘은 sRGB 값을 그대로 화면에 썼으므로 선형으로 바꿔 넣는다
     m.colorNode = sRGBTransferEOTF(c);
     return m;

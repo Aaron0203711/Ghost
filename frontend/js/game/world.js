@@ -376,8 +376,11 @@ function houseMaterial() {
   );
 }
 
-/** 해질녘 하늘 */
-export function buildSky(scene, theme = 'village') {
+/**
+ * 해질녘 하늘. sunDir(해가 있는 쪽 단위 벡터, sun.js)을 주면 그 방향에 해 원반과
+ * 해 쪽 지평선의 노을 번짐을 그린다 (고품질 화질은 hq.js skyMaterial이 같은 색으로 그린다)
+ */
+export function buildSky(scene, theme = 'village', sunDir = null) {
   if (theme === 'mine') return buildMineSky(scene);
   if (theme === 'backrooms') return buildBackroomsSky(scene);
   const geo = new THREE.SphereGeometry(190, 24, 12);
@@ -385,15 +388,24 @@ export function buildSky(scene, theme = 'village') {
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: {},
+    uniforms: { uSunDir: { value: sunDir ? sunDir.clone() : new THREE.Vector3() } },
     vertexShader: `varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vPos;
+    fragmentShader: `uniform vec3 uSunDir;
+      varying vec3 vPos;
       void main(){
-        float h = normalize(vPos).y;
+        vec3 d = normalize(vPos);
+        float h = d.y;
         vec3 horizon = vec3(0.86, 0.52, 0.36);
         vec3 mid = vec3(0.42, 0.33, 0.48);
         vec3 top = vec3(0.10, 0.11, 0.22);
         vec3 c = h < 0.0 ? horizon * 0.6 : (h < 0.25 ? mix(horizon, mid, h / 0.25) : mix(mid, top, clamp((h - 0.25) / 0.6, 0.0, 1.0)));
+        // 해 쪽 하늘: 지평선 가까이 노을이 더 밝고 따뜻하게 번진다
+        float s = max(dot(d, uSunDir), 0.0);
+        float low = 1.0 - smoothstep(-0.05, 0.55, h);
+        c += vec3(1.0, 0.55, 0.28) * (pow(s, 6.0) * 0.32 * low + pow(s, 48.0) * 0.35);
+        // 해 원반과 둘레의 눈부신 빛
+        c += vec3(1.0, 0.8, 0.55) * pow(s, 900.0) * 0.9;
+        c = mix(c, vec3(1.0, 0.9, 0.72), smoothstep(0.99955, 0.99975, s));
         gl_FragColor = vec4(c, 1.0);
       }`,
   });

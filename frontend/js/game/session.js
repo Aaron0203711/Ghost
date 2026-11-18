@@ -61,6 +61,7 @@ import { Headlamps, enableShadows, litDustMaterial, LAMP_ANGLE } from './headlam
 import { GFX_HIGH, GFX_NORMAL, hqModules } from './gfx.js';
 import { saveSettings } from '../settings.js';
 import { HQRenderer } from './hq.js';
+import { Sun, DEFAULT_SUN } from './sun.js';
 import { Bgm } from './bgm.js';
 import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
@@ -284,21 +285,23 @@ export class GameSession {
       scene.add(new THREE.HemisphereLight('#fff4c8', '#8f7d42', 2.1));
       scene.add(new THREE.AmbientLight('#e8dca8', 0.7));
     } else {
-      scene.add(new THREE.HemisphereLight('#b9a3c9', '#3b3226', 1.6));
-      const sun = new THREE.DirectionalLight('#ffb27a', 1.4);
-      sun.position.set(-60, 40, 30);
-      scene.add(sun);
-      scene.add(new THREE.AmbientLight('#6c6280', 0.5));
+      // 하늘빛은 해가 생기며 조금 줄임 (1.6 → 1.4, 0.5 → 0.44): 그림자가 보이도록 햇빛 비중을 높였다
+      scene.add(new THREE.HemisphereLight('#b9a3c9', '#3b3226', 1.4));
+      // 해: 서버가 판마다 정한 방향·높이 (sun.js). 건물·담장·나무·사람이 그림자를 드리운다
+      this.sun = new Sun(scene, renderer, start.map.sun ?? DEFAULT_SUN);
+      scene.add(new THREE.AmbientLight('#6c6280', 0.44));
     }
+    // 그림자를 드리우는 빛이 있는 맵 (마을의 해, 폐광산의 헤드램프)
+    this.castShadows = !!(this.sun || this.headlamps);
 
-    this.sky = buildSky(scene, this.theme);
+    this.sky = buildSky(scene, this.theme, this.sun?.dir);
     if (this.hq && this.sky.material.isShaderMaterial) {
       // WebGPU는 GLSL 셰이더를 못 쓰므로 같은 색의 노드 재질로 바꾼다
       this.sky.material.dispose();
-      this.sky.material = this.hq.skyMaterial();
+      this.sky.material = this.hq.skyMaterial(this.sun?.dir);
     }
     this.worldGroup = buildWorld(scene, start.map);
-    if (this.headlamps) enableShadows(this.worldGroup);
+    if (this.castShadows) enableShadows(this.worldGroup);
 
     // 유령은 담장·벽을 통과한다 (서버와 같은 기준으로 예측)
     this.collision = new CollisionWorld(
@@ -308,7 +311,7 @@ export class GameSession {
     for (const g of start.generators) {
       this.collision.add(genBox(g));
       const model = new GeneratorModel(g);
-      if (this.headlamps) enableShadows(model.group);
+      if (this.castShadows) enableShadows(model.group);
       scene.add(model.group);
       this.gens.set(g.id, { ...g, model, progress: 0, done: false });
     }
@@ -328,11 +331,13 @@ export class GameSession {
         this.hpBars.set(p.id, bar);
       }
       scene.add(a.group);
-      this.addHeadlamp(a);
+      this.setupAvatar(a);
       this.avatars.set(p.id, a);
     }
 
     if (this.isHunter) this.viewBat = makeViewModel(camera, this.hunterClass);
+    // 손에 든 무기도 그늘에 들어가면 어두워지게 (그림자를 받기만 하고 드리우지는 않음)
+    if (this.castShadows) this.viewBat?.root?.traverse((o) => o.isMesh && (o.receiveShadow = true));
     // 닻 사슬 (선 여러 개를 한 번에 그림)
     const chainGeo = new THREE.BufferGeometry();
     chainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16 * 6), 3));
@@ -899,7 +904,7 @@ export class GameSession {
         a.setTarget(c.x, c.z, c.yaw, true);
         if (!this.isHunter) a.setGhost(0.55);
         this.scene.add(a.group);
-        this.addHeadlamp(a); // 분신도 주인과 똑같이 헤드램프를 찬다
+        this.setupAvatar(a); // 분신도 주인과 똑같이 그림자·헤드램프
         this.cloneAvatars.set(c.id, a);
       }
       a.setTarget(c.x, c.z, c.yaw);
@@ -969,7 +974,7 @@ export class GameSession {
       const avatar = new Avatar(ROLE.SURVIVOR, as?.index ?? 0, as?.name ?? '?', true);
       avatar.setTarget(p.x, p.z, p.yaw, true);
       this.scene.add(avatar.group);
-      this.addHeadlamp(avatar);
+      this.setupAvatar(avatar);
       d = { look: p.look, avatar };
       this.disguiseAvatars.set(p.id, d);
     }
@@ -1004,7 +1009,7 @@ export class GameSession {
   showExit(exit) {
     this.exit = exit;
     this.exitMesh = this.isMine ? makeMineExit(exit) : this.isBackrooms ? makeBackroomsExit(exit) : makeExit(exit);
-    if (this.headlamps) enableShadows(this.exitMesh);
+    if (this.castShadows) enableShadows(this.exitMesh);
     this.scene.add(this.exitMesh);
     $('hud-exit').classList.remove('hidden');
   }
@@ -1505,11 +1510,10 @@ export class GameSession {
     $('spectate-name').textContent = `${next.role === ROLE.HUNTER ? `${CLASS_INFO[next.cls ?? HUNTER_CLASS.MANIAC].icon} ` : ''}${next.name}`;
   }
 
-  /** 폐광산: 아바타 머리에 헤드램프를 달고 내 램프의 그림자를 드리우게 한다 */
-  addHeadlamp(a) {
-    if (!this.headlamps) return;
-    enableShadows(a.group);
-    this.headlamps.attach(a);
+  /** 아바타: 그림자를 드리우게 하고(마을의 해·폐광산의 헤드램프), 폐광산이면 머리에 헤드램프를 단다 */
+  setupAvatar(a) {
+    if (this.castShadows) enableShadows(a.group);
+    this.headlamps?.attach(a);
   }
 
   distTo(id) {
@@ -1531,6 +1535,7 @@ export class GameSession {
       this.headlamps.update(dt, this.camera, this.collision);
       this.litDust.update(this.headlamps.mine);
     }
+    this.sun?.update(this.camera); // 그림자 범위를 보는 쪽으로
     if (this.hq) this.hq.render(rawDt);
     else this.renderer.render(this.scene, this.camera);
   }
@@ -2218,6 +2223,7 @@ export class GameSession {
     $('map-overlay').classList.add('hidden');
     $('btn-spectate-next').removeEventListener('click', this.onSpectateNext);
     this.headlamps?.dispose();
+    this.sun?.dispose();
     this.scene.traverse((o) => {
       o.geometry?.dispose();
       if (o.material) {

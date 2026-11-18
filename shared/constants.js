@@ -274,6 +274,20 @@ export const PALCHEOK = Object.freeze({
   SKILL_COOLDOWN: 9,
 });
 
+/**
+ * 마을 맵의 해: 판마다 방향과 높이가 다르다. 서버가 맵을 만들 때 정해서 모든 플레이어가 같은 그림자를 본다.
+ *  - 방향(azimuth): +z 축에서 +x 쪽으로 잰 각 (rad, 0 ~ 2π)
+ *  - 높이(elevation): 지평선에서 잰 각 (rad). 해 질 녘이라 낮아서 그림자가 길다 (12°보다 낮으면 바닥 그림자가 거의 안 보임)
+ *  - SHADOW: 그림자 속에서 햇빛을 얼마나 가릴지 (1 = 다 가림). 은은하게(화면 밝기 기준):
+ *    바닥 그늘은 햇빛 받는 바닥의 약 80~88%, 해를 마주한 벽의 그늘은 약 60%. 그늘에서도 하늘빛으로 사람이 잘 보인다
+ * 건물·담장·나무와 사람 모두 그림자를 드리운다 (보통·고품질 화질 공통)
+ */
+export const SUN = Object.freeze({
+  ELEVATION_MIN: (12 * Math.PI) / 180,
+  ELEVATION_MAX: (25 * Math.PI) / 180,
+  SHADOW: 0.85,
+});
+
 /** 생존자 지도: 시야(바라보는 방향 ±60°, 맵 시야 거리 안, 벽에 가리지 않음)에 들어온 발전기를 표시 */
 export const MAP_SIGHT = Object.freeze({ HALF_ANGLE: (60 * Math.PI) / 180, RANGE: { village: 75, mine: 60, backrooms: 75 } });
 

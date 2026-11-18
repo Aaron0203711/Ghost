@@ -3,7 +3,7 @@
 // 모든 장애물은 충돌 박스(boxes)로 내보내며, 클라이언트는 같은 데이터로 렌더링과 충돌 예측을 한다.
 
 import { CollisionWorld } from '../../shared/collision.js';
-import { RULES } from '../../shared/constants.js';
+import { RULES, SUN } from '../../shared/constants.js';
 
 export const MAP_SIZE = 150;
 const HALF = MAP_SIZE / 2;
@@ -361,7 +361,19 @@ export function generateMap(seed = Date.now(), theme = 'village') {
     b.d = round(b.d);
   }
 
-  return { seed, theme, size: MAP_SIZE, boxes, decor, roads, poles, exits, arches };
+  // 마을은 하늘이 열려 있으니 해가 있다 (폐광산은 땅속이라 없음)
+  return { seed, theme, size: MAP_SIZE, boxes, decor, roads, poles, exits, arches, ...(theme === 'village' ? { sun: makeSun(seed) } : {}) };
+}
+
+/**
+ * 판마다 다른 해 질 녘 해의 위치. 마을 배치가 바뀌지 않도록 배치와 다른 난수를 쓴다.
+ * 반환: { azimuth, elevation } (rad, SUN 참고)
+ */
+export function makeSun(seed) {
+  const r = mulberry32((seed ^ 0x51ed270b) >>> 0);
+  const azimuth = r() * Math.PI * 2;
+  const elevation = SUN.ELEVATION_MIN + r() * (SUN.ELEVATION_MAX - SUN.ELEVATION_MIN);
+  return { azimuth: Math.round(azimuth * 1000) / 1000, elevation: Math.round(elevation * 1000) / 1000 };
 }
 
 const round = (v) => Math.round(v * 1000) / 1000;

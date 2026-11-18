@@ -137,7 +137,7 @@ function stunHunter(game, h) {
 
 // ───────────── 군인 ─────────────
 
-/** 소총 한 발: 10발을 다 쓰면 5초 동안 자동 장전 (무제한). 장전 중이면 쏠 수 없다 */
+/** 소총 한 발: 10발을 다 쓰면 12초 동안 자동 장전 (무제한). 장전 중이면 쏠 수 없다 */
 function fireRifle(game, p) {
   if (game.time < p.reloadUntil || p.ammo <= 0) return false;
   p.ammo--;

@@ -599,7 +599,7 @@ export class GameSession {
     if (this.isHunter || !this.hasSSkill || this.status !== STATUS.ALIVE || this.sskillLeft > 0) return;
     if (performance.now() - (this.lastSSkillAt || 0) < (this.isSoldier ? 150 : 400)) return;
     if (this.isSoldier) {
-      // 소총: 장전 중이면 못 쏨. 10발을 다 쓰면 5초 자동 장전
+      // 소총: 장전 중이면 못 쏨. 10발을 다 쓰면 12초 자동 장전
       if (this.reloadLeft > 0 || this.ammo <= 0) return;
       this.ammo--;
       if (this.ammo === 0) {

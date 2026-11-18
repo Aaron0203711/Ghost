@@ -420,11 +420,11 @@ export const DOCTOR = Object.freeze({ COOLDOWN: 23, RANGE: 5, HEAL: 1, AIM_HALF_
 export const POLICE = Object.freeze({ COOLDOWN: 24.5, RANGE: 10, SPEED: 30, RADIUS: 0.3, STUN: 4 });
 
 /** 군인: 소총 10발. 0.5초마다 한 발, 총알은 초속 150m로 30m까지(벽에 막힘), 피해 없음.
- *  맞은 술래는 2초 동안 이동 속도 29.74% 감소(다시 맞으면 2초로 초기화). 10발을 다 쓰면 5초 동안 자동 장전(무제한) */
+ *  맞은 술래는 2초 동안 이동 속도 29.74% 감소(다시 맞으면 2초로 초기화). 10발을 다 쓰면 12초 동안 자동 장전(무제한) */
 export const SOLDIER = Object.freeze({
   MAG: 10,
   FIRE_INTERVAL: 0.5,
-  RELOAD: 5,
+  RELOAD: 12,
   SPEED: 150,
   RANGE: 30,
   RADIUS: 0.2,
@@ -444,7 +444,7 @@ export const ENGINEER = Object.freeze({ COOLDOWN: 13, DURATION: 5, RATE: 0.04, R
 export const SURVIVOR_CLASS_INFO = Object.freeze({
   doctor: { name: '의사', icon: '🩺', skill: '회복', desc: '5m 안의 생존자(없으면 자신)를 한 칸 회복 · 쿨타임 23초' },
   police: { name: '경찰', icon: '👮', skill: '테이저건', desc: '테이저건 10m · 맞은 술래 4초 스턴 · 쿨타임 24.5초' },
-  soldier: { name: '군인', icon: '🪖', skill: '소총', desc: '소총 10발(0.5초마다, 30m) · 맞은 술래 2초간 이동 속도 -29.74% · 다 쓰면 5초 장전' },
+  soldier: { name: '군인', icon: '🪖', skill: '소총', desc: '소총 10발(0.5초마다, 30m) · 맞은 술래 2초간 이동 속도 -29.74% · 다 쓰면 12초 장전' },
   foodfighter: { name: '푸드파이터', icon: '🍔', skill: null, desc: '체력 +4칸 (보통 7칸) · 대신 스태미나 8초 · 이동 속도 -10%' },
   ninja: { name: '닌자', icon: '🌀', skill: '분신', desc: '5초 동안 앞으로 걸어가는 분신 소환 · 쿨타임 13초' },
   engineer: { name: '엔지니어', icon: '🔧', skill: '로봇', desc: '발전기에 로봇 부착, 5초간 20% 수리 · 쿨타임 13초' },

@@ -378,7 +378,7 @@ test('경찰: 테이저건은 10m까지, 맞은 술래는 4초간 이동·공격
   assert.equal(c.hits, 1);
 });
 
-test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 10발 쓰면 5초 장전', () => {
+test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 10발 쓰면 12초 장전', () => {
   const { game, p, ev } = makeGame({ n: 2, scls: ['soldier'] });
   const h = p('p1');
   const so = p('p2');
@@ -410,7 +410,7 @@ test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 
   game.handleSkill('p2', { yaw: 0 });
   run(game, 0.4);
   assert.equal(ev('rifleEnd').at(-1).msg.hit, null, '30m까지');
-  // 남은 탄을 다 쓰면 5초 장전
+  // 남은 탄을 다 쓰면 12초 장전
   while (so.ammo > 0) {
     so.sskillReadyAt = 0;
     game.handleSkill('p2', { yaw: Math.PI });
@@ -422,7 +422,7 @@ test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 
   run(game, SOLDIER.RELOAD - 0.2);
   assert.equal(so.ammo, 0, '장전 중');
   run(game, 0.3);
-  assert.equal(so.ammo, SOLDIER.MAG, '5초 뒤 10발');
+  assert.equal(so.ammo, SOLDIER.MAG, '12초 뒤 10발');
   assert.equal(ev('reloaded').length, 1);
   game.handleSkill('p2', { yaw: Math.PI });
   assert.equal(so.ammo, 9, '장전은 무제한');

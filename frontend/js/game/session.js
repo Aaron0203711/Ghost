@@ -16,6 +16,7 @@ import {
   CAPTAIN,
   GHOST,
   SKINWALKER,
+  SKINWALKER_STAMINA_REGEN,
   SPRINTER,
   CLOWN,
   POLICE,
@@ -376,6 +377,7 @@ export class GameSession {
     screen.classList.toggle('cls-assassin', this.isAssassin);
     screen.classList.toggle('cls-skill', this.hasClassSkill);
     screen.classList.toggle('cls-clown', this.isClown);
+    screen.classList.toggle('cls-skinwalker', this.isSkin); // 살가죽: 변장 중 달리기 버튼·스태미나
     screen.classList.remove('s-slowed', 'no-run', 'diving', 'h-slowed');
     screen.classList.toggle('cls-noattack', this.isFlesh); // 살덩이: 기본 공격 없음
     screen.classList.remove('disguised');
@@ -431,7 +433,9 @@ export class GameSession {
           ? '좌클릭 주먹 · E 납치, 들고 있을 때 E 던지기'
           : this.isFlesh
             ? '기본 공격 없음 · E 발밑에 반경 6m 점액 뿌리기'
-            : '좌클릭 공격 · E 스킬';
+            : this.isSkin
+              ? '좌클릭 공격 · E 변장 · 변장 중 Shift 달리기'
+              : '좌클릭 공격 · E 스킬';
     }
     $('hud-feed').innerHTML = '';
     $('btn-train').classList.toggle('hidden', !this.training);
@@ -500,7 +504,7 @@ export class GameSession {
         joy: $('joy'),
         knob: $('joy-knob'),
         canvas: this.renderer.domElement,
-        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null },
+        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null, hrun: this.isSkin ? $('btn-hrun') : null },
       },
       () => this.settings.sensitivity,
     );
@@ -965,7 +969,7 @@ export class GameSession {
         d.avatar.dispose();
       }
       const as = this.info.get(p.look);
-      const avatar = new Avatar(ROLE.SURVIVOR, as?.index ?? 0, as?.name ?? '?', true);
+      const avatar = new Avatar(ROLE.SURVIVOR, as?.index ?? 0, as?.name ?? '?', true, as?.scls ?? null); // 그 생존자의 직업 모습까지 똑같이
       avatar.setTarget(p.x, p.z, p.yaw, true);
       this.scene.add(avatar.group);
       this.setupAvatar(avatar);
@@ -1574,10 +1578,12 @@ export class GameSession {
     const repairing = this.isRepairing();
     const mv = alive && !stunned && !this.forced && !repairing ? c.moveVector() : { x: 0, y: 0 };
     this.moving = mv.x !== 0 || mv.y !== 0;
-    const wantsRun = !this.isHunter && c.isHeld('action');
+    // 살가죽은 Shift(휴대폰은 달리기 버튼)로 변장 중에만 달린다
+    const wantsRun = this.isHunter ? this.isSkin && c.isHeld('hrun') : c.isHeld('action');
     this.wantsRun = wantsRun;
     // 감속(덫이 풀린 뒤·조준 저격·광대 실)과 달리기 불가는 서버가 알려 준 값으로 예측
     if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned && !this.noRun, this.moving, dt, this.staminaMax);
+    else if (this.isSkin) this.running = stepStamina(this.stam, wantsRun && this.disguised && !stunned, this.moving, dt, this.staminaMax, SKINWALKER_STAMINA_REGEN);
     if (alive && this.moving) {
       const speed = speedFor(this.role, this.running, {
         cls: this.isHunter ? this.hunterClass : null,
@@ -1773,6 +1779,16 @@ export class GameSession {
       if (left === 60 && !this.training) this.centerMsg('남은 시간 1분!', 2);
     }
     const alive = this.status === STATUS.ALIVE;
+    if (this.isSkin && alive) {
+      // 살가죽: 달리기 스태미나 (변장 중이 아니면 버튼이 흐려짐)
+      const st = this.stam.stamina / this.staminaMax;
+      $('stamina-fill').style.transform = `scaleX(${st})`;
+      $('stamina').classList.toggle('low', st < 0.25);
+      $('btn-hrun').classList.toggle('off', !this.disguised);
+      $('cd-hrun').classList.toggle('off', !this.disguised);
+      $('btn-hrun').classList.toggle('active', this.running);
+      $('cd-hrun').classList.toggle('active', this.running);
+    }
     if (!this.isHunter && alive) {
       const st = this.stam.stamina / this.staminaMax;
       $('stamina-fill').style.transform = `scaleX(${st})`;

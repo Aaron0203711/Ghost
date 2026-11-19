@@ -8,6 +8,8 @@ import {
   ROLE,
   STATUS,
   stepStamina,
+  SKINWALKER,
+  SKINWALKER_STAMINA_REGEN,
   speedFor,
   matchRules,
   HUNTER_CLASS,
@@ -111,6 +113,7 @@ export class Game {
       const cls = role === ROLE.HUNTER ? hunterCls.get(p.id) : null;
       const scls = role === ROLE.SURVIVOR ? validSurvivorClass(p.scls) : null;
       const stats = survivorStats(scls, this.rules.hitsToCatch);
+      if (cls === HUNTER_CLASS.SKINWALKER) stats.staminaMax = SKINWALKER.STAMINA_MAX; // 살가죽: 변장 중 달리기용 5초
       this.players.set(p.id, {
         id: p.id,
         name: p.name,
@@ -302,7 +305,7 @@ export class Game {
     if (!p || this.ended || p.status !== STATUS.ALIVE) return;
     if (typeof msg.yaw === 'number' && Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (typeof msg.pitch === 'number' && Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
-    p.wantsRun = p.role === ROLE.SURVIVOR && !!msg.run;
+    p.wantsRun = (p.role === ROLE.SURVIVOR || p.cls === HUNTER_CLASS.SKINWALKER) && !!msg.run;
     p.moving = !!msg.moving;
     p.interact = p.role === ROLE.SURVIVOR && !!msg.interact;
     p.aiming = p.cls === HUNTER_CLASS.SNIPER && !!msg.aim;
@@ -626,7 +629,11 @@ export class Game {
         p.slows = p.slows.filter((sl) => this.time < sl.until);
         p.running = stepStamina(p, p.wantsRun && !stunned && !slow.noRun, p.moving && !stunned, dt, p.staminaMax);
       } else {
-        p.running = false;
+        // 살가죽: 변장 중에만 달릴 수 있음 (변장이 아니면 회복만)
+        p.running =
+          p.cls === HUNTER_CLASS.SKINWALKER
+            ? stepStamina(p, p.wantsRun && !!p.disguiseAs && !stunned, p.moving && !stunned, dt, p.staminaMax, SKINWALKER_STAMINA_REGEN)
+            : false;
         // 덫(실) 충전: 최대치보다 적으면 미치광이 30초, 광대 23초마다 1개 회복
         const ch = trapChargesFor(p.cls);
         if (p.charges < ch.max) {

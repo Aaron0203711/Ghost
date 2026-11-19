@@ -82,13 +82,14 @@ export class Controls {
    * PC 키 배치
    * - 공통: 마우스 좌클릭 = main(공격/발사, 생존자는 수리), Space = 점프
    * - 생존자: Shift = 달리기(action), E 꾹 = 수리(main)
-   * - 술래: E = 스킬(action: 덫 / 투명화 / 누르고 있는 동안 조준)
+   * - 술래: E = 스킬(action: 덫 / 투명화 / 누르고 있는 동안 조준), 살가죽은 Shift = 변장 중 달리기(hrun)
    * - 생존자 직업 스킬: Q (sskill)
    */
   keyHeld(name) {
     const k = this.keys;
     if (name === 'action') return this.isHunter ? k.has('KeyE') : k.has('ShiftLeft') || k.has('ShiftRight');
     if (name === 'main') return !this.isHunter && k.has('KeyE');
+    if (name === 'hrun') return this.isHunter && (k.has('ShiftLeft') || k.has('ShiftRight'));
     if (name === 'sskill') return !this.isHunter && k.has('KeyQ'); // 군인 소총: 누르고 있으면 연사
     return false;
   }

@@ -1079,6 +1079,42 @@ test('살가죽: 무작위 생존자로 변장 (생존자에게는 그 모습으
   assert.ok(hunter.disguiseAs, '5초 뒤 다시');
 });
 
+test('살가죽: 변장 중에만 달리기 (원래 술래 속도 20km/h), 스태미나 5초, 멈추고 1초 뒤 0→가득 5초', () => {
+  const { game, hunter } = field('skinwalker');
+  assert.equal(hunter.staminaMax, 5);
+  assert.equal(hunter.stamina, 5);
+  assert.equal(game.startPayload('p1').players.find((p) => p.id === 'p1').stm, 5);
+  const input = (run) => game.handleInput('p1', { x: hunter.x, z: hunter.z, run, moving: true, corr: hunter.corr });
+  // 변장 전에는 달리기를 눌러도 20km/h 그대로, 스태미나도 줄지 않음
+  input(true);
+  for (let i = 0; i < 20; i++) game.tick(DT);
+  assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.6) < 0.01);
+  assert.equal(hunter.stamina, 5);
+  assert.ok(!hunter.running);
+  // 변장 중: 걸으면 16km/h, 달리면 20km/h
+  game.handleSkill('p1', {});
+  assert.ok(hunter.disguiseAs);
+  input(false);
+  for (let i = 0; i < 20; i++) game.tick(DT);
+  assert.ok(Math.abs(hunter.budget - RULES.SURVIVOR_WALK_SPEED * 0.6) < 0.01, '걷기 16km/h');
+  input(true);
+  for (let i = 0; i < 20; i++) game.tick(DT);
+  assert.ok(hunter.running);
+  assert.ok(Math.abs(hunter.budget - RULES.HUNTER_SPEED * 0.6) < 0.01, '달리면 20km/h');
+  assert.ok(Math.abs(hunter.stamina - 4) < 0.06, `1초에 1초분 (${hunter.stamina})`);
+  for (let i = 0; i < 82; i++) game.tick(DT);
+  assert.equal(hunter.stamina, 0, '5초 달리면 바닥');
+  assert.ok(!hunter.running);
+  for (let i = 0; i < 10; i++) game.tick(DT);
+  assert.ok(Math.abs(hunter.budget - RULES.SURVIVOR_WALK_SPEED * 0.6) < 0.01, '바닥나면 다시 16km/h');
+  // 멈추고 1초 뒤부터 회복(위에서 0.5초 지남), 0 → 가득 5초
+  input(false);
+  run(game, 0.5 + 2.5);
+  assert.ok(Math.abs(hunter.stamina - 2.5) < 0.15, `반쯤 회복 (${hunter.stamina})`);
+  run(game, 2.6);
+  assert.equal(hunter.stamina, 5);
+});
+
 test('질주자: 평소 22km/h, 0.5초 대기 후 보던 방향으로 1초에 30m, 첫 생존자에게 1칸 주고 멈춤', () => {
   {
     const { game, hunter } = field('sprinter');

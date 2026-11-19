@@ -66,7 +66,7 @@ export const STATUS = Object.freeze({
  * 스태미나 1틱 갱신. 서버와 클라이언트 예측이 같은 계산을 쓴다.
  * max: 최대 스태미나(초). 푸드파이터는 10초. 초당 회복량은 모두 같다 (15초분을 15초에)
  */
-export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
+export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX, regen = RULES.STAMINA_MAX / RULES.STAMINA_FULL_REGEN_TIME) {
   const running = wantsRun && moving && s.stamina > 0;
   if (running) {
     s.stamina = Math.max(0, s.stamina - dt);
@@ -74,7 +74,7 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
   } else if (s.regenWait > 0) {
     s.regenWait = Math.max(0, s.regenWait - dt);
   } else {
-    s.stamina = Math.min(max, s.stamina + (RULES.STAMINA_MAX / RULES.STAMINA_FULL_REGEN_TIME) * dt);
+    s.stamina = Math.min(max, s.stamina + regen * dt);
   }
   return running;
 }
@@ -82,7 +82,7 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
 /**
  * 이동 속도 (m/s). 술래는 직업과 상태에 따라 달라진다.
  * mods: { cls, aiming(저격수 조준 → 절반), invisible(암살자 투명 → 1.25배),
- *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도),
+ *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도, 달리면 원래 술래 속도),
  *         scls(생존자 직업: 푸드파이터는 10% 느림),
  *         slowFactor(생존자 감속 배율: 덫이 풀린 뒤, 조준 저격, 실 함정), noRun(생존자 달리기 불가),
  *         rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐) }
@@ -91,7 +91,7 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX) {
 export function speedFor(role, running, mods = {}) {
   if (role === ROLE.HUNTER) {
     // 군인 소총에 맞은 술래: 그때 속도에서 29.74% 감소 (다른 속도 변화와 곱해짐)
-    return hunterBaseSpeed(mods) * (mods.rifleSlowed ? SOLDIER.SLOW_FACTOR : 1);
+    return hunterBaseSpeed({ ...mods, running }) * (mods.rifleSlowed ? SOLDIER.SLOW_FACTOR : 1);
   }
   const base = running && !mods.noRun ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
   const cls = mods.scls === SURVIVOR_CLASS.FOODFIGHTER ? FOODFIGHTER.SPEED_FACTOR : 1;
@@ -103,7 +103,7 @@ function hunterBaseSpeed(mods) {
   if (mods.slowed) return RULES.HUNTER_SPEED * ASSASSIN.SLOW_FACTOR;
   if (mods.wallSlowed) return RULES.HUNTER_SPEED * GHOST.WALL_SLOW_FACTOR;
   if (mods.invisible) return RULES.HUNTER_SPEED * ASSASSIN.INVIS_SPEED_FACTOR;
-  if (mods.disguised) return RULES.SURVIVOR_WALK_SPEED; // 변장 중에는 생존자 걷기 속도 그대로
+  if (mods.disguised) return mods.running ? RULES.HUNTER_SPEED : RULES.SURVIVOR_WALK_SPEED; // 변장 중: 걷기 16km/h, 달리면 원래 술래 속도
   if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
   if (mods.cls === 'flesh') return RULES.HUNTER_SPEED * FLESH.SPEED_FACTOR;
   return RULES.HUNTER_SPEED;
@@ -339,7 +339,11 @@ export function ghostWallExit(state, wallWorld, ox, oz, x, z) {
  *  변장 중 발전기 옆에 멈춰 서 있으면 생존자처럼 수리하는 척 (진행도는 오르지 않음) */
 export const SKINWALKER = Object.freeze({
   SKILL_COOLDOWN: 5,
+  // 변장 중에만 달릴 수 있음 (원래 술래 속도). 스태미나 5초, 멈추고 1초 뒤부터 회복, 0 → 가득 5초
+  STAMINA_MAX: 5,
+  STAMINA_FULL_REGEN_TIME: 5,
 });
+export const SKINWALKER_STAMINA_REGEN = SKINWALKER.STAMINA_MAX / SKINWALKER.STAMINA_FULL_REGEN_TIME;
 
 /** 질주자: 이동 속도 +10%, 0.5초 대기 후 1초 동안 30m 질주. 처음 부딪힌 생존자 1칸 */
 export const SPRINTER = Object.freeze({

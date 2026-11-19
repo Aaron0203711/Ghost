@@ -2514,3 +2514,58 @@ body.touch #cd-sskill,
   filter: brightness(0.4) saturate(1.6) hue-rotate(150deg) blur(2px);
   transition: filter 0.1s ease;
 }
+
+/* 살가죽: 변장 중 달리기 버튼(스킬 버튼 왼쪽)과 스태미나 막대 */
+.ctl-btn.hrun {
+  right: calc(28px + 76px + 14px + var(--safe-r));
+  bottom: calc(34px + var(--safe-b));
+  width: 62px;
+  height: 62px;
+}
+
+.ctl-btn.hrun .ico {
+  font-size: 20px;
+}
+
+.ctl-btn.hrun .lbl {
+  font-size: 10px;
+}
+
+#screen-game:not(.cls-skinwalker) .ctl-btn.hrun,
+#screen-game:not(.cls-skinwalker) #cd-hrun {
+  display: none !important;
+}
+
+.ctl-btn.hrun.off,
+#cd-hrun.off {
+  opacity: 0.35;
+}
+
+.ctl-btn.hrun.active,
+#cd-hrun.active {
+  border-color: #f2c84a;
+  box-shadow: 0 0 14px rgba(242, 200, 74, 0.55);
+}
+
+#screen-game.role-hunter.cls-skinwalker #hud-survivor {
+  display: block;
+  bottom: calc(96px + var(--safe-b)); /* PC: 공격·스킬 쿨타임 칸 위 */
+  width: min(200px, 30vw);
+}
+
+body.touch #screen-game.role-hunter.cls-skinwalker #hud-survivor {
+  bottom: calc(26px + var(--safe-b));
+}
+
+.role-hunter #hearts {
+  display: none;
+}
+
+@media (max-height: 430px) {
+  .ctl-btn.hrun {
+    right: calc(28px + 66px + 12px + var(--safe-r));
+    bottom: calc(30px + var(--safe-b));
+    width: 54px;
+    height: 54px;
+  }
+}

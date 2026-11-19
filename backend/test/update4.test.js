@@ -107,7 +107,7 @@ test('살덩이 점액: 움직이는 동안 1초마다 반경 2m 웅덩이, 사�
   assert.ok(slimeRadius(w.born, game.time) > 5, '1분 뒤 반경 5m 넘음');
 });
 
-test('살덩이 점액 피해: 매초 0.05칸, 여러 웅덩이에 걸쳐도 0.05칸, 점프 중에도, 무적 무시·무적 안 줌', () => {
+test('살덩이 점액 피해: 매초 0.07칸, 여러 웅덩이에 걸쳐도 0.07칸, 점프 중에도, 무적 무시·무적 안 줌', () => {
   const { game, p, ev } = makeGame();
   const h = p('p1');
   const s = p('p2');
@@ -119,12 +119,12 @@ test('살덩이 점액 피해: 매초 0.05칸, 여러 웅덩이에 걸쳐도 0.0
   Object.assign(s, { x: game.slimes[0].x, z: game.slimes[0].z, invulnUntil: game.time + 10 }); // 무적 중
   s.jumpUntil = game.time + 0.5; // 점프 중
   game.tick(DT);
-  assert.ok(Math.abs(s.hits - 0.05) < 1e-9, '들어가자마자 0.05칸 (무적·점프 무시)');
+  assert.ok(Math.abs(s.hits - 0.07) < 1e-9, '들어가자마자 0.07칸 (무적·점프 무시)');
   assert.equal(ev('hit').at(-1).msg.slime, 1);
   run(game, 0.9);
-  assert.ok(Math.abs(s.hits - 0.05) < 1e-9, '1초에 한 번');
+  assert.ok(Math.abs(s.hits - 0.07) < 1e-9, '1초에 한 번');
   run(game, 0.15);
-  assert.ok(Math.abs(s.hits - 0.1) < 1e-9, '두 웅덩이에 걸쳐도 0.05칸');
+  assert.ok(Math.abs(s.hits - 0.14) < 1e-9, '두 웅덩이에 걸쳐도 0.07칸');
   // 점액 피해는 무적을 주지 않는다
   s.invulnUntil = 0;
   run(game, 1);
@@ -134,13 +134,13 @@ test('살덩이 점액 피해: 매초 0.05칸, 여러 웅덩이에 걸쳐도 0.0
   const before = s.hits;
   run(game, 3);
   assert.equal(s.hits, before);
-  // 체력이 다 닳으면 잡힘 (3칸 = 60번)
+  // 체력이 다 닳으면 잡힘 (3칸 = 43번)
   s.x -= 30;
   run(game, 60);
   assert.equal(s.status, STATUS.CAUGHT);
 });
 
-test('살덩이 점액: 2인 규칙이면 50% 감소(0.025칸)', () => {
+test('살덩이 점액: 2인 규칙이면 50% 감소(0.035칸)', () => {
   const { game, p } = makeGame({ n: 2 });
   const h = p('p1');
   const s = p('p2');
@@ -150,7 +150,7 @@ test('살덩이 점액: 2인 규칙이면 50% 감소(0.025칸)', () => {
   h.x = h.z = 900;
   Object.assign(s, { x: game.slimes[0].x, z: game.slimes[0].z });
   game.tick(DT);
-  assert.ok(Math.abs(s.hits - 0.025) < 1e-9);
+  assert.ok(Math.abs(s.hits - 0.035) < 1e-9);
 });
 
 test('살덩이 이동 속도: 기본 5% 느림 (19km/h)', () => {

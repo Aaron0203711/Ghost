@@ -1,5 +1,5 @@
 // 살덩이: 기본 공격 없음. 움직이는 동안 1초마다 발밑에 점액 웅덩이를 남기고(사라지지 않고 매초 0.05m씩 커짐),
-// 웅덩이 안의 생존자는 매초 0.05칸 피해(무적 시간 무시). 스킬은 발밑에 반경 6m 웅덩이를 뿌린다(쿨타임 20초).
+// 웅덩이 안의 생존자는 매초 0.07칸 피해(무적 시간 무시). 스킬은 발밑에 반경 6m 웅덩이를 뿌린다(쿨타임 20초).
 // 판정은 모두 서버가 한다.
 
 import { ROLE, STATUS, HUNTER_CLASS, FLESH, slimeRadius } from '../../shared/constants.js';
@@ -43,7 +43,7 @@ export function stepSlime(game, dt) {
   for (const s of game.players.values()) {
     if (s.role !== ROLE.SURVIVOR || !alive(s) || isCarriedOrThrown(s)) continue;
     if (game.time < s.slimeNextAt) continue;
-    // 여러 웅덩이에 걸쳐도 매초 0.05칸 (점프 중에도 받음)
+    // 여러 웅덩이에 걸쳐도 매초 0.07칸 (점프 중에도 받음)
     const puddle = game.slimes.find((w) => Math.hypot(w.x - s.x, w.z - s.z) <= slimeRadius(w.born, game.time, w.r0));
     if (!puddle) continue;
     s.slimeNextAt = game.time + FLESH.SLIME_TICK;

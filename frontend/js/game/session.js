@@ -2050,7 +2050,7 @@ export class GameSession {
     const full = Math.floor(left + 1e-9);
     const frac = left - full;
     const half = frac > 0.01 ? 1 : 0;
-    // 조금 깎인 칸은 남은 만큼만 빨갛게 (광대 공 0.75칸, 점액 0.05칸)
+    // 조금 깎인 칸은 남은 만큼만 빨갛게 (광대 공 0.75칸, 점액 0.07칸)
     const part = half ? `<i style="--p:${Math.round(frac * 100)}%">♥</i>` : '';
     return '<b>♥</b>'.repeat(full) + part + '<s>♥</s>'.repeat(Math.max(0, max - full - half));
   }

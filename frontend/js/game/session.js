@@ -1219,7 +1219,8 @@ export class GameSession {
       }
       case 'grabMiss':
         if (me) {
-          this.skillLeft = this.skillCooldown;
+          // 헛손질은 쿨타임 없음, 닌자 분신을 잡았으면 9초
+          this.skillLeft = e.clone ? this.skillCooldown : 0;
           this.centerMsg(e.clone ? '분신이었다!' : '잡을 생존자가 없어 헛손질했다', 1.2);
         }
         break;

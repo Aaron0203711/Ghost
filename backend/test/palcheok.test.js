@@ -84,7 +84,22 @@ test('납치: 3m 안 생존자를 피해 없이 들고, 들고 있는 동안 주
   assert.equal(snap.players.find((q) => q.id === 'p2').carry, 'p1');
 });
 
-test('빗나가면(3m 안에 없으면) 쿨타임 9초', () => {
+test('닌자 분신을 잡으면 분신만 사라지고 쿨타임 9초', () => {
+  const { game, p, ev } = makeGame();
+  const h = p('p1');
+  const s = p('p2');
+  const c = openLane(game, 10);
+  Object.assign(h, { x: c.x, z: c.z, yaw: 0 });
+  Object.assign(s, { x: c.x, z: c.z - 8 });
+  game.clones.push({ id: ++game.cloneSeq, owner: 'p2', x: c.x, z: c.z - 2, yaw: 0, dir: { x: 0, z: -1 }, until: game.time + 10 });
+  game.handleSkill('p1', { yaw: 0 });
+  assert.equal(ev('grabMiss').at(-1).msg.clone, 1);
+  assert.equal(game.clones.length, 0);
+  assert.equal(h.carrying, null);
+  assert.ok(Math.abs(h.skillReadyAt - game.time - PALCHEOK.SKILL_COOLDOWN) < 1e-9);
+});
+
+test('빗나가면(3m 안에 없으면) 쿨타임 없이 바로 다시 사용', () => {
   const { game, p, ev } = makeGame();
   const h = p('p1');
   const s = p('p2');
@@ -93,10 +108,10 @@ test('빗나가면(3m 안에 없으면) 쿨타임 9초', () => {
   Object.assign(s, { x: c.x, z: c.z - 5 });
   game.handleSkill('p1', { yaw: 0 });
   assert.equal(ev('grabMiss').length, 1);
-  assert.ok(Math.abs(h.skillReadyAt - game.time - PALCHEOK.SKILL_COOLDOWN) < 1e-9);
+  assert.ok(h.skillReadyAt <= game.time, '쿨타임 없음');
   Object.assign(s, { x: c.x, z: c.z - 2 });
   game.handleSkill('p1', { yaw: 0 });
-  assert.equal(h.carrying, null, '쿨타임 중');
+  assert.equal(h.carrying, 'p2', '바로 다시 잡을 수 있음');
 });
 
 test('5초 안에 안 던지면 발밑에 피해 없이 내려놓고 0.7초 기절, 그때부터 쿨타임 9초', () => {

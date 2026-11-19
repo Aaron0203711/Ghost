@@ -21,8 +21,7 @@ export function skillPalcheok(game, p) {
   if (game.time < p.skillReadyAt) return;
   const target = grabTarget(game, p);
   if (!target) {
-    // 빗나가도 쿨타임 9초
-    p.skillReadyAt = game.time + PALCHEOK.SKILL_COOLDOWN;
+    // 빗나가면 쿨타임 없이 바로 다시 쓸 수 있다
     game.emit(null, { t: 'event', kind: 'grabMiss', id: p.id });
     return;
   }

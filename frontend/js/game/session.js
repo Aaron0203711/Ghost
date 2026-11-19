@@ -166,7 +166,7 @@ export class GameSession {
     // 이번 판 규칙 (5명이면 발전기 7개, 체력 2칸)
     this.hitsToCatch = start.rules?.hitsToCatch ?? RULES.HITS_TO_CATCH;
     this.maxHits = me.mx ?? this.hitsToCatch; // 내 체력 칸 (푸드파이터 +4)
-    this.staminaMax = me.stm ?? RULES.STAMINA_MAX; // 푸드파이터 5초
+    this.staminaMax = me.stm ?? RULES.STAMINA_MAX; // 푸드파이터 10초
     this.synergies = start.synergies || [];
     // 훈련장: 허수아비 상대로 혼자 연습 (제한 시간·승패 없음)
     this.training = start.training || null;
@@ -2034,7 +2034,7 @@ export class GameSession {
     const full = Math.floor(left + 1e-9);
     const frac = left - full;
     const half = frac > 0.01 ? 1 : 0;
-    // 조금 깎인 칸은 남은 만큼만 빨갛게 (광대 공 0.75칸, 점액 0.2칸)
+    // 조금 깎인 칸은 남은 만큼만 빨갛게 (광대 공 0.75칸, 점액 0.05칸)
     const part = half ? `<i style="--p:${Math.round(frac * 100)}%">♥</i>` : '';
     return '<b>♥</b>'.repeat(full) + part + '<s>♥</s>'.repeat(Math.max(0, max - full - half));
   }

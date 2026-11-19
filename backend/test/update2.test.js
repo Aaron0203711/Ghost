@@ -428,22 +428,22 @@ test('군인 소총: 0.5초마다 한 발, 맞은 술래 2초간 29.74% 감속, 
   assert.equal(so.ammo, 9, '장전은 무제한');
 });
 
-test('푸드파이터: 체력 +4칸(7칸, 5인 규칙이면 6칸), 스태미나 8초, 12초에 가득', () => {
+test('푸드파이터: 체력 +4칸(7칸, 5인 규칙이면 6칸), 스태미나 10초, 10초에 가득', () => {
   const { game, p } = makeGame({ n: 3, scls: ['foodfighter', 'doctor'] });
   const f = p('p2');
   assert.equal(f.maxHits, 7);
   assert.equal(p('p3').maxHits, 3);
-  assert.equal(f.stamina, 8);
+  assert.equal(f.stamina, 10);
   f.wantsRun = true;
   f.moving = true;
-  run(game, 8.05);
-  assert.equal(f.stamina, 0, '8초 달리면 바닥');
+  run(game, 10.05);
+  assert.equal(f.stamina, 0, '10초 달리면 바닥');
   f.wantsRun = false;
   f.regenWait = RULES.STAMINA_REGEN_DELAY;
-  run(game, 1 + 11.8);
-  assert.ok(f.stamina < 8, '12초 전에는 덜 참');
+  run(game, 1 + 9.8);
+  assert.ok(f.stamina < 10, '10초 전에는 덜 참');
   run(game, 0.3);
-  assert.equal(f.stamina, 8);
+  assert.equal(f.stamina, 10);
   f.hits = 6;
   f.invulnUntil = 0;
   game.damage(f, 'p1', 1);

@@ -143,11 +143,11 @@ test('이동 검증: 순간이동은 속도 한도로 잘리고 보정 메시지
   assert.ok(events.some((e) => e.to === 'p2' && e.msg.t === 'correct'));
 });
 
-test('스태미나: 10초 달리면 바닥, 달리지 않으면 15초에 가득', () => {
+test('스태미나: 15초 달리면 바닥, 달리지 않으면 15초에 가득', () => {
   const { game, s1 } = makeGame();
   s1.wantsRun = true;
   s1.moving = true;
-  for (let i = 0; i < 199; i++) {
+  for (let i = 0; i < 299; i++) {
     game.tick(DT);
     s1.wantsRun = true;
     s1.moving = true;
@@ -159,7 +159,7 @@ test('스태미나: 10초 달리면 바닥, 달리지 않으면 15초에 가득'
   assert.ok(!s1.running);
   s1.wantsRun = false;
   run(game, RULES.STAMINA_REGEN_DELAY + 7.5);
-  assert.ok(Math.abs(s1.stamina - 5) < 0.2, `반쯤 회복 (${s1.stamina})`);
+  assert.ok(Math.abs(s1.stamina - 7.5) < 0.2, `반쯤 회복 (${s1.stamina})`);
   run(game, 8);
   assert.equal(s1.stamina, RULES.STAMINA_MAX);
 });
@@ -689,23 +689,23 @@ test('미치광이·저격수는 투명화 스킬을 쓸 수 없음', () => {
   }
 });
 
-test('암살자: 투명화 중에는 이동 속도 50% 증가, 풀리면 원래대로', () => {
+test('암살자: 투명화 중에는 이동 속도 25% 증가, 풀리면 원래대로', () => {
   const { game, hunter } = makeGame(3, 7, 'assassin');
   run(game, 2);
   const normal = RULES.HUNTER_SPEED * 0.6;
   assert.ok(Math.abs(hunter.budget - normal) < 0.01, '평소 20km/h');
   game.handleSkill('p1');
   run(game, 2);
-  assert.ok(Math.abs(hunter.budget - normal * 1.5) < 0.01, `투명화 30km/h (${hunter.budget})`);
-  // 실제로 1초에 30km/h(8.33m)까지 움직일 수 있는지: 열린 곳에서 이동 입력
+  assert.ok(Math.abs(hunter.budget - normal * 1.25) < 0.01, `투명화 25km/h (${hunter.budget})`);
+  // 실제로 1초에 25km/h(6.94m)까지 움직일 수 있는지: 열린 곳에서 이동 입력
   game.world = new CollisionWorld([]);
   const start = { x: hunter.x, z: hunter.z };
   for (let i = 0; i < 20; i++) {
     game.tick(DT);
-    game.handleInput('p1', { x: hunter.x, z: hunter.z - (RULES.HUNTER_SPEED * 1.5) / 20, moving: true, corr: hunter.corr });
+    game.handleInput('p1', { x: hunter.x, z: hunter.z - (RULES.HUNTER_SPEED * 1.25) / 20, moving: true, corr: hunter.corr });
   }
   const moved = Math.hypot(hunter.x - start.x, hunter.z - start.z);
-  assert.ok(Math.abs(moved - RULES.HUNTER_SPEED * 1.5) < 0.05, `1초 이동 ${moved.toFixed(2)}m`);
+  assert.ok(Math.abs(moved - RULES.HUNTER_SPEED * 1.25) < 0.05, `1초 이동 ${moved.toFixed(2)}m`);
   run(game, 14);
   assert.ok(!game.isInvisible(hunter));
   run(game, 1);

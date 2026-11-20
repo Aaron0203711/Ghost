@@ -91,7 +91,7 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX, re
 export function speedFor(role, running, mods = {}) {
   if (role === ROLE.HUNTER) {
     // 군인 소총에 맞은 술래: 그때 속도에서 29.74% 감소 (다른 속도 변화와 곱해짐)
-    // 입체기동 모드의 거인은 모든 속도가 1.5배 (20km/h → 30km/h)
+    // 입체기동 모드의 거인은 모든 속도가 1.75배 (20km/h → 35km/h)
     return hunterBaseSpeed({ ...mods, running }) * (mods.rifleSlowed ? SOLDIER.SLOW_FACTOR : 1) * (mods.titan ? TITAN.SPEED_FACTOR : 1);
   }
   const base = running && !mods.noRun ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
@@ -538,9 +538,9 @@ export const TRAINING = Object.freeze({
  * 입체기동 모드 (대기실에서 방장이 고름, 전용 맵).
  * - 맵 400m×400m, 둘레를 높이 50m 거대한 벽이 감싸고, 집은 높이 12~20m (지붕 위에 올라설 수 있음)
  * - 생존자: 직업과 상관없이 입체기동장치. 조준점이 가리키는 벽·집(60m 안)에 와이어를 쏘면 시속 80km로 끝까지 날아가 붙는다.
- *   날아가는 중 다시 누르면 와이어가 풀려 그 속도로 떨어진다. 벽에 붙으면 1초 머문 뒤 떨어진다(그 사이 다시 쏠 수 있음).
+ *   날아가는 중 다시 누르면 와이어가 풀려 그 속도로 떨어진다. 벽에 붙으면 0.5초 머문 뒤 떨어진다(그 사이 다시 쏠 수 있음).
  *   10m 이상 높이에서 떨어지면 0.5칸
- * - 술래: 1명, 키 25m 거인(집보다 머리 두 개 정도 큼), 체력 20칸, 시속 30km, 집에 막힘.
+ * - 술래: 1명, 키 25m 거인(집보다 머리 두 개 정도 큼), 체력 20칸, 시속 35km, 집에 막힘.
  *   기본 공격은 잡기(8m 안, 높이 25m까지, 1칸, 쿨타임 1.5초). 직업 스킬은 그대로(사거리·크기 5배). 살덩이는 고를 수 없음
  * - 지붕 위에 10~20초마다 총이 생김(최대 6개). 다가가면 줍고(한 자루만), 한 발로 거인을 맞히면 1칸
  * - 거인 체력이 0이 되면 생존자 승리, 10분이 지나거나 생존자가 모두 잡히면 술래 승리
@@ -555,14 +555,14 @@ export const TITAN = Object.freeze({
   HEIGHT: 25,
   RADIUS: 3, // 거인 몸통 반경 (집 사이 큰길로 다닌다)
   EYE_HEIGHT: 23.5,
-  SPEED_FACTOR: 1.5, // 20km/h → 30km/h (다른 속도 변화도 같은 배율)
+  SPEED_FACTOR: 1.75, // 20km/h → 35km/h (다른 속도 변화도 같은 배율)
   GRAB_RANGE: 8, // 몸 바깥에서 8m
   GRAB_COOLDOWN: 1.5,
   GRAB_DAMAGE: 1,
   SKILL_SCALE: 5, // 직업 스킬 사거리·크기 5배
   WIRE_RANGE: 60,
   WIRE_SPEED: kmh(80),
-  STICK_TIME: 1,
+  STICK_TIME: 0.5,
   GRAVITY: 9.8,
   MAX_FALL_SPEED: 40,
   FALL_DAMAGE_HEIGHT: 10,

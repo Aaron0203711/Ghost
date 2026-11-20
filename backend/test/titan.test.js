@@ -58,14 +58,14 @@ test('전용 맵: 400m, 둘레 50m 벽, 집 12~20m, 시계탑', () => {
   assert.equal(world.supportAt(spot.x, spot.z), spot.y, '총은 지붕 위');
 });
 
-test('모드 규칙: 술래 1명(체력 20칸), 발전기 없음, 10분, 거인 속도 30km/h, 눈높이 23.5m', () => {
+test('모드 규칙: 술래 1명(체력 20칸), 발전기 없음, 10분, 거인 속도 35km/h, 눈높이 23.5m', () => {
   const { game, p } = makeGame({ n: 7 });
   const hunters = [...game.players.values()].filter((q) => q.role === ROLE.HUNTER);
   assert.equal(hunters.length, 1);
   assert.equal(p('p1').maxHits, 20);
   assert.equal(game.gens.length, 0);
   assert.equal(game.matchTime, 600);
-  assert.ok(Math.abs(speedFor(ROLE.HUNTER, false, { titan: true }) * 3.6 - 30) < 1e-6);
+  assert.ok(Math.abs(speedFor(ROLE.HUNTER, false, { titan: true }) * 3.6 - 35) < 1e-6);
   assert.equal(eyeHeightFor('maniac', true), 23.5);
   assert.ok(!titanClasses().includes('flesh'), '살덩이 금지');
   const sp = game.startPayload('p2');
@@ -78,7 +78,7 @@ test('살덩이를 골라도 입체기동 모드에서는 쓸 수 없다', () =>
   assert.notEqual(p('p1').cls, 'flesh');
 });
 
-test('와이어: 벽에 쏘면 시속 80km로 날아가 붙고, 1초 뒤 떨어진다. 10m 이상이면 0.5칸', () => {
+test('와이어: 벽에 쏘면 시속 80km로 날아가 붙고, 0.5초 뒤 떨어진다. 10m 이상이면 0.5칸', () => {
   const { game, p, ev } = makeGame();
   const s = p('p2');
   const { b, x, z } = houseAndSpot(game, 12);
@@ -96,9 +96,9 @@ test('와이어: 벽에 쏘면 시속 80km로 날아가 붙고, 1초 뒤 떨어�
   assert.equal(s.air, 'stick', '벽에 붙음');
   assert.ok(s.y > 9, `높이 ${s.y}`);
   const yStick = s.y;
-  run(game, 0.8);
-  assert.equal(s.air, 'stick', '1초 동안 머문다');
-  run(game, 0.3);
+  run(game, 0.2);
+  assert.equal(s.air, 'stick', '0.5초 동안 머문다');
+  run(game, 0.35);
   assert.equal(s.air, 'fall');
   run(game, 3);
   assert.equal(s.air, null);

@@ -259,7 +259,7 @@ export class TitanFx {
         this.dropWire(e.id);
         break;
       case 'stick':
-        if (e.id === s.myId) s.centerMsg('🪝 벽에 붙었다! 1초 안에 다시 쏘세요', 0.9);
+        if (e.id === s.myId) s.centerMsg('🪝 벽에 붙었다! 0.5초 안에 다시 쏘세요', 0.9);
         break;
       case 'land':
         this.dropWire(e.id);

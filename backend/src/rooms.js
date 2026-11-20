@@ -104,7 +104,7 @@ export class RoomManager {
         this.pickClass(client, msg.cls);
         break;
       case 'trap':
-        if (client.room?.game) client.room.game.handleTrap(client.id);
+        if (client.room?.game) client.room.game.handleTrap(client.id, msg);
         break;
       case 'jump':
         if (client.room?.game) client.room.game.handleJump(client.id);

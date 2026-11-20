@@ -170,6 +170,7 @@ export function stepThreads(game, dt) {
       if (span) Object.assign(th, span);
     }
   }
+  if (game.titan) return; // 입체기동 모드의 공중 실은 titan.js에서 판정
   for (const s of survivors(game)) {
     if (game.isAirborne(s) || s.carriedBy || s.thrown) continue; // 점프로 피할 수 있다 (팔척귀신에게 들림·던져짐도)
     if (game.titan && (s.air || s.y > 0.5)) continue; // 입체기동: 공중·지붕 위에서는 안 걸림

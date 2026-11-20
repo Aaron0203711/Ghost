@@ -232,7 +232,7 @@ export function makeThread(faint) {
   m.userData.setEnds = (ax, az, bx, bz) => {
     const len = Math.max(0.05, Math.hypot(bx - ax, bz - az));
     m.position.set((ax + bx) / 2, 0.35, (az + bz) / 2);
-    m.scale.set(len, 1, 1);
+    m.scale.set(len, m.userData.thick || 1, m.userData.thick || 1); // thick: 굵기 배율 (입체기동 거대 실)
     m.rotation.set(0, -Math.atan2(bz - az, bx - ax), 0);
   };
   return m;

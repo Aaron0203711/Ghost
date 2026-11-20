@@ -48,7 +48,7 @@ export function buildTitanWorld(scene, map) {
         B.wood.add(place(new THREE.BoxGeometry(b.w + 0.12, 0.28, b.d + 0.12), b.x, y, b.z), '#5b3d2a');
       }
       // 평평한 지붕 + 낮은 난간 + 굴뚝
-      B.roof.add(place(new THREE.BoxGeometry(b.w + 0.5, 0.35, b.d + 0.5), b.x, b.h + 0.02, b.z), b.roof || '#7a4a35');
+      B.roof.add(place(new THREE.BoxGeometry(b.w + 0.5, 0.35, b.d + 0.5), b.x, b.h - 0.16, b.z), b.roof || '#7a4a35');
       const t = 0.3;
       const ph = 0.45;
       B.roof.add(place(new THREE.BoxGeometry(b.w + 0.5, ph, t), b.x, b.h + ph / 2 + 0.2, b.z - b.d / 2 - 0.1), b.roof || '#7a4a35');

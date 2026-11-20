@@ -257,3 +257,70 @@ test('방: 방장이 입체기동 모드를 고르면 전용 맵, 술래 1명, �
   assert.ok(game.titan);
   assert.equal(game.map.theme, 'titan');
 });
+
+test('저격수도 입체기동 모드에서는 금지', () => {
+  assert.ok(!titanClasses().includes('sniper'));
+  const { p } = makeGame({ cls: 'sniper' });
+  assert.notEqual(p('p1').cls, 'sniper');
+});
+
+/** 큰길을 사이에 둔 집 두 채 (z -5~5, 25~35, 높이 15) 사이에 거인 */
+function twoHouses(cls) {
+  const g = makeGame({ cls });
+  g.game.world = new CollisionWorld([
+    { kind: 'thouse', x: 0, z: 0, w: 10, d: 10, h: 15 },
+    { kind: 'thouse', x: 0, z: 30, w: 10, d: 10, h: 15 },
+  ]);
+  Object.assign(g.p('p1'), { x: 0, z: 15, yaw: 0 });
+  Object.assign(g.p('p2'), { x: 80, z: 80, y: 0 });
+  Object.assign(g.p('p3'), { x: -80, z: 80, y: 0 });
+  return g;
+}
+
+test('미치광이 덫: 조준한 지붕 위(반 크기)에 설치, 지붕 위 생존자가 밟음 · 25m 밖·벽 옆면은 실패', () => {
+  const { game, p, ev } = twoHouses('maniac');
+  const eye = TITAN.EYE_HEIGHT;
+  game.handleTrap('p1', { yaw: 0, pitch: Math.atan2(15 - eye, 15) });
+  assert.equal(game.traps.length, 1);
+  assert.equal(game.traps[0].y, 15);
+  assert.equal(p('p1').charges, 2);
+  // 지붕 위, 덫에서 1.5m (반 크기 반경 1.75m 안)
+  const s = p('p2');
+  Object.assign(s, { x: game.traps[0].x + 1.5, z: game.traps[0].z, y: 15, air: null });
+  run(game, DT);
+  assert.ok(s.stunUntil > game.time, '지붕 위 덫에 걸림');
+  // 땅에도 설치 가능
+  game.handleTrap('p1', { yaw: Math.PI / 2, pitch: Math.atan2(-eye, 10) });
+  assert.equal(game.traps.length, 1, '앞 덫은 밟혀서 사라졌고 새 덫 1개');
+  assert.equal(game.traps[0].y, 0);
+  // 너무 먼 땅 (40m)
+  game.handleTrap('p1', { yaw: Math.PI / 2, pitch: Math.atan2(-eye, 40) });
+  assert.equal(ev('trapFail').length, 1);
+});
+
+test('광대 실: 조준한 벽 높이에서 맞은편 집까지 공중 실, 붙어 있던 생존자가 걸리면 떨어지고 감속·빛남', () => {
+  const { game, p, ev } = twoHouses('clown');
+  const eye = TITAN.EYE_HEIGHT;
+  game.handleTrap('p1', { yaw: 0, pitch: Math.atan2(8 - eye, 10) });
+  assert.equal(game.threads.length, 1);
+  const th = game.threads[0];
+  assert.ok(Math.abs(th.y - 8) < 0.1, `높이 ${th.y}`);
+  assert.ok(Math.abs(th.az - 5) < 0.01 && Math.abs(th.bz - 25) < 0.01, '두 집 사이');
+  const s = p('p2');
+  Object.assign(s, { x: 0.5, z: 15, y: 7, air: 'stick', stickUntil: game.time + 5 });
+  run(game, DT);
+  assert.equal(game.threads.length, 0);
+  assert.equal(s.air, 'fall', '와이어가 끊겨 떨어짐');
+  assert.ok(game.slowState(s).factor < 1);
+  assert.ok(game.isRevealed(s));
+  assert.equal(ev('threaded').length, 1);
+  Object.assign(s, { x: 80, z: 80, y: 0, air: null }); // 걸린 생존자는 치워 둔다
+  // 땅에 있는 생존자는 높이 8m 실에 안 걸림
+  game.handleTrap('p1', { yaw: 0, pitch: Math.atan2(8 - eye, 10) });
+  Object.assign(p('p3'), { x: 0.5, z: 15, y: 0, air: null });
+  run(game, DT);
+  assert.equal(game.threads.length, 1);
+  // 하늘을 가리키면 실패
+  game.handleTrap('p1', { yaw: 0, pitch: 1.3 });
+  assert.equal(ev('threadFail').length, 1);
+});

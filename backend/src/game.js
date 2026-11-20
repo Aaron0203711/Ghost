@@ -36,6 +36,7 @@ import {
 } from '../../shared/constants.js';
 import { initTitan, handleWire, titanGrab, titanShoot, stepTitan, titanSnapshot } from './titan.js';
 import { planTitanMatch } from './titanmap.js';
+import { titanTrapSpot, titanThreadSpan } from '../../shared/titanplace.js';
 import { stepSlime } from './flesh.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
@@ -622,10 +623,14 @@ export class Game {
     }
   }
 
-  handleTrap(id) {
+  handleTrap(id, msg = {}) {
     const p = this.players.get(id);
     if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE || this.isStunned(p)) return;
     if (p.charges <= 0) return;
+    if (this.titan) {
+      this.handleTitanTrap(p, msg);
+      return;
+    }
     if (p.cls === HUNTER_CLASS.CLOWN) {
       placeThread(this, p); // 광대: 좌우 벽 사이 실 함정
       return;
@@ -635,6 +640,35 @@ export class Game {
     const trap = { id: ++this.trapSeq, x: p.x, z: p.z, owner: id };
     this.traps.push(trap);
     this.emit(id, { t: 'event', kind: 'trapPlaced', trapId: trap.id });
+  }
+
+  /** 입체기동 모드: 조준한 곳(거인 몸 바깥 25m 안)에 미치광이 덫(지붕·땅) 또는 광대 공중 실(벽·집 사이) */
+  handleTitanTrap(p, msg) {
+    if (p.cls !== HUNTER_CLASS.MANIAC && p.cls !== HUNTER_CLASS.CLOWN) return;
+    if (isForced(this, p)) return;
+    if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
+    if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
+    if (p.cls === HUNTER_CLASS.MANIAC) {
+      const spot = titanTrapSpot(this.world, p.x, p.z, p.yaw, p.pitch);
+      if (!spot) {
+        this.emit(p.id, { t: 'event', kind: 'trapFail' });
+        return;
+      }
+      p.charges--;
+      const trap = { id: ++this.trapSeq, x: spot.x, y: spot.y, z: spot.z, owner: p.id };
+      this.traps.push(trap);
+      this.emit(p.id, { t: 'event', kind: 'trapPlaced', trapId: trap.id });
+      return;
+    }
+    const span = titanThreadSpan(this.world, p.x, p.z, p.yaw, p.pitch);
+    if (!span) {
+      this.emit(p.id, { t: 'event', kind: 'threadFail' });
+      return;
+    }
+    p.charges--;
+    const th = { id: ++this.threadSeq, owner: p.id, ...span, cx: span.ax, cz: span.az, fx: 0, fz: 0, rx: 0, rz: 0, t: 0, dir: 1, tMin: 0, tMax: 0 };
+    this.threads.push(th);
+    this.emit(p.id, { t: 'event', kind: 'threadPlaced', threadId: th.id });
   }
 
   removePlayer(id) {
@@ -737,9 +771,11 @@ export class Game {
     for (const s of this.players.values()) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
       if (this.isAirborne(s) || isCarriedOrThrown(s)) continue; // 공중에서는 덫을 밟지 않는다 (팔척귀신에게 들림·던져짐도)
-      if (this.titan && (s.air || s.y > 0.5)) continue; // 입체기동: 공중·지붕 위
-      const idx = this.traps.findIndex(
-        (t) => Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS * this.S,
+      if (this.titan && s.air) continue; // 입체기동: 공중에서는 안 밟음 (지붕 위 덫은 지붕 위에서 밟음)
+      const idx = this.traps.findIndex((t) =>
+        this.titan
+          ? Math.abs((t.y || 0) - (s.y || 0)) < 0.5 && Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS * TITAN.TRAP_SCALE
+          : Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS * this.S,
       );
       if (idx === -1) continue;
       const [trap] = this.traps.splice(idx, 1);
@@ -748,6 +784,7 @@ export class Game {
       this.addSlow(s, MANIAC.RELEASE_SLOW_FACTOR, MANIAC.RELEASE_SLOW_TIME, { noRun: true, from: s.stunUntil });
       s.x = trap.x;
       s.z = trap.z;
+      if (this.titan) s.y = trap.y || 0;
       s.budget = 0;
       this.correct(s);
       this.emit(null, { t: 'event', kind: 'trapped', id: s.id, name: s.name, x: r2(trap.x), z: r2(trap.z) });
@@ -939,12 +976,12 @@ export class Game {
     const seesAllTraps = spectator || me.role === ROLE.HUNTER;
     const traps = this.traps
       .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE * this.S)
-      .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z) }));
+      .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z), ...(t.y ? { y: r2(t.y) } : {}) }));
     // 광대 실: 술래·관전자는 모두, 생존자는 0.5m 안의 실만 (정신병원 시너지면 생존자에게 아예 안 보임)
     const threadsHidden = this.synergies.includes('trapDuo');
     const threads = this.threads
       .filter((t) => seesAllTraps || (!threadsHidden && distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE * this.S))
-      .map((t) => ({ id: t.id, ax: r2(t.ax), az: r2(t.az), bx: r2(t.bx), bz: r2(t.bz) }));
+      .map((t) => ({ id: t.id, ax: r2(t.ax), az: r2(t.az), bx: r2(t.bx), bz: r2(t.bz), ...(t.y !== undefined ? { y: t.y } : {}) }));
     // 살아 있는 생존자에게는 투명한 암살자의 위치를 아예 보내지 않는다
     const hideInvis = !spectator && me.role === ROLE.SURVIVOR;
     const snap = {

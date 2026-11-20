@@ -878,13 +878,13 @@ function showClassSelect(m) {
   $('select-map').textContent = m.map ? `이번 맵: ${m.map.icon} ${m.map.name}` : '';
   $('select-map').classList.toggle('mine', m.map?.id === 'mine');
   $('select-map').classList.toggle('backrooms', m.map?.id === 'backrooms');
-  // 고를 수 있는 직업만 (입체기동 모드는 살덩이 금지)
+  // 고를 수 있는 직업만 (입체기동 모드는 저격수·살덩이 금지)
   document.querySelectorAll('.class-card').forEach((c) => {
     c.disabled = false;
     c.classList.remove('picked');
     c.classList.toggle('hidden', !!m.classes && !m.classes.includes(c.dataset.cls));
   });
-  $('select-map').textContent = m.mode === 'titan' ? `🪝 입체기동 이벤트 · ${m.map.icon} ${m.map.name} · 거인이 되어 생존자를 잡으세요 (살덩이 금지)` : $('select-map').textContent;
+  $('select-map').textContent = m.mode === 'titan' ? `🪝 입체기동 이벤트 · ${m.map.icon} ${m.map.name} · 거인이 되어 생존자를 잡으세요 (저격수·살덩이 금지)` : $('select-map').textContent;
   const end = Date.now() + m.time * 1000;
   const ring = $('select-ring');
   const tick = () => {

@@ -70,6 +70,7 @@ import { Gyro } from './gyro.js';
 import { makeHpBar, makeDamagePop } from './training.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
 import { buildTitanWorld, TITAN_FOG, makeGiant, addOdmGear, TitanFx } from './titan.js';
+import { titanTrapSpot, titanThreadSpan } from '@shared/titanplace.js';
 
 const $ = (id) => document.getElementById(id);
 /** 체력 칸 표시 (반 칸 포함): 1.5 → "1.5", 2 → "2" */
@@ -435,6 +436,14 @@ export class GameSession {
         ? { main: ['🏏', '공격'], action: ['🪤', '덫'] }
         : { main: ['🔧', '수리'], action: ['👟', '달리기'] };
     if (this.titan) labels.main = this.isHunter ? ['✊', '잡기'] : ['🪝', '와이어'];
+    {
+      // PC 안내: 입체기동 거인은 좌클릭 잡기, 미치광이·광대는 E를 누르고 조준한 뒤 떼면 설치
+      const t = this.titan && this.isHunter;
+      const m = document.querySelector('#pc-hint .m-only');
+      const c = document.querySelector('#pc-hint .cl-only');
+      if (m) m.textContent = t ? '좌클릭 잡기 · E 꾹 눌러 조준, 떼면 덫 설치(지붕·땅)' : '좌클릭 공격 · E 덫';
+      if (c) c.textContent = t ? '좌클릭 잡기 · E 꾹 눌러 조준, 떼면 벽 사이에 실' : '좌클릭 공 던지기 · E 실 함정';
+    }
     screen.classList.toggle('mode-titan', this.titan);
     $('btn-main').querySelector('.ico').textContent = labels.main[0];
     $('btn-main').querySelector('.lbl').textContent = labels.main[1];
@@ -578,6 +587,7 @@ export class GameSession {
       unlockAudio();
       if (this.isAssassin) this.trySkill();
       else if (this.isDrowned) this.startDiveAim();
+      else if (this.titan && (this.isClown || this.hunterClass === HUNTER_CLASS.MANIAC)) this.startPlaceAim(); // 입체기동: 누르고 조준, 떼면 설치
       else if (this.hasClassSkill) this.tryClassSkill();
       else if (this.isHunter && !this.isSniper) this.tryTrap(); // 미치광이 덫, 광대 실 (저격수는 누르고 있는 동안 조준)
     });
@@ -748,6 +758,70 @@ export class GameSession {
     this.lastSkillAt = performance.now();
     this.skillLeft = this.skillCooldown; // 쓴 순간부터 쿨타임 (도착할 곳이 없으면 서버가 알려 줌)
     this.net.send({ t: 'skill', yaw: this.yaw, pitch: this.pitch, tx: Math.round(aim.x * 100) / 100, tz: Math.round(aim.z * 100) / 100 });
+    this.updateHunterHud();
+  }
+
+  /** 입체기동: 미치광이 덫(지붕·땅)·광대 공중 실을 놓을 곳을 누르고 있는 동안 보여 준다 (서버와 같은 계산) */
+  startPlaceAim() {
+    if (this.placeAim || this.status !== STATUS.ALIVE || this.charges <= 0 || this.forced || this.stunLeft > 0) return;
+    const maniac = !this.isClown;
+    const mark = maniac ? makeDiveRing(RULES.TRAP_TRIGGER_RADIUS * TITAN.TRAP_SCALE, '#ff5a3c') : makeThread(false);
+    if (!maniac) {
+      mark.userData.thick = 18;
+      mark.material.color.set('#ffd84a');
+      mark.material.opacity = 0.75;
+    }
+    mark.visible = false;
+    this.scene.add(mark);
+    this.placeAim = { mark, maniac, ok: false };
+    this.updatePlaceAim();
+  }
+
+  updatePlaceAim() {
+    const aim = this.placeAim;
+    const blink = 0.6 + Math.sin(performance.now() / 120) * 0.3;
+    if (aim.maniac) {
+      const spot = titanTrapSpot(this.collision, this.pos.x, this.pos.z, this.yaw, this.pitch);
+      aim.ok = !!spot;
+      aim.mark.visible = aim.ok;
+      if (spot) {
+        aim.mark.position.set(spot.x, spot.y + 0.05, spot.z);
+        aim.mark.userData.edge.material.opacity = blink;
+      }
+    } else {
+      const span = titanThreadSpan(this.collision, this.pos.x, this.pos.z, this.yaw, this.pitch);
+      aim.ok = !!span;
+      aim.mark.visible = aim.ok;
+      if (span) {
+        aim.mark.userData.setEnds(span.ax, span.az, span.bx, span.bz);
+        aim.mark.position.y = span.y;
+        aim.mark.material.opacity = blink;
+      }
+    }
+    $('btn-action').classList.toggle('aiming', true);
+  }
+
+  endPlaceAim(place) {
+    const aim = this.placeAim;
+    if (!aim) return;
+    this.placeAim = null;
+    this.scene.remove(aim.mark);
+    aim.mark.traverse((o) => {
+      o.geometry?.dispose();
+      o.material?.dispose();
+    });
+    $('btn-action').classList.remove('aiming');
+    if (!place || this.status !== STATUS.ALIVE || this.charges <= 0) return;
+    if (!aim.ok) {
+      this.centerMsg(aim.maniac ? '🪤 25m 안의 지붕이나 땅을 겨누세요' : '🧵 25m 안의 벽·집 옆면을 겨누세요 (맞은편 60m 안에 벽·집이 있어야 해요)', 1.6);
+      return;
+    }
+    this.charges--;
+    this.lastTrapAt = performance.now();
+    if (this.chargeLeft <= 0) this.chargeLeft = this.trapCooldown;
+    if (this.isClown) sfx.threadTwang();
+    else sfx.trapPlace();
+    this.net.send({ t: 'trap', yaw: this.yaw, pitch: this.pitch });
     this.updateHunterHud();
   }
 
@@ -930,8 +1004,8 @@ export class GameSession {
     for (const t of list) {
       if (this.traps.has(t.id)) continue;
       const mesh = makeTrap(faint);
-      if (this.titan) mesh.scale.multiplyScalar(TITAN.SKILL_SCALE); // 거인의 덫은 5배
-      mesh.position.set(t.x, 0, t.z);
+      if (this.titan) mesh.scale.multiplyScalar(TITAN.TRAP_SCALE); // 거인의 덫 (지붕·땅)
+      mesh.position.set(t.x, t.y ?? 0, t.z);
       this.scene.add(mesh);
       this.traps.set(t.id, mesh);
     }
@@ -954,10 +1028,12 @@ export class GameSession {
       let m = this.threadMeshes.get(t.id);
       if (!m) {
         m = makeThread(faint);
+        if (this.titan) m.userData.thick = 18; // 입체기동: 벽과 벽 사이 거대한 실
         this.scene.add(m);
         this.threadMeshes.set(t.id, m);
       }
       m.userData.setEnds(t.ax, t.az, t.bx, t.bz);
+      if (t.y !== undefined) m.position.y = t.y;
     }
   }
 
@@ -1378,7 +1454,12 @@ export class GameSession {
         // 양쪽 벽이 없어 실을 못 침 (개수는 그대로)
         this.charges = Math.min(this.trapMax, this.charges + 1);
         this.lastTrapAt = 0;
-        this.centerMsg('🧵 좌우 양쪽 10m 안에 벽이 있어야 실을 칠 수 있어요', 2);
+        this.centerMsg(this.titan ? '🧵 그곳에는 실을 칠 수 없어요' : '🧵 좌우 양쪽 10m 안에 벽이 있어야 실을 칠 수 있어요', 2);
+        break;
+      case 'trapFail':
+        this.charges = Math.min(this.trapMax, this.charges + 1);
+        this.lastTrapAt = 0;
+        this.centerMsg('🪤 그곳에는 덫을 놓을 수 없어요', 2);
         break;
       case 'threaded':
         sfx.threadTwang();
@@ -1646,6 +1727,11 @@ export class GameSession {
     // 저격수 조준: 조준 키를 누르고 있는 동안 확대
     this.aiming = this.isSniper && alive && c.isHeld('action');
     // 익사자 다이빙 조준: 누르고 있는 동안 원이 따라오고, 떼면 다이빙
+    if (this.placeAim) {
+      if (!alive || this.stunLeft > 0) this.endPlaceAim(false);
+      else if (!c.isHeld('action')) this.endPlaceAim(true);
+      else this.updatePlaceAim();
+    }
     if (this.diveAim) {
       if (!alive || this.stunLeft > 0) this.endDiveAim(false);
       else if (!c.isHeld('action')) this.endDiveAim(true);

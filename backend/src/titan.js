@@ -1,7 +1,8 @@
 // 입체기동 모드: 생존자 입체기동장치(와이어·벽에 붙기·떨어지기·낙하 피해), 거인 잡기, 지붕 위 총, 거인 체력.
 // 판정은 모두 서버가 한다. 공중에 떠 있는 동안(날아감·붙음·떨어짐)에는 서버가 생존자 위치를 정한다.
 
-import { RULES, ROLE, STATUS, TITAN, aimDirection } from '../../shared/constants.js';
+import { RULES, ROLE, STATUS, TITAN, CLOWN, aimDirection } from '../../shared/constants.js';
+import { distToSegment } from './clown.js';
 import { randomRoofSpot } from './titanmap.js';
 import { isCarriedOrThrown } from './palcheok.js';
 
@@ -337,8 +338,30 @@ export function stepTitan(game, dt) {
     if (c.y === undefined) continue;
     c.y = game.world.supportAt(c.x, c.z, c.y, R * 0.5); // 분신은 지붕 끝에서 바로 떨어진다
   }
+  stepThreads(game);
   stepGuns(game);
   stepShots(game, dt);
+}
+
+/** 광대 공중 실: 몸(발~1.7m)이 실 높이에 걸치고 실에 닿으면 걸림. 와이어가 끊겨 떨어지고 4초 50% 감속·빛남. 실은 사라짐 */
+function stepThreads(game) {
+  for (const s of game.players.values()) {
+    if (s.role !== ROLE.SURVIVOR || !alive(s) || isCarriedOrThrown(s)) continue;
+    const y = s.y || 0;
+    const idx = game.threads.findIndex(
+      (th) => th.y >= y - 0.1 && th.y <= y + BODY && distToSegment(s.x, s.z, th.ax, th.az, th.bx, th.bz) <= R + TITAN.THREAD_RADIUS,
+    );
+    if (idx === -1) continue;
+    const [th] = game.threads.splice(idx, 1);
+    if (s.air === 'fly' || s.air === 'stick') {
+      const keep = s.air === 'fly';
+      startFall(game, s, keep ? s.vx * 0.3 : 0, 0, keep ? s.vz * 0.3 : 0);
+      game.emit(null, { t: 'event', kind: 'wireOff', id: s.id });
+    }
+    game.addSlow(s, CLOWN.THREAD_SLOW_FACTOR, CLOWN.THREAD_SLOW_TIME);
+    s.revealUntil = game.time + CLOWN.THREAD_REVEAL_TIME;
+    game.emit(null, { t: 'event', kind: 'threaded', id: s.id, by: th.owner, name: s.name, ...(s.air ? { cut: 1 } : {}) });
+  }
 }
 
 /** 화면에 보낼 내 입체기동 상태 */

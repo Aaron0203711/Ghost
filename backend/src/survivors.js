@@ -13,7 +13,7 @@ import {
   ENGINEER,
   survivorSkillCooldown,
 } from '../../shared/constants.js';
-import { endDash } from './abilities.js';
+import { endDash, worldFor } from './abilities.js';
 import { dropCarried } from './palcheok.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -70,7 +70,7 @@ function heal(game, p) {
     const dz = s.z - p.z;
     const d = Math.hypot(dx, dz);
     if (d > DOCTOR.RANGE + RULES.PLAYER_RADIUS) continue;
-    if (game.world.segmentBlocked(p.x, p.z, s.x, s.z)) continue;
+    if (!game.lineOfSight(p, s)) continue;
     const cos = d > 0.05 ? (dx * f.x + dz * f.z) / d : 1;
     if (cos >= lookedCos) {
       looked = s;
@@ -92,7 +92,7 @@ function heal(game, p) {
 
 function fireTaser(game, p) {
   const dir = forward(p.yaw);
-  const t = { id: ++game.taserSeq, owner: p.id, x: p.x + dir.x * 0.3, z: p.z + dir.z * 0.3, dir, traveled: 0 };
+  const t = { id: ++game.taserSeq, owner: p.id, x: p.x + dir.x * 0.3, y: (p.y || 0) + 1.0, z: p.z + dir.z * 0.3, dir, traveled: 0 };
   game.tasers.push(t);
   game.emit(null, { t: 'event', kind: 'taser', id: p.id, tid: t.id, x: r2(t.x), z: r2(t.z), dx: r2(dir.x), dz: r2(dir.z) });
   return true;
@@ -111,12 +111,13 @@ export function stepTasers(game, dt) {
       t.traveled += s;
       for (const h of game.players.values()) {
         if (h.role !== ROLE.HUNTER || !alive(h) || h.dive) continue; // 땅속의 익사자는 안 맞음
-        if (Math.hypot(h.x - t.x, h.z - t.z) > POLICE.RADIUS + RULES.PLAYER_RADIUS) continue;
+        if (Math.hypot(h.x - t.x, h.z - t.z) > POLICE.RADIUS + game.hunterRadius) continue;
+        if (game.titan && t.y > 25) continue; // 거인 키보다 높이 날아감
         stunHunter(game, h);
         end = { hit: h.id };
         break;
       }
-      if (!end && game.world.pointBlocked(t.x, 1.0, t.z)) end = { hit: null };
+      if (!end && game.world.pointBlocked(t.x, t.y, t.z)) end = { hit: null };
       if (!end && t.traveled >= POLICE.RANGE) end = { hit: null };
     }
     if (end) {
@@ -143,7 +144,7 @@ function fireRifle(game, p) {
   p.ammo--;
   if (p.ammo === 0) p.reloadUntil = game.time + SOLDIER.RELOAD;
   const dir = forward(p.yaw);
-  const b = { id: ++game.rifleSeq, owner: p.id, x: p.x + dir.x * 0.3, z: p.z + dir.z * 0.3, dir, traveled: 0 };
+  const b = { id: ++game.rifleSeq, owner: p.id, x: p.x + dir.x * 0.3, y: (p.y || 0) + 1.2, z: p.z + dir.z * 0.3, dir, traveled: 0 };
   game.rifleShots.push(b);
   game.emit(null, { t: 'event', kind: 'rifle', id: p.id, rid: b.id, x: r2(b.x), z: r2(b.z), dx: r2(dir.x), dz: r2(dir.z), ammo: p.ammo });
   return true;
@@ -170,12 +171,13 @@ export function stepRifles(game, dt) {
       b.traveled += s;
       for (const h of game.players.values()) {
         if (h.role !== ROLE.HUNTER || !alive(h) || h.dive) continue; // 땅속의 익사자는 안 맞음
-        if (Math.hypot(h.x - b.x, h.z - b.z) > SOLDIER.RADIUS + RULES.PLAYER_RADIUS) continue;
+        if (Math.hypot(h.x - b.x, h.z - b.z) > SOLDIER.RADIUS + game.hunterRadius) continue;
+        if (game.titan && b.y > 25) continue;
         h.rifleSlowUntil = game.time + SOLDIER.SLOW_TIME;
         end = { hit: h.id };
         break;
       }
-      if (!end && game.world.pointBlocked(b.x, 1.2, b.z)) end = { hit: null };
+      if (!end && game.world.pointBlocked(b.x, b.y, b.z)) end = { hit: null };
       if (!end && b.traveled >= SOLDIER.RANGE) end = { hit: null };
     }
     if (end) {
@@ -188,7 +190,7 @@ export function stepRifles(game, dt) {
 // ───────────── 닌자 ─────────────
 
 function summonClone(game, p) {
-  const c = { id: ++game.cloneSeq, owner: p.id, x: p.x, z: p.z, yaw: p.yaw, dir: forward(p.yaw), until: game.time + NINJA.LIFE };
+  const c = { id: ++game.cloneSeq, owner: p.id, x: p.x, z: p.z, yaw: p.yaw, dir: forward(p.yaw), until: game.time + NINJA.LIFE, ...(game.titan ? { y: p.y || 0 } : {}) };
   game.clones.push(c);
   game.emit(null, { t: 'event', kind: 'clone', id: p.id, cid: c.id });
   return true;
@@ -202,7 +204,7 @@ export function stepClones(game, dt) {
       continue;
     }
     const step = RULES.SURVIVOR_WALK_SPEED * dt;
-    const res = game.world.move(c.x, c.z, c.dir.x * step, c.dir.z * step, RULES.PLAYER_RADIUS);
+    const res = worldFor(game, c).move(c.x, c.z, c.dir.x * step, c.dir.z * step, RULES.PLAYER_RADIUS);
     c.x = res.x;
     c.z = res.z;
   }

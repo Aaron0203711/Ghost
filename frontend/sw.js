@@ -6,7 +6,7 @@
 // three.js 버전을 바꾸면 index.html import map의 three 주소 뒤 ?v= 도 함께 바꾼다
 // (캐시 먼저라서, 주소가 같으면 예전 버전이 계속 쓰인다).
 
-const CACHE = 'ghost-v2';
+const CACHE = 'ghost-v3';
 const SHELL = [
   './',
   './index.html',

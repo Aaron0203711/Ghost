@@ -4,6 +4,7 @@
 import { RULES, ROLE, STATUS, DROWNED, diveStats } from '../../shared/constants.js';
 import { reachableCells, MAP_SIZE } from './mapgen.js';
 import { isCarriedOrThrown } from './palcheok.js';
+import { worldFor } from './abilities.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const HALF = MAP_SIZE / 2;
@@ -51,7 +52,7 @@ export function nearestLanding(game, x, z, from) {
 
 /** 다이빙 도착 지점: 최대 거리로 줄이고, 맵 안·서 있을 수 있는 곳으로 옮긴다 */
 export function diveTarget(game, p, tx, tz) {
-  const { range } = diveStats(game.synergies);
+  const range = diveStats(game.synergies).range * game.S; // 입체기동 모드의 거인은 5배
   if (!Number.isFinite(tx) || !Number.isFinite(tz)) {
     const d = Number.isFinite(range) ? range : 10;
     tx = p.x - Math.sin(p.yaw) * d;
@@ -64,10 +65,31 @@ export function diveTarget(game, p, tx, tz) {
     tx = p.x + (dx / d) * range;
     tz = p.z + (dz / d) * range;
   }
-  const lim = HALF - 1;
+  const lim = (game.titan ? game.map.size / 2 : HALF) - 1 - (game.hunterRadius - RULES.PLAYER_RADIUS);
   tx = Math.max(-lim, Math.min(lim, tx));
   tz = Math.max(-lim, Math.min(lim, tz));
+  if (game.titan) return titanLanding(game, tx, tz);
   return nearestLanding(game, tx, tz, p);
+}
+
+/** 입체기동 모드: 거인이 설 수 있는 가장 가까운 빈 곳 (20m 안) */
+function titanLanding(game, x, z) {
+  const r = game.hunterRadius + 0.05;
+  if (game.world.isFree(x, z, r)) return { x, z };
+  for (let d = 1; d <= 20; d++) {
+    let best = null;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const cx = x + Math.cos(a) * d;
+      const cz = z + Math.sin(a) * d;
+      if (game.world.isFree(cx, cz, r)) {
+        best = { x: cx, z: cz };
+        break;
+      }
+    }
+    if (best) return best;
+  }
+  return null;
 }
 
 /** 스킬 키를 뗐을 때: msg.tx, msg.tz는 조준한 땅 */
@@ -77,7 +99,7 @@ export function skillDrowned(game, p, msg = {}) {
     game.emit(p.id, { t: 'event', kind: 'diveFail', id: p.id });
     return;
   }
-  const { radius } = diveStats(game.synergies);
+  const radius = diveStats(game.synergies).radius * game.S;
   p.skillReadyAt = game.time + DROWNED.SKILL_COOLDOWN;
   p.dive = { x: t.x, z: t.z, fx: p.x, fz: p.z, until: game.time + DROWNED.DIVE_TIME, r: radius };
   p.budget = 0;
@@ -113,7 +135,8 @@ export function stepDives(game) {
         d = Math.hypot(dx, dz) || 1;
         if (Math.hypot(dx, dz) === 0) dx = 1;
       }
-      const res = game.world.move(s.x, s.z, (dx / d) * DROWNED.KNOCKBACK, (dz / d) * DROWNED.KNOCKBACK, RULES.PLAYER_RADIUS);
+      const kb = DROWNED.KNOCKBACK * game.S;
+      const res = worldFor(game, s).move(s.x, s.z, (dx / d) * kb, (dz / d) * kb, RULES.PLAYER_RADIUS);
       s.x = res.x;
       s.z = res.z;
       s.budget = 0;

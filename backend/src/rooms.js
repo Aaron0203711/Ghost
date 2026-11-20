@@ -1,8 +1,14 @@
 // 방(로비) 관리: 방 만들기, 4자리 코드로 참가, 공개 방 목록·비공개 설정, 강퇴, 호스트 위임, 게임 시작/종료.
 
-import { RULES, ROLE, HUNTER_CLASS, CLASS_PICK_TIME, matchRules, validSurvivorClass, DEFAULT_SURVIVOR_CLASS } from '../../shared/constants.js';
+import { RULES, ROLE, HUNTER_CLASS, CLASS_PICK_TIME, matchRules, validSurvivorClass, DEFAULT_SURVIVOR_CLASS, GAME_MODES, titanClasses } from '../../shared/constants.js';
 import { Game } from './game.js';
 import { MAP_THEMES } from './mapgen.js';
+import { TITAN_MAP } from './titanmap.js';
+
+/** 모드에 따라 고를 수 있는 술래 직업 (입체기동은 살덩이 금지) */
+const classesFor = (mode) => (mode === 'titan' ? titanClasses() : Object.values(HUNTER_CLASS));
+/** 모드에 따른 술래 수 (입체기동은 항상 1명) */
+const huntersFor = (mode, n) => (mode === 'titan' ? 1 : matchRules(n).hunters);
 
 const randomCode = (rand) => String(1000 + Math.floor(rand() * 9000));
 
@@ -103,6 +109,12 @@ export class RoomManager {
       case 'jump':
         if (client.room?.game) client.room.game.handleJump(client.id);
         break;
+      case 'wire':
+        if (client.room?.game) client.room.game.handleWire(client.id, msg);
+        break;
+      case 'setMode':
+        this.setMode(client, msg.mode);
+        break;
       case 'skill':
         if (client.room?.game) client.room.game.handleSkill(client.id, msg);
         break;
@@ -141,7 +153,7 @@ export class RoomManager {
     do code = randomCode(this.rand);
     while (this.rooms.has(code));
     // 새 방은 기본 공개(방 목록에 보임). 비공개 방은 목록에 안 나오고 코드로만 들어온다
-    const room = { code, hostId: client.id, members: [client], state: 'lobby', private: isPrivate === true, map: 'random', game: null, timer: null, select: null };
+    const room = { code, hostId: client.id, members: [client], state: 'lobby', private: isPrivate === true, map: 'random', mode: 'normal', game: null, timer: null, select: null };
     this.rooms.set(code, room);
     client.room = room;
     this.watchers.delete(client);
@@ -186,6 +198,16 @@ export class RoomManager {
     this.broadcastRoom(room);
   }
 
+  /** 방장이 게임 모드를 정한다: 'normal' 또는 'titan'(입체기동 이벤트, 전용 맵) */
+  setMode(client, mode) {
+    const room = client.room;
+    if (!room) return;
+    if (room.hostId !== client.id) return this.error(client, 'notHost', '방장만 모드를 정할 수 있어요.');
+    if (room.state !== 'lobby' || !Object.hasOwn(GAME_MODES, mode)) return;
+    room.mode = mode;
+    this.broadcastRoom(room);
+  }
+
   /** 방 목록: 대기 중인 공개 방만 (게임 중·비공개 방은 제외) */
   roomList() {
     const list = [];
@@ -220,7 +242,7 @@ export class RoomManager {
       // 술래가 나가거나, 인원이 바뀌어 술래 수 규칙이 달라지면 대기실로
       if (room.select.hunterIds.includes(client.id)) this.cancelSelect(room, '술래가 나가서 대기실로 돌아왔어요.');
       else if (room.members.length < RULES.MIN_PLAYERS) this.cancelSelect(room, '인원이 부족해서 대기실로 돌아왔어요.');
-      else if (matchRules(room.members.length).hunters !== room.select.hunterIds.length)
+      else if (huntersFor(room.select.mode, room.members.length) !== room.select.hunterIds.length)
         this.cancelSelect(room, '인원이 바뀌어 술래 수가 달라졌어요. 다시 시작해 주세요.');
     }
     if (room.members.length === 0) {
@@ -251,7 +273,8 @@ export class RoomManager {
       return this.error(client, 'notEnough', `최소 ${RULES.MIN_PLAYERS}명이 있어야 시작할 수 있어요.`);
 
     // 1) 무작위로 술래를 정하고(6명 이상이면 2명), 술래가 직업을 고르는 동안 생존자는 대기
-    const count = matchRules(room.members.length).hunters;
+    const mode = room.mode === 'titan' ? 'titan' : 'normal';
+    const count = huntersFor(mode, room.members.length);
     const pool = [...room.members];
     const hunters = [];
     while (hunters.length < count) hunters.push(pool.splice(Math.floor(this.rand() * pool.length), 1)[0]);
@@ -259,15 +282,20 @@ export class RoomManager {
     // 맵: 방장이 정한 맵, '랜덤'이면 술래가 직업을 고르는 동안 무작위로 정해진다
     const themes = Object.keys(MAP_THEMES);
     const theme =
-      room.map !== 'random' && MAP_THEMES[room.map] ? room.map : this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
-    room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null, theme };
+      mode === 'titan'
+        ? 'titan'
+        : room.map !== 'random' && MAP_THEMES[room.map]
+          ? room.map
+          : this.forceTheme ?? themes[Math.floor(this.rand() * themes.length)];
+    room.select = { hunterIds: hunters.map((h) => h.id), picks: {}, timer: null, theme, mode };
     const msg = {
       t: 'classSelect',
       hunterIds: hunters.map((h) => h.id),
       hunterNames: hunters.map((h) => h.name),
       time: CLASS_PICK_TIME,
-      classes: Object.values(HUNTER_CLASS),
-      map: MAP_THEMES[theme],
+      classes: classesFor(mode),
+      mode,
+      map: mode === 'titan' ? TITAN_MAP : MAP_THEMES[theme],
     };
     for (const m of room.members) m.send(msg);
     this.broadcastRoom(room);
@@ -279,7 +307,7 @@ export class RoomManager {
     const room = client.room;
     const sel = room?.select;
     if (!sel || !sel.hunterIds.includes(client.id) || sel.picks[client.id]) return;
-    if (!Object.values(HUNTER_CLASS).includes(cls)) return;
+    if (!classesFor(sel.mode).includes(cls)) return;
     sel.picks[client.id] = cls;
     // 다른 술래에게 알려 준다
     for (const id of sel.hunterIds) {
@@ -292,7 +320,7 @@ export class RoomManager {
   selectTimeout(room) {
     const sel = room.select;
     if (!sel) return;
-    const list = Object.values(HUNTER_CLASS);
+    const list = classesFor(sel.mode);
     const auto = [];
     for (const id of sel.hunterIds) {
       if (sel.picks[id]) continue;
@@ -320,6 +348,7 @@ export class RoomManager {
     room.game = new Game(roster, {
       hunters,
       theme: sel.theme,
+      mode: sel.mode,
       rand: this.rand,
       emit: (toId, msg) => {
         if (toId === null) for (const m of room.members) m.send(msg);
@@ -426,6 +455,9 @@ export class RoomManager {
       private: room.private,
       map: room.map,
       maps: Object.values(MAP_THEMES),
+      mode: room.mode || 'normal',
+      modes: Object.values(GAME_MODES),
+      titanMap: TITAN_MAP,
       maxPlayers: RULES.MAX_PLAYERS,
       minPlayers: RULES.MIN_PLAYERS,
       players: room.members.map((m) => ({ id: m.id, name: m.name, mic: m.mic === true, scls: m.scls })),

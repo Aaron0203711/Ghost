@@ -57,7 +57,7 @@ export class Controls {
     on(document, 'mousedown', (e) => {
       if (!this.enabled || document.pointerLockElement !== this.els.canvas) return;
       if (e.target.closest?.('[data-ui]')) return;
-      const name = e.button === 2 ? 'action' : 'main';
+      const name = this.mouseName(e.button);
       this.mouseHeld[name] = true;
       this.press(name);
     });
@@ -67,6 +67,12 @@ export class Controls {
     on(document, 'pointerlockchange', () => {
       if (document.pointerLockElement !== this.els.canvas) this.mouseHeld = {};
     });
+  }
+
+  /** 마우스 버튼 → 동작 이름. 입체기동 모드의 생존자는 우클릭 와이어, 좌클릭 총 */
+  mouseName(button) {
+    if (this.titanSurvivor) return button === 2 ? 'wire' : 'tgun';
+    return button === 2 ? 'action' : 'main';
   }
 
   /** 버튼이 눌렸을 때(손가락이 닿는 순간) 실행할 동작 */
@@ -166,7 +172,7 @@ export class Controls {
 
   onUp(e) {
     if (e.pointerType === 'mouse') {
-      const name = e.button === 2 ? 'action' : 'main';
+      const name = this.mouseName(e.button);
       this.mouseHeld[name] = false;
       return;
     }
@@ -231,6 +237,7 @@ export class Controls {
       }
       if (code === 'KeyE' && this.isHunter) this.press('action'); // 술래 스킬
       if (code === 'KeyQ' && !this.isHunter) this.press('sskill'); // 생존자 직업 스킬
+      if (code === 'KeyF' && this.titanSurvivor) this.press('wire'); // 입체기동 와이어
     } else {
       this.keys.delete(code);
     }

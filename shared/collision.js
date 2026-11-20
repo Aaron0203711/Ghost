@@ -44,6 +44,8 @@ export class CollisionWorld {
         for (const i of list) {
           if (seen.has(i)) continue;
           seen.add(i);
+          // 높이 보기(at): 발밑보다 낮은 박스(지붕 위에 서 있을 때의 그 집 등)는 무시한다
+          if (this.floorY !== undefined && this.boxes[i].h <= this.floorY) continue;
           out.push(this.boxes[i]);
         }
       }
@@ -182,6 +184,94 @@ export class CollisionWorld {
       if (hit && t0 < best) best = t0;
     }
     return best;
+  }
+
+  /**
+   * 높이 y(발 높이)에서 본 충돌 세계: 윗면이 발밑(y + 0.05)보다 낮은 박스는 없는 것으로 친다.
+   * 지붕 위를 걸어 다닐 때 그 집 박스에 밀려나지 않도록 (입체기동 모드). 같은 박스 데이터를 공유한다
+   */
+  at(y) {
+    if (!(y > 0.05)) return this;
+    const view = Object.create(this);
+    view.floorY = y + 0.05;
+    return view;
+  }
+
+  /** (x,z)에 서 있을 때 발을 받쳐 주는 높이: 윗면이 y(+0.3) 이하인 박스 중 가장 높은 윗면. 없으면 땅(0) */
+  supportAt(x, z, y = Infinity, r = 0.18) {
+    let best = 0;
+    for (const b of this.query(x - r, z - r, x + r, z + r)) {
+      if (!Number.isFinite(b.h) || b.h > y + 0.3) continue;
+      if (x < b.minX - r || x > b.maxX + r || z < b.minZ - r || z > b.maxZ + r) continue;
+      if (b.h > best) best = b.h;
+    }
+    return best;
+  }
+
+  /**
+   * 3D 반직선이 처음 닿는 박스 면 (박스는 땅(0)에서 높이 h까지). 땅에는 닿지 않는다.
+   * 반환: { t, x, y, z, nx, ny, nz, box } 또는 null. (dx,dy,dz)는 단위 벡터
+   */
+  ray3(ox, oy, oz, dx, dy, dz, max) {
+    const ex = ox + dx * max;
+    const ez = oz + dz * max;
+    let best = null;
+    for (const b of this.query(Math.min(ox, ex), Math.min(oz, ez), Math.max(ox, ex), Math.max(oz, ez))) {
+      const top = Number.isFinite(b.h) ? b.h : 1e6;
+      let t0 = 0;
+      let t1 = max;
+      let axis = -1;
+      let sign = 0;
+      let hit = true;
+      const slabs = [
+        [ox, dx, b.minX, b.maxX],
+        [oy, dy, 0, top],
+        [oz, dz, b.minZ, b.maxZ],
+      ];
+      for (let k = 0; k < 3; k++) {
+        const [p, d, lo, hi] = slabs[k];
+        if (Math.abs(d) < 1e-9) {
+          if (p < lo || p > hi) {
+            hit = false;
+            break;
+          }
+          continue;
+        }
+        let ta = (lo - p) / d;
+        let tb = (hi - p) / d;
+        let s = -1;
+        if (ta > tb) {
+          [ta, tb] = [tb, ta];
+          s = 1;
+        }
+        if (ta > t0) {
+          t0 = ta;
+          axis = k;
+          sign = s;
+        }
+        t1 = Math.min(t1, tb);
+        if (t0 > t1) {
+          hit = false;
+          break;
+        }
+      }
+      if (!hit || axis < 0) continue; // 박스 안에서 쏜 경우는 무시
+      if (!best || t0 < best.t) {
+        best = { t: t0, x: ox + dx * t0, y: oy + dy * t0, z: oz + dz * t0, nx: axis === 0 ? sign : 0, ny: axis === 1 ? sign : 0, nz: axis === 2 ? sign : 0, box: b };
+      }
+    }
+    return best;
+  }
+
+  /** 두 3D 점 사이가 장애물에 막히는지 (0.5m 간격으로 검사) */
+  segmentBlocked3(x1, y1, z1, x2, y2, z2) {
+    const d = Math.hypot(x2 - x1, y2 - y1, z2 - z1);
+    const n = Math.max(1, Math.ceil(d / 0.5));
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (this.pointBlocked(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, z1 + (z2 - z1) * t)) return true;
+    }
+    return false;
   }
 
   /** 3D 점이 장애물 안에 있는지 (총알 판정용, 장애물 높이 고려) */

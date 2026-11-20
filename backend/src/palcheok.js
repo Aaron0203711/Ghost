@@ -2,6 +2,7 @@
 // 판정은 모두 서버가 한다.
 
 import { RULES, ROLE, STATUS, PALCHEOK, URBAN_LEGEND } from '../../shared/constants.js';
+import { worldFor } from './abilities.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -55,9 +56,9 @@ function grabTarget(game, p) {
     const dx = s.x - p.x;
     const dz = s.z - p.z;
     const d = Math.hypot(dx, dz);
-    if (d > PALCHEOK.GRAB_RANGE + RULES.PLAYER_RADIUS) continue;
+    if (d > PALCHEOK.GRAB_RANGE * game.S + game.hunterRadius) continue; // 입체기동 모드의 거인은 5배
     if (d > 0.4 && (dx * f.x + dz * f.z) / d < Math.cos(RULES.ATTACK_HALF_ANGLE)) continue;
-    if (game.world.segmentBlocked(p.x, p.z, s.x, s.z)) continue;
+    if (!game.lineOfSight(p, s)) continue;
     if (d < bestD) {
       best = s;
       bestD = d;
@@ -97,7 +98,8 @@ export function dropCarried(game, p, reason, stun = 0) {
     s.carriedBy = null;
     if (alive(s)) {
       const f = forward(p.yaw);
-      const res = game.world.move(p.x, p.z, f.x * 0.8, f.z * 0.8, RULES.PLAYER_RADIUS);
+      const reach = 0.8 * game.S + (game.hunterRadius - RULES.PLAYER_RADIUS);
+      const res = worldFor(game, s).move(p.x, p.z, f.x * reach, f.z * reach, RULES.PLAYER_RADIUS);
       s.x = res.x;
       s.z = res.z;
       s.budget = 0;
@@ -139,12 +141,13 @@ function stepThrown(game, s, dt) {
     return;
   }
   const STEP = 0.25;
-  let remain = PALCHEOK.THROW_SPEED * dt;
+  let remain = PALCHEOK.THROW_SPEED * game.S * dt;
+  const range = PALCHEOK.THROW_RANGE * game.S;
   let end = null;
   while (remain > 1e-6 && !end) {
-    const step = Math.min(STEP, remain, PALCHEOK.THROW_RANGE - th.traveled);
+    const step = Math.min(STEP, remain, range - th.traveled);
     remain -= step;
-    const res = game.world.move(s.x, s.z, th.dir.x * step, th.dir.z * step, RULES.PLAYER_RADIUS);
+    const res = worldFor(game, s).move(s.x, s.z, th.dir.x * step, th.dir.z * step, RULES.PLAYER_RADIUS);
     const moved = Math.hypot(res.x - s.x, res.z - s.z);
     s.x = res.x;
     s.z = res.z;
@@ -152,7 +155,7 @@ function stepThrown(game, s, dt) {
     // 다른 생존자에게 맞으면 두 사람 모두 1칸
     for (const o of game.players.values()) {
       if (o === s || o.role !== ROLE.SURVIVOR || !alive(o) || isCarriedOrThrown(o)) continue;
-      if (Math.hypot(o.x - s.x, o.z - s.z) > PALCHEOK.THROW_HIT_RADIUS) continue;
+      if (Math.hypot(o.x - s.x, o.z - s.z) > PALCHEOK.THROW_HIT_RADIUS * game.S) continue;
       end = { reason: 'hit', other: o.id };
       if (game.time >= o.invulnUntil) game.damage(o, th.by, PALCHEOK.THROW_DAMAGE, { thrown: 1 });
       if (game.time >= s.invulnUntil) game.damage(s, th.by, PALCHEOK.THROW_DAMAGE, { thrown: 1 });
@@ -165,7 +168,7 @@ function stepThrown(game, s, dt) {
       if (game.time >= s.invulnUntil) game.damage(s, th.by, PALCHEOK.THROW_DAMAGE, { thrown: 1, wall: 1 });
       break;
     }
-    if (th.traveled >= PALCHEOK.THROW_RANGE - 1e-6) end = { reason: 'land' };
+    if (th.traveled >= range - 1e-6) end = { reason: 'land' };
   }
   if (!end) return;
   s.thrown = null;

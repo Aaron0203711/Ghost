@@ -4,6 +4,7 @@
 
 import { CollisionWorld } from '../../shared/collision.js';
 import { RULES, SUN } from '../../shared/constants.js';
+import { generateTitanMap } from './titanmap.js';
 
 export const MAP_SIZE = 150;
 const HALF = MAP_SIZE / 2;
@@ -42,6 +43,7 @@ export const MAP_THEMES = Object.freeze({
 });
 
 export function generateMap(seed = Date.now(), theme = 'village') {
+  if (theme === 'titan') return generateTitanMap(seed); // 입체기동 모드 전용 맵
   if (!MAP_THEMES[theme]) theme = 'village';
   if (theme === 'backrooms') return generateBackrooms(seed);
   const rand = mulberry32(seed);

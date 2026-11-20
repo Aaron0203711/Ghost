@@ -2569,3 +2569,130 @@ body.touch #screen-game.role-hunter.cls-skinwalker #hud-survivor {
     height: 54px;
   }
 }
+
+/* ───────────── 입체기동 이벤트 모드 ───────────── */
+/* 발전기 표시 대신 남은 시간만 */
+.mode-titan .gens > span,
+.mode-titan .gens > #hud-gen-count {
+  display: none;
+}
+#screen-game:not(.mode-titan) .t-only,
+.mode-titan .nt-only,
+.role-hunter .t-only {
+  display: none;
+}
+
+#titan-hud {
+  position: absolute;
+  top: calc(52px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+#titan-hp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(224, 85, 58, 0.55);
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffd9cf;
+}
+
+#titan-hp .bar {
+  width: min(260px, 38vw);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+#titan-hp .bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #b3261e, #ff6a4a);
+  transform-origin: left center;
+  transition: transform 0.25s ease;
+}
+
+#titan-hp.flash {
+  animation: titan-hp-flash 0.5s ease;
+}
+
+@keyframes titan-hp-flash {
+  0% {
+    background: rgba(255, 220, 120, 0.7);
+    transform: scale(1.08);
+  }
+  100% {
+    background: rgba(0, 0, 0, 0.55);
+    transform: scale(1);
+  }
+}
+
+#titan-gun {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 216, 74, 0.2);
+  border: 1px solid rgba(255, 216, 74, 0.6);
+  color: #ffe9a0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+body.touch #titan-gun .pc,
+body:not(.touch) #titan-gun .mo {
+  display: none;
+}
+
+/* 총 쏘기 버튼: 와이어(가운데 오른쪽) 버튼 위 */
+.ctl-btn.tgun {
+  right: calc(30px + var(--safe-r));
+  top: 50%;
+  margin-top: -112px;
+  width: 62px;
+  height: 62px;
+  translate: 0 -50%;
+  border-color: rgba(255, 216, 74, 0.8);
+  background: rgba(120, 90, 10, 0.5);
+}
+
+.ctl-btn.tgun .ico {
+  font-size: 22px;
+}
+
+.ctl-btn.tgun .lbl {
+  font-size: 10px;
+}
+
+@media (max-height: 520px) {
+  .ctl-btn.tgun {
+    top: auto;
+    translate: none;
+    margin-top: 0;
+    right: calc(104px + var(--safe-r));
+    bottom: calc(100px + var(--safe-b));
+    width: 54px;
+    height: 54px;
+  }
+}
+
+/* 승리 장면: 조작·HUD 숨김 */
+.cinematic #touch-layer > *:not(#hud-center) {
+  visibility: hidden;
+}
+
+.lobby-titan-note {
+  margin: 0;
+  font-size: 13px;
+  color: #ffd9a8;
+}

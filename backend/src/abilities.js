@@ -12,11 +12,13 @@ const survivors = (game) => [...game.players.values()].filter((s) => s.role === 
 
 /** 서버가 위치를 직접 움직이는 중인가 (닻에 끌려옴, 질주 대기·질주, 익사자 다이빙, 팔척귀신에게 들림·던져짐) */
 export function isForced(game, p) {
-  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive || isCarriedOrThrown(p);
+  return game.time < p.pullUntil || !!p.dashPhase || !!p.dive || isCarriedOrThrown(p) || !!p.air; // air: 입체기동(날아감·붙음·떨어짐)
 }
 
 /** 처녀귀신(ghost)은 담장·벽을 통과한다: 그 종류만 뺀 충돌 세계를 쓴다 */
 export function worldFor(game, p) {
+  // 입체기동 모드: 생존자(닌자 분신 포함)는 발 높이 아래의 집(지붕 위에 서 있는 집)에 막히지 않는다
+  if (game.titan && p.role !== ROLE.HUNTER) return game.world.at(p.y || 0);
   return p.cls === HUNTER_CLASS.GHOST ? game.ghostWorld : game.world;
 }
 
@@ -29,7 +31,8 @@ export function forward(yaw) {
 function skillCaptain(game, p) {
   p.skillReadyAt = game.time + CAPTAIN.SKILL_COOLDOWN;
   const dir = forward(p.yaw);
-  const a = { id: ++game.anchorSeq, owner: p.id, x: p.x + dir.x * 0.6, z: p.z + dir.z * 0.6, dir, traveled: 0 };
+  const off = 0.6 * game.S + (game.hunterRadius - RULES.PLAYER_RADIUS);
+  const a = { id: ++game.anchorSeq, owner: p.id, x: p.x + dir.x * off, z: p.z + dir.z * off, dir, traveled: 0 };
   game.anchors.push(a);
   game.emit(null, { t: 'event', kind: 'anchor', id: p.id, aid: a.id, x: r2(a.x), z: r2(a.z), dx: r2(dir.x), dz: r2(dir.z) });
 }
@@ -53,10 +56,11 @@ function startPull(game, t, ownerId) {
 export function stepAnchors(game, dt) {
   const STEP = 0.25;
   // 바다의 저주(선장 + 익사자): 닻이 커지고 판정 반경 1.5m
-  const radius = game.synergies.includes('seaCurse') ? SEA_CURSE.ANCHOR_RADIUS : CAPTAIN.ANCHOR_RADIUS;
+  // 입체기동 모드의 거인은 사거리·크기 5배
+  const radius = (game.synergies.includes('seaCurse') ? SEA_CURSE.ANCHOR_RADIUS : CAPTAIN.ANCHOR_RADIUS) * game.S;
   for (const a of [...game.anchors]) {
     const owner = game.players.get(a.owner);
-    let remain = CAPTAIN.ANCHOR_SPEED * dt;
+    let remain = CAPTAIN.ANCHOR_SPEED * game.S * dt;
     let end = null;
     while (remain > 0 && !end) {
       const s = Math.min(STEP, remain);
@@ -75,13 +79,13 @@ export function stepAnchors(game, dt) {
         // 선장과 닻 사이 밧줄에 닿아도 끌려온다 (닻은 계속 날아감, 여러 명 가능)
         if (!owner || t.pulledBy) continue;
         const c = closestOnSegment(t.x, t.z, owner.x, owner.z, a.x, a.z);
-        if (Math.hypot(t.x - c.x, t.z - c.z) > CAPTAIN.ROPE_RADIUS + RULES.PLAYER_RADIUS) continue;
+        if (Math.hypot(t.x - c.x, t.z - c.z) > CAPTAIN.ROPE_RADIUS * game.S + RULES.PLAYER_RADIUS) continue;
         if (game.world.segmentBlocked(owner.x, owner.z, c.x, c.z)) continue; // 밧줄이 벽에 가린 부분은 무효
         startPull(game, t, a.owner);
         game.emit(null, { t: 'event', kind: 'ropeHit', aid: a.id, id: a.owner, hit: t.id });
       }
       if (!end && game.world.pointBlocked(a.x, 1.0, a.z)) end = { hit: null };
-      if (!end && a.traveled >= CAPTAIN.ANCHOR_RANGE) end = { hit: null };
+      if (!end && a.traveled >= CAPTAIN.ANCHOR_RANGE * game.S) end = { hit: null };
     }
     if (end) {
       game.anchors.splice(game.anchors.indexOf(a), 1);
@@ -101,13 +105,14 @@ export function stepPulls(game, dt) {
       continue;
     }
     const f = forward(c.yaw);
-    const dest = { x: c.x + f.x * 1.3, z: c.z + f.z * 1.3 };
+    const front = 1.3 * game.S + (game.hunterRadius - RULES.PLAYER_RADIUS);
+    const dest = { x: c.x + f.x * front, z: c.z + f.z * front };
     const dx = dest.x - s.x;
     const dz = dest.z - s.z;
     const dist = Math.hypot(dx, dz);
     if (dist < 0.05) continue;
     const step = dist * Math.min(1, dt / remaining);
-    const res = game.world.move(s.x, s.z, (dx / dist) * step, (dz / dist) * step, RULES.PLAYER_RADIUS);
+    const res = worldFor(game, s).move(s.x, s.z, (dx / dist) * step, (dz / dist) * step, RULES.PLAYER_RADIUS);
     const moved = Math.hypot(res.x - s.x, res.z - s.z);
     s.x = res.x;
     s.z = res.z;
@@ -133,9 +138,9 @@ export function visibleSurvivors(game, p) {
     const dx = s.x - p.x;
     const dz = s.z - p.z;
     const d = Math.hypot(dx, dz);
-    if (d > GHOST.VIEW_RANGE) return false;
+    if (d > GHOST.VIEW_RANGE * game.S) return false;
     if (d > 0.5 && (dx * f.x + dz * f.z) / d < Math.cos(GHOST.VIEW_HALF_ANGLE)) return false;
-    return !game.world.segmentBlocked(p.x, p.z, s.x, s.z);
+    return game.lineOfSight(p, s);
   });
 }
 
@@ -144,7 +149,7 @@ function skillGhost(game, p) {
   // 도시괴담(처녀귀신 + 팔척귀신): 보이지 않는 생존자까지 모두, 대신 시속 14km
   const legend = game.synergies.includes('urbanLegend');
   const targets = legend ? survivors(game) : visibleSurvivors(game, p);
-  const speed = legend ? URBAN_LEGEND.WISP_SPEED : GHOST.WISP_SPEED;
+  const speed = (legend ? URBAN_LEGEND.WISP_SPEED : GHOST.WISP_SPEED) * game.S;
   for (const t of targets) {
     game.wisps.push({ id: ++game.wispSeq, owner: p.id, target: t.id, x: p.x, z: p.z, life: GHOST.WISP_LIFE, speed });
   }
@@ -168,7 +173,7 @@ export function stepWisps(game, dt) {
       w.x += (dx / d) * step;
       w.z += (dz / d) * step;
     }
-    if (Math.hypot(t.x - w.x, t.z - w.z) <= GHOST.WISP_RADIUS) {
+    if (Math.hypot(t.x - w.x, t.z - w.z) <= GHOST.WISP_RADIUS * game.S) {
       game.wisps.splice(game.wisps.indexOf(w), 1);
       if (game.time >= t.invulnUntil) game.damage(t, w.owner, 1, { wisp: 1 });
     }
@@ -217,25 +222,25 @@ export function stepDashes(game, dt) {
       continue;
     }
     // 1초 동안 30m: 작은 간격으로 나눠 벽·생존자를 검사
-    const speed = SPRINTER.DASH_DISTANCE / SPRINTER.DASH_TIME;
+    const speed = (SPRINTER.DASH_DISTANCE * game.S) / SPRINTER.DASH_TIME;
     let remain = speed * Math.min(dt, SPRINTER.DASH_TIME - (p.dashT - dt));
     let reason = null;
     while (remain > 1e-6 && !reason) {
       const s = Math.min(0.3, remain);
       remain -= s;
-      const res = game.world.move(p.x, p.z, p.dashDir.x * s, p.dashDir.z * s, RULES.PLAYER_RADIUS);
+      const res = game.world.move(p.x, p.z, p.dashDir.x * s, p.dashDir.z * s, game.hunterRadius);
       const moved = Math.hypot(res.x - p.x, res.z - p.z);
       p.x = res.x;
       p.z = res.z;
       if (moved < s * 0.5) reason = 'wall';
       for (const t of survivors(game)) {
-        if (Math.hypot(t.x - p.x, t.z - p.z) > SPRINTER.HIT_RADIUS) continue;
+        if (Math.hypot(t.x - p.x, t.z - p.z) > SPRINTER.HIT_RADIUS * game.S + (game.hunterRadius - RULES.PLAYER_RADIUS)) continue;
         if (game.time < t.invulnUntil) continue; // 무적인 생존자는 지나친다
         game.damage(t, p.id, 1, { dash: 1 });
         reason = 'hit';
         break;
       }
-      if (!reason && game.hitCloneNear(p.x, p.z, SPRINTER.HIT_RADIUS, p.id)) reason = 'clone'; // 닌자 분신에 부딪힘
+      if (!reason && game.hitCloneNear(p.x, p.z, SPRINTER.HIT_RADIUS * game.S + (game.hunterRadius - RULES.PLAYER_RADIUS), p.id)) reason = 'clone'; // 닌자 분신에 부딪힘
     }
     if (!reason && p.dashT >= SPRINTER.DASH_TIME) reason = 'done';
     if (reason) endDash(game, p, reason);

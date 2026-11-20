@@ -116,6 +116,10 @@
             <span class="tag" id="lobby-private-tag"></span>
           </div>
           <div class="lobby-map">
+            <span class="lobby-map-label">모드</span>
+            <div class="map-choices" id="lobby-modes"><!-- main.js가 만든다 --></div>
+          </div>
+          <div class="lobby-map" id="lobby-map-row">
             <span class="lobby-map-label">맵</span>
             <div class="map-choices" id="lobby-maps"><!-- main.js가 맵 목록으로 만든다 --></div>
           </div>
@@ -173,6 +177,11 @@
             </div>
           </div>
           <ul id="hud-players"></ul>
+          <!-- 입체기동 모드: 거인 체력, 주운 총 -->
+          <div id="titan-hud" class="hidden">
+            <div id="titan-hp"><span class="t-ico">👹</span><div class="bar"><i id="titan-hp-fill"></i></div><b id="titan-hp-text">20/20</b></div>
+            <div id="titan-gun" class="hidden">🔫 총 1발 · <span class="pc">좌클릭</span><span class="mo">🔫 버튼</span>으로 거인을 쏘세요</div>
+          </div>
           <div id="hud-feed"></div>
           <div id="crosshair"></div>
           <div id="hud-center"></div>
@@ -203,6 +212,8 @@
           <div id="btn-main" class="ctl-btn main"><span class="ico"></span><span class="lbl"></span></div>
           <!-- 생존자 직업 스킬: 수리 버튼 왼쪽 -->
           <div id="btn-sskill" class="ctl-btn sskill"><span class="ico"></span><span class="lbl"></span><span class="timer"></span></div>
+          <!-- 입체기동: 주운 총 쏘기 (총이 있을 때만) -->
+          <div id="btn-tgun" class="ctl-btn tgun hidden"><span class="ico">🔫</span><span class="lbl">발사</span></div>
           <div id="btn-jump" class="ctl-btn jump"><span class="ico">⤒</span><span class="lbl">점프</span></div>
           <!-- 살가죽: 변장 중 달리기 (스킬 버튼 왼쪽) -->
           <div id="btn-hrun" class="ctl-btn hrun"><span class="ico">🏃</span><span class="lbl">달리기</span></div>
@@ -215,7 +226,7 @@
           </div>
           <!-- PC 생존자: 직업 스킬 쿨타임 -->
           <div class="cd-slot s-only" id="cd-sskill"><span class="ico"></span><span class="t"></span><kbd>Q</kbd></div>
-          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="s-only">Shift 달리기 · E 꾹 눌러 수리 · <span id="pc-hint-sskill">Q 직업 스킬 · </span>M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span><span class="h-only cl-only">좌클릭 공 던지기 · E 실 함정</span> · V 마이크 · Esc 커서 해제</p>
+          <p id="pc-hint">WASD 이동 · 마우스 시점 · Space 점프 · <span class="t-only">우클릭·F 와이어 · 좌클릭 총 · </span><span class="s-only">Shift 달리기 · <span class="nt-only">E 꾹 눌러 수리 · </span><span id="pc-hint-sskill">Q 직업 스킬 · </span>M 지도</span><span class="h-only m-only">좌클릭 공격 · E 덫</span><span class="h-only sn-only">좌클릭 발사 · E 꾹 조준</span><span class="h-only as-only">좌클릭 공격 · E 투명화</span><span class="h-only sk-only">좌클릭 공격 · E 스킬</span><span class="h-only cl-only">좌클릭 공 던지기 · E 실 함정</span> · V 마이크 · Esc 커서 해제</p>
         </div>
         <div id="vignette-hit" class="vignette"></div>
         <div id="vignette-stun" class="vignette"></div>

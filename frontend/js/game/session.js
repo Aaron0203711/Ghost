@@ -30,6 +30,7 @@ import {
   DROWNED,
   PALCHEOK,
   eyeHeightFor,
+  TITAN,
   SEA_CURSE,
   diveStats,
   aimDirection,
@@ -68,6 +69,7 @@ import { MiniMap } from './minimap.js';
 import { Gyro } from './gyro.js';
 import { makeHpBar, makeDamagePop } from './training.js';
 import { sfx, unlockAudio, ensureHum, stopHum } from './audio.js';
+import { buildTitanWorld, TITAN_FOG, makeGiant, addOdmGear, TitanFx } from './titan.js';
 
 const $ = (id) => document.getElementById(id);
 /** 체력 칸 표시 (반 칸 포함): 1.5 → "1.5", 2 → "2" */
@@ -105,7 +107,13 @@ export class GameSession {
     this.carrying = null; // 팔척귀신: 들고 있는 생존자 id
     this.carryLeft = 0;
     this.carriedBy = null; // 생존자: 나를 들고 있는 팔척귀신
-    this.eyeHeight = eyeHeightFor(this.isHunter ? this.hunterClass : null); // 팔척귀신은 2.3m
+    // 입체기동 이벤트 모드: 거인 술래(키 25m), 생존자 입체기동장치, 높이(y)가 있다
+    this.titan = start.mode === 'titan';
+    this.matchLimit = start.matchTime ?? RULES.MATCH_TIME;
+    this.y = 0; // 내 발 높이 (입체기동 모드)
+    this.serverY = 0;
+    this.radius = this.titan && this.isHunter ? TITAN.RADIUS : RULES.PLAYER_RADIUS;
+    this.eyeHeight = eyeHeightFor(this.isHunter ? this.hunterClass : null, this.titan); // 팔척귀신은 2.3m, 거인은 23.5m
     this.diveAim = null; // 익사자: 스킬 키를 누르고 있는 동안 조준 원
     this.spyRevealUntil = 0; // 최고의 스파이들: 투명화 순간 생존자 위치 공개
     // 설치형 스킬: 미치광이 덫 3개(30초), 광대 실 4개(23초)
@@ -141,7 +149,9 @@ export class GameSession {
       palcheok: PALCHEOK.SKILL_COOLDOWN,
       flesh: FLESH.SKILL_COOLDOWN,
     }[this.hunterClass] || 1;
-    this.attackCooldown = this.isSniper
+    this.attackCooldown = this.titan
+      ? TITAN.GRAB_COOLDOWN
+      : this.isSniper
       ? SNIPER.SHOT_COOLDOWN
       : this.isClown
         ? CLOWN.BALL_COOLDOWN
@@ -209,12 +219,19 @@ export class GameSession {
     this.makeAnchorModel = () => {
       const m = makeAnchor();
       if (this.synergies.includes('seaCurse')) m.scale.multiplyScalar(SEA_CURSE.ANCHOR_RADIUS / CAPTAIN.ANCHOR_RADIUS);
+      if (this.titan) m.scale.multiplyScalar(TITAN.SKILL_SCALE); // 거인의 닻은 5배
+      return m;
+    };
+    this.makeWispModel = () => {
+      const m = makeWisp();
+      if (this.titan) m.scale.multiplyScalar(TITAN.SKILL_SCALE);
       return m;
     };
     this.setupThree(start);
     for (const w of start.slimes || []) this.addSlime(w);
     this.setupHud();
     this.setupControls(onOpenSettings);
+    if (this.titan) this.titanFx = new TitanFx(this, start);
 
     this.clock = new THREE.Timer();
     this.clock.connect(document); // 탭이 숨겨졌다 돌아와도 시간이 크게 튀지 않게
@@ -224,7 +241,7 @@ export class GameSession {
 
   setupThree(start) {
     const wrap = $('game-canvas-wrap');
-    this.theme = ['mine', 'backrooms'].includes(start.map.theme) ? start.map.theme : 'village';
+    this.theme = ['mine', 'backrooms', 'titan'].includes(start.map.theme) ? start.map.theme : 'village';
     // 그래픽 품질: 고품질(WebGPU + 간접광·반사)을 골랐고 모듈이 준비됐으면 WebGPU 렌더러, 아니면 WebGL
     const hqMods = this.settings.graphics === GFX_HIGH ? hqModules() : null;
     if (this.settings.graphics === GFX_HIGH && !hqMods) console.info('[gfx] 고품질을 쓸 수 없어 보통 화질로 시작해요');
@@ -254,11 +271,11 @@ export class GameSession {
     this.isMine = this.theme === 'mine';
     this.isBackrooms = this.theme === 'backrooms';
     // 시야: 마을 약 75m, 폐광산 약 60m(어두움), 백룸 약 75m(누런 안개)
-    const fog = this.isMine ? MINE_FOG : this.isBackrooms ? BACKROOMS_FOG : { color: '#4a3c4f', near: 14, far: 78 };
+    const fog = this.isMine ? MINE_FOG : this.isBackrooms ? BACKROOMS_FOG : this.titan ? TITAN_FOG : { color: '#4a3c4f', near: 14, far: 78 };
     scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
     this.scene = scene;
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 220);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, this.titan ? 900 : 220);
     camera.rotation.order = 'YXZ';
     scene.add(camera);
     this.camera = camera;
@@ -294,13 +311,13 @@ export class GameSession {
     // 그림자를 드리우는 빛이 있는 맵 (마을의 해, 폐광산의 헤드램프)
     this.castShadows = !!(this.sun || this.headlamps);
 
-    this.sky = buildSky(scene, this.theme, this.sun?.dir);
+    this.sky = buildSky(scene, this.titan ? 'village' : this.theme, this.sun?.dir);
     if (this.hq && this.sky.material.isShaderMaterial) {
       // WebGPU는 GLSL 셰이더를 못 쓰므로 같은 색의 노드 재질로 바꾼다
       this.sky.material.dispose();
       this.sky.material = this.hq.skyMaterial(this.sun?.dir);
     }
-    this.worldGroup = buildWorld(scene, start.map);
+    this.worldGroup = this.titan ? buildTitanWorld(scene, start.map) : buildWorld(scene, start.map);
     if (this.castShadows) enableShadows(this.worldGroup);
 
     // 유령은 담장·벽을 통과한다 (서버와 같은 기준으로 예측)
@@ -325,6 +342,11 @@ export class GameSession {
       const showLabel = p.dummy || (this.isHunter ? p.role === ROLE.HUNTER : p.role === ROLE.SURVIVOR);
       const a = new Avatar(p.role, p.index, p.name, showLabel, p.role === ROLE.HUNTER ? p.cls ?? this.hunterClass : p.scls);
       a.setTarget(p.x, p.z, p.yaw, true);
+      if (this.titan) {
+        a.titanMode = true;
+        if (p.role === ROLE.HUNTER) makeGiant(a);
+        else addOdmGear(a);
+      }
       if (p.dummy && p.role === ROLE.SURVIVOR) {
         const bar = makeHpBar(p.mx ?? this.hitsToCatch);
         a.group.add(bar.sprite);
@@ -335,7 +357,8 @@ export class GameSession {
       this.avatars.set(p.id, a);
     }
 
-    if (this.isHunter) this.viewBat = makeViewModel(camera, this.hunterClass);
+    // 입체기동 모드의 거인은 맨손 (기본 공격이 잡기)
+    if (this.isHunter) this.viewBat = makeViewModel(camera, this.titan ? 'palcheok' : this.hunterClass);
     // 손에 든 무기도 그늘에 들어가면 어두워지게 (그림자를 받기만 하고 드리우지는 않음)
     if (this.castShadows) this.viewBat?.root?.traverse((o) => o.isMesh && (o.receiveShadow = true));
     // 닻 사슬 (선 여러 개를 한 번에 그림)
@@ -411,6 +434,8 @@ export class GameSession {
         : this.isHunter
         ? { main: ['🏏', '공격'], action: ['🪤', '덫'] }
         : { main: ['🔧', '수리'], action: ['👟', '달리기'] };
+    if (this.titan) labels.main = this.isHunter ? ['✊', '잡기'] : ['🪝', '와이어'];
+    screen.classList.toggle('mode-titan', this.titan);
     $('btn-main').querySelector('.ico').textContent = labels.main[0];
     $('btn-main').querySelector('.lbl').textContent = labels.main[1];
     $('btn-action').querySelector('.ico').textContent = labels.action[0];
@@ -448,7 +473,7 @@ export class GameSession {
     $('exit-label').textContent = this.isMine ? '🚪 갱구 출구' : this.isBackrooms ? '🚪 EXIT' : '⛩ 탈출구';
     screen.classList.toggle('theme-mine', this.isMine);
     screen.classList.toggle('theme-backrooms', this.isBackrooms);
-    this.feed(this.isMine ? '⛏️ 맵: 폐광산' : this.isBackrooms ? '🟨 맵: 백룸' : '🏘️ 맵: 시골 마을');
+    this.feed(this.titan ? '🏰 입체기동 이벤트 · 맵: 거인의 성벽 도시' : this.isMine ? '⛏️ 맵: 폐광산' : this.isBackrooms ? '🟨 맵: 백룸' : '🏘️ 맵: 시골 마을');
     $('hud-repair').classList.add('hidden');
     $('hud-spectate').classList.add('hidden');
     $('hud-gens').innerHTML = [...this.gens.keys()].map((id) => `<i class="lamp" data-gen="${id}"></i>`).join('');
@@ -466,6 +491,16 @@ export class GameSession {
             : `${sinfo?.icon ?? ''} ${sinfo?.name ?? '생존자'} 체험 · 술래 허수아비는 공격하지 않아요. 발전기 ${this.gens.size}개를 켜고 탈출해 보세요`,
         3,
       );
+      return;
+    }
+    if (this.titan) {
+      this.centerMsg(
+        this.isHunter
+          ? `👹 거인(체력 ${TITAN.HP}칸)! 손으로 잡아 생존자를 모두 먹어 치우세요. 10분을 버티면 승리`
+          : '🪝 와이어로 날아다니며 지붕 위 총을 주워 거인을 쏘세요! (10m 넘게 떨어지면 0.5칸)',
+        4,
+      );
+      if (!this.isHunter) this.feed('🪝 PC: 우클릭·F 와이어 · 좌클릭 총 / 휴대폰: 🪝·🔫 버튼', 'good');
       return;
     }
     this.centerMsg(
@@ -504,11 +539,23 @@ export class GameSession {
         joy: $('joy'),
         knob: $('joy-knob'),
         canvas: this.renderer.domElement,
-        buttons: { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null, hrun: this.isSkin ? $('btn-hrun') : null },
+        buttons:
+          this.titan && !this.isHunter
+            ? { wire: $('btn-main'), tgun: $('btn-tgun'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null }
+            : { main: $('btn-main'), action: $('btn-action'), jump: $('btn-jump'), sskill: this.hasSSkill ? $('btn-sskill') : null, hrun: this.isSkin ? $('btn-hrun') : null },
       },
       () => this.settings.sensitivity,
     );
     this.controls.isHunter = this.isHunter;
+    this.controls.titanSurvivor = this.titan && !this.isHunter; // 우클릭·F 와이어, 좌클릭 총
+    this.controls.onPress('wire', () => {
+      unlockAudio();
+      this.tryWire();
+    });
+    this.controls.onPress('tgun', () => {
+      unlockAudio();
+      this.tryShootGun();
+    });
     this.gyro = new Gyro(() => ({
       enabled: this.settings.gyro,
       sensitivity: this.settings.gyroSensitivity,
@@ -584,9 +631,28 @@ export class GameSession {
     this.net.send({ t: 'attack', yaw: this.yaw, pitch: this.pitch });
   }
 
+  /** 입체기동: 와이어 쏘기 (날아가는 중이면 풀기) */
+  tryWire() {
+    if (!this.titan || this.isHunter || this.status !== STATUS.ALIVE || this.cinematic) return;
+    if (performance.now() - (this.lastWireAt || 0) < 150) return;
+    this.lastWireAt = performance.now();
+    sfx.threadTwang?.();
+    this.net.send({ t: 'wire', yaw: this.yaw, pitch: this.pitch });
+  }
+
+  /** 입체기동: 지붕에서 주운 총 한 발 */
+  tryShootGun() {
+    if (!this.titan || this.isHunter || this.status !== STATUS.ALIVE || !this.titanFx?.hasGun || this.cinematic) return;
+    this.titanFx.hasGun = false;
+    this.titanFx.renderGun();
+    sfx.gunshot(1);
+    this.shake = 0.15;
+    this.net.send({ t: 'attack', yaw: this.yaw, pitch: this.pitch });
+  }
+
   /** 점프: 땅에 있을 때만, 생존자는 스태미나 1초분 필요. 덫에 걸리면 못 뜀 */
   tryJump() {
-    if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0 || this.isRepairing()) return;
+    if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0 || this.isRepairing() || this.forced) return;
     if (!this.isHunter) {
       if (this.stam.stamina < RULES.JUMP_STAMINA) {
         this.centerMsg('스태미나가 부족해 점프할 수 없어요', 1);
@@ -649,7 +715,10 @@ export class GameSession {
   /** 익사자: 스킬 키를 누르면 조준 원을 띄운다 (떼면 update에서 다이빙) */
   startDiveAim() {
     if (this.diveAim || this.status !== STATUS.ALIVE || this.skillLeft > 0 || this.forced || this.stunLeft > 0) return;
-    const { radius, range } = diveStats(this.synergies);
+    const ds = diveStats(this.synergies);
+    const k = this.titan ? TITAN.SKILL_SCALE : 1; // 거인은 5배
+    const radius = ds.radius * k;
+    const range = ds.range * k;
     const ring = makeDiveRing(radius);
     this.scene.add(ring);
     this.diveAim = { ring, range, x: this.pos.x, z: this.pos.z };
@@ -719,6 +788,7 @@ export class GameSession {
     else if (msg.t === 'correct') {
       this.pos.x = msg.x;
       this.pos.z = msg.z;
+      if (msg.y !== undefined) this.y = this.serverY = msg.y;
       this.corr = msg.corr;
     }
   }
@@ -735,6 +805,12 @@ export class GameSession {
         this.hits = p.hits;
         this.stunLeft = p.stun;
         this.serverPos = { x: p.x, z: p.z };
+        if (this.titan) {
+          this.serverY = p.y ?? 0;
+          // 땅·지붕 위에 서 있을 때 높이가 어긋나 있으면 맞춘다 (공중에서는 서버 위치를 따라감)
+          if (!s.me?.forced && Math.abs(this.serverY - this.y) > 0.4) this.y = this.serverY;
+          this.air = p.air || null;
+        }
         this.myDash = p.dash || null;
         if (p.pull && !this.pulledBy) this.centerMsg('⚓ 닻에 걸렸다! 끌려간다', 1.5);
         this.pulledBy = p.pull || null;
@@ -755,7 +831,7 @@ export class GameSession {
         a.wasHidden = true;
         continue;
       }
-      a.setTarget(p.x, p.z, p.yaw, a.wasHidden); // 다시 나타나면 그 자리에 바로
+      a.setTarget(p.x, p.z, p.yaw, a.wasHidden, p.y ?? 0); // 다시 나타나면 그 자리에 바로
       a.wasHidden = false;
       // 같은 편/관전자 화면에서는 투명화 중인 암살자가 반투명
       a.setGhost(p.invis ? 0.3 : 1);
@@ -788,7 +864,8 @@ export class GameSession {
     const carriers = new Set(s.players.filter((p) => p.carry).map((p) => p.carry));
     for (const [id, a] of this.avatars) a.carrying = carriers.has(id);
     this.syncProjectiles(this.anchorMeshes, s.anchors || [], this.makeAnchorModel);
-    this.syncProjectiles(this.wispMeshes, s.wisps || [], makeWisp);
+    this.syncProjectiles(this.wispMeshes, s.wisps || [], this.makeWispModel);
+    this.titanFx?.onState(s);
     this.syncThreads(s.threads || []);
     this.syncClones(s.clones || []);
     this.syncRobots(s.robots || []);
@@ -853,6 +930,7 @@ export class GameSession {
     for (const t of list) {
       if (this.traps.has(t.id)) continue;
       const mesh = makeTrap(faint);
+      if (this.titan) mesh.scale.multiplyScalar(TITAN.SKILL_SCALE); // 거인의 덫은 5배
       mesh.position.set(t.x, 0, t.z);
       this.scene.add(mesh);
       this.traps.set(t.id, mesh);
@@ -899,13 +977,17 @@ export class GameSession {
       if (!a) {
         const o = this.info.get(c.o);
         a = new Avatar(ROLE.SURVIVOR, o?.index ?? 0, o?.name ?? '?', !this.isHunter, o?.scls);
-        a.setTarget(c.x, c.z, c.yaw, true);
+        a.setTarget(c.x, c.z, c.yaw, true, c.y ?? 0);
+        if (this.titan) {
+          a.titanMode = true;
+          addOdmGear(a);
+        }
         if (!this.isHunter) a.setGhost(0.55);
         this.scene.add(a.group);
         this.setupAvatar(a); // 분신도 주인과 똑같이 그림자·헤드램프
         this.cloneAvatars.set(c.id, a);
       }
-      a.setTarget(c.x, c.z, c.yaw);
+      a.setTarget(c.x, c.z, c.yaw, false, c.y ?? 0);
     }
   }
 
@@ -971,6 +1053,10 @@ export class GameSession {
       const as = this.info.get(p.look);
       const avatar = new Avatar(ROLE.SURVIVOR, as?.index ?? 0, as?.name ?? '?', true, as?.scls ?? null); // 그 생존자의 직업 모습까지 똑같이
       avatar.setTarget(p.x, p.z, p.yaw, true);
+      if (this.titan) {
+        avatar.titanMode = true;
+        makeGiant(avatar); // 거인 크기의 생존자 모습
+      }
       this.scene.add(avatar.group);
       this.setupAvatar(avatar);
       d = { look: p.look, avatar };
@@ -1015,6 +1101,7 @@ export class GameSession {
   onEvent(e) {
     const name = (id) => this.info.get(id)?.name ?? '?';
     const me = e.id === this.myId;
+    this.titanFx?.onEvent(e);
     switch (e.kind) {
       case 'swing':
         if (e.id !== this.myId) {
@@ -1034,7 +1121,11 @@ export class GameSession {
         this.hitBurst(e.id, e.slime);
         const max = e.max ?? this.hitsToCatch;
         const dmg = `-${fmtHits(e.dmg)}칸`;
-        const far = e.far
+        const far = e.fall
+          ? ` · ${e.drop}m 낙하 ${dmg}`
+          : e.grab
+            ? ' · 거인에게 잡힘'
+          : e.far
           ? ` · ${e.dist}m 원거리 저격! ${dmg}`
           : e.wisp
             ? ` · 유도탄 ${dmg}`
@@ -1065,7 +1156,11 @@ export class GameSession {
           this.flash('hit');
           this.shake = e.ball ? 0.2 : 0.35;
           this.centerMsg(
-            `맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
+            e.fall
+              ? `쿵! ${Math.round(e.drop)}m에서 떨어졌다 ${hp} ${dmg}`
+              : e.grab
+                ? `✊ 거인에게 잡혔다! ${hp}`
+                : `맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
             1.5,
           );
         } else if (e.slime) {
@@ -1088,7 +1183,7 @@ export class GameSession {
           this.feed(`💀 ${name(e.id)} 쓰러짐 · ${TRAINING.REVIVE_TIME}초 뒤 다시 일어나요`, 'warn');
           break;
         }
-        this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.slime ? ' (점액)' : ''}${e.spyKill ? ` (${e.dist}m 저격 즉사 · 최고의 스파이들)` : e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
+        this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.fall ? ' (낙하)' : ''}${e.slime ? ' (점액)' : ''}${e.spyKill ? ` (${e.dist}m 저격 즉사 · 최고의 스파이들)` : e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
         if (me) this.flash('hit');
         break;
       case 'trapped':
@@ -1540,6 +1635,13 @@ export class GameSession {
   update(dt) {
     const c = this.controls;
     const alive = this.status === STATUS.ALIVE;
+    if (this.cinematic) {
+      // 입체기동 승리 장면: 조작 없이 장면만 그린다
+      this.cinemaUpdate?.();
+      this.liveTracers = this.liveTracers.filter((t) => t.update(dt));
+      this.effects = this.effects.filter((fx) => fx(dt));
+      return;
+    }
 
     // 저격수 조준: 조준 키를 누르고 있는 동안 확대
     this.aiming = this.isSniper && alive && c.isHeld('action');
@@ -1573,8 +1675,9 @@ export class GameSession {
       const k = 1 - Math.exp(-dt * 14);
       this.pos.x += (this.serverPos.x - this.pos.x) * k;
       this.pos.z += (this.serverPos.z - this.pos.z) * k;
+      if (this.titan) this.y += (this.serverY - this.y) * k;
     }
-    this.interact = !this.isHunter && c.isHeld('main');
+    this.interact = !this.isHunter && !this.titan && c.isHeld('main');
     // 발전기를 수리하는 동안(수리 키를 누르고 있는 동안)에는 움직일 수 없다
     const repairing = this.isRepairing();
     const mv = alive && !stunned && !this.forced && !repairing ? c.moveVector() : { x: 0, y: 0 };
@@ -1595,6 +1698,7 @@ export class GameSession {
         wallSlowed: this.isGhost && this.wallSlowLeft > 0,
         disguised: this.disguised,
         rifleSlowed: this.isHunter && this.rifleSlowLeft > 0,
+        titan: this.titan,
         slowFactor: this.isHunter ? 1 : this.slowFactor,
         noRun: this.noRun,
       });
@@ -1603,7 +1707,9 @@ export class GameSession {
       // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
       const dx = (-sin * mv.y + cos * mv.x) * speed * dt;
       const dz = (-cos * mv.y - sin * mv.x) * speed * dt;
-      const p = this.collision.move(this.pos.x, this.pos.z, dx, dz, RULES.PLAYER_RADIUS);
+      // 입체기동: 지붕 위에서는 그 집에 밀려나지 않는다 (서버와 같은 기준)
+      const world = this.titan && !this.isHunter ? this.collision.at(this.y) : this.collision;
+      const p = world.move(this.pos.x, this.pos.z, dx, dz, this.radius);
       // 유령: 벽을 빠져나온 순간부터 1초 동안 느려진다 (서버와 같은 판정)
       if (this.isGhost && ghostWallExit(this.wallState, this.wallWorld, this.pos.x, this.pos.z, p.x, p.z)) this.wallSlowLeft = GHOST.WALL_SLOW_TIME;
       this.pos.x = p.x;
@@ -1634,7 +1740,7 @@ export class GameSession {
       $('screen-game').classList.toggle('invisible', invis);
       this.viewBat?.setGhost(invis);
     }
-    this.matchTime = Math.min(RULES.MATCH_TIME, (this.matchTime || 0) + dt);
+    this.matchTime = Math.min(this.matchLimit, (this.matchTime || 0) + dt);
     if (this.chargeLeft > 0 && this.charges < this.trapMax) this.chargeLeft = Math.max(0, this.chargeLeft - dt);
 
     // 서버로 입력 전송 (초당 20회)
@@ -1668,6 +1774,7 @@ export class GameSession {
       portal.material.opacity = 0.45 + Math.sin(performance.now() / 300) * 0.15;
     }
 
+    this.titanFx?.update(dt);
     this.updateCamera(dt);
     this.updateHud(dt);
     if (this.mapOpen) this.drawMap();
@@ -1682,7 +1789,7 @@ export class GameSession {
         this.cycleSpectate();
       } else {
         // 팔척귀신은 2.3m, 들리거나 던져진 사람은 몸 높이에서
-        const sEye = a.carried || a.thrown ? a.group.position.y + 0.2 : eyeHeightFor(info?.cls) + a.group.position.y;
+        const sEye = a.carried || a.thrown ? a.group.position.y + 0.2 : eyeHeightFor(info?.cls, this.titan) + a.group.position.y;
         cam.position.set(a.pos.x, sEye, a.pos.z);
         cam.rotation.set(a.pitch ?? 0, a.yaw, 0);
         if (cam.fov !== 75) {
@@ -1726,7 +1833,7 @@ export class GameSession {
       }
     }
     // 팔척귀신은 2.3m. 팔척귀신에게 들리면 머리 위 높이(2.9m)에서 본다
-    const baseEye = this.carriedBy ? 2.9 : this.eyeHeight;
+    const baseEye = (this.carriedBy ? (this.titan ? 1 : 2.9) : this.eyeHeight) + (this.titan ? this.y : 0);
     const eye = (this.stunLeft > 0 ? baseEye - 0.25 : baseEye) + jy;
     const dip = Math.sin(Math.min(1, this.landDip / 0.12) * Math.PI) * this.landDip;
     // 흔들림(좌우)은 바라보는 방향의 오른쪽으로
@@ -1770,7 +1877,7 @@ export class GameSession {
 
   updateHud(dt) {
     // 남은 시간 (훈련장은 제한 시간 없음)
-    const left = Math.max(0, Math.ceil(RULES.MATCH_TIME - (this.matchTime || 0)));
+    const left = Math.max(0, Math.ceil(this.matchLimit - (this.matchTime || 0)));
     const timerText = this.training ? '🎯 훈련장' : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     if (timerText !== this.lastTimerText) {
       this.lastTimerText = timerText;
@@ -1805,7 +1912,7 @@ export class GameSession {
       }
       this.updateSurvivorSkill();
       const gen = this.nearestGen();
-      $('btn-main').classList.toggle('ready', !!gen);
+      $('btn-main').classList.toggle('ready', this.titan || !!gen); // 입체기동: 와이어 버튼은 늘 쓸 수 있음
       const repairing = gen && this.interact;
       $('hud-repair').classList.toggle('hidden', !gen);
       if (gen) {
@@ -2211,8 +2318,19 @@ export class GameSession {
     el.classList.add('hit');
   }
 
+  /** 게임이 끝났을 때: 입체기동 모드면 승리 장면을 틀고 그 길이(ms)를 돌려준다 */
+  playEnding(msg) {
+    if (!this.titan || !this.titanFx || msg.mode !== 'titan') return 0;
+    return this.titanFx.playEnding(msg);
+  }
+
+  sfxWire() {
+    sfx.threadTwang?.();
+  }
+
   dispose() {
     this.disposed = true;
+    this.titanFx?.dispose();
     if (this.diveAim) this.endDiveAim(false);
     cancelAnimationFrame(this.raf);
     this.controls.dispose();

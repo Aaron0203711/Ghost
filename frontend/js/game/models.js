@@ -419,8 +419,8 @@ export class Avatar {
     this.setGhost(1);
   }
 
-  setTarget(x, z, yaw, snap = false) {
-    this.target.set(x, 0, z);
+  setTarget(x, z, yaw, snap = false, y = 0) {
+    this.target.set(x, y, z); // y: 입체기동 모드의 높이
     this.targetYaw = yaw;
     if (snap) {
       this.pos.copy(this.target);
@@ -490,7 +490,7 @@ export class Avatar {
     // 점프 (서버 기준 경과 시간에서 이어서 진행)
     if (this.jumpT != null) {
       this.jumpT += dt;
-      this.group.position.y = jumpHeight(this.jumpT);
+      this.group.position.y += jumpHeight(this.jumpT);
       if (this.jumpT >= RULES.JUMP_TIME) this.jumpT = null;
     }
     this.group.rotation.y = this.yaw;
@@ -614,7 +614,7 @@ export class Avatar {
     else this.group.rotation.z = 0;
     // 팔척귀신에게 들림: 팔척귀신 머리 위에 가로로 들려 버둥거림 / 던져짐: 가로로 날아가며 떨어짐
     if (this.carried) {
-      this.group.position.y = 2.75;
+      if (!this.titanMode) this.group.position.y = 2.75; // 입체기동 모드는 서버가 정한 높이
       this.group.rotation.x = 0;
       this.group.rotation.z = Math.PI / 2 + Math.sin(now / 70) * 0.12;
       this.legL.rotation.x = Math.sin(now / 90) * 0.6;
@@ -622,7 +622,7 @@ export class Avatar {
       this.thrownT = 0;
     } else if (this.thrown) {
       this.thrownT = (this.thrownT || 0) + dt;
-      this.group.position.y = Math.max(0.3, 2.75 - this.thrownT * this.thrownT * 3.5);
+      if (!this.titanMode) this.group.position.y = Math.max(0.3, 2.75 - this.thrownT * this.thrownT * 3.5);
       this.group.rotation.z = Math.PI / 2;
       this.group.rotation.x = this.thrownT * 6;
     } else {

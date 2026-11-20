@@ -32,7 +32,10 @@ import {
   eyeHeightFor,
   MAP_SIGHT,
   SOLDIER,
+  TITAN,
 } from '../../shared/constants.js';
+import { initTitan, handleWire, titanGrab, titanShoot, stepTitan, titanSnapshot } from './titan.js';
+import { planTitanMatch } from './titanmap.js';
 import { stepSlime } from './flesh.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
@@ -67,7 +70,13 @@ export class Game {
     this.rand = opts.rand || Math.random;
     this.emit = opts.emit;
     this.seed = opts.seed ?? Math.floor(this.rand() * 2 ** 31);
-    this.map = generateMap(this.seed, opts.theme);
+    // 입체기동 이벤트 모드: 전용 맵, 술래(거인) 1명, 발전기 없음, 10분
+    this.titan = opts.mode === 'titan' && !opts.training;
+    this.mode = this.titan ? 'titan' : 'normal';
+    this.map = generateMap(this.seed, this.titan ? 'titan' : opts.theme);
+    this.matchTime = this.titan ? TITAN.MATCH_TIME : RULES.MATCH_TIME;
+    this.S = this.titan ? TITAN.SKILL_SCALE : 1; // 거인 직업 스킬 사거리·크기 배율
+    this.hunterRadius = this.titan ? TITAN.RADIUS : RULES.PLAYER_RADIUS;
 
     // 훈련장: 제한 시간·승패 없음, 기본 규칙(체력 3칸, 발전기 5개, 피해 감소 없음)
     this.training = null;
@@ -81,18 +90,23 @@ export class Game {
       dummies = t.dummies;
     }
     this.rules = matchRules(this.training ? 1 : roster.length);
-    const validCls = (c) => (Object.values(HUNTER_CLASS).includes(c) ? c : HUNTER_CLASS.MANIAC);
+    if (this.titan) this.rules = { ...this.rules, hunters: 1, generators: 0, titan: true };
+    const validCls = (c) =>
+      Object.values(HUNTER_CLASS).includes(c) && !(this.titan && TITAN.BANNED_CLASSES.includes(c)) ? c : HUNTER_CLASS.MANIAC;
     let hunters = opts.hunters;
     if (!hunters) {
       const id = opts.hunterId ?? roster[Math.floor(this.rand() * roster.length)].id;
       hunters = [{ id, cls: opts.hunterClass }];
     }
     hunters = hunters.filter((h) => roster.some((p) => p.id === h.id)).map((h) => ({ id: h.id, cls: validCls(h.cls) }));
+    if (this.titan) hunters = hunters.slice(0, 1);
     const hunterCls = new Map(hunters.map((h) => [h.id, h.cls]));
     this.hunterIds = hunters.map((h) => h.id);
     this.hunterClass = hunters[0].cls; // 첫 번째 술래의 직업 (호환용)
     const survivors = roster.filter((p) => !hunterCls.has(p.id));
-    const plan = planMatch(this.map, survivors.length, this.rand, this.rules.generators, hunters.length);
+    const plan = this.titan
+      ? planTitanMatch(this.map, survivors.length, this.rand)
+      : planMatch(this.map, survivors.length, this.rand, this.rules.generators, hunters.length);
 
     this.world = new CollisionWorld(this.map.boxes);
     // 유령 전용: 담장·벽을 뺀 충돌 세계
@@ -206,6 +220,15 @@ export class Game {
     this.time = 0;
     this.ended = false;
     this.result = null;
+    if (this.titan) initTitan(this);
+  }
+
+  /** a가 b를 볼 수 있는지 (벽에 가리지 않음). 입체기동 모드는 높이까지 따진다 (거인은 머리·가슴·발 높이 중 하나) */
+  lineOfSight(a, b) {
+    if (!this.titan) return !this.world.segmentBlocked(a.x, a.z, b.x, b.z);
+    const by = (b.y || 0) + 1;
+    const from = a.role === ROLE.HUNTER ? [TITAN.EYE_HEIGHT, TITAN.HEIGHT * 0.55, 2] : [(a.y || 0) + RULES.EYE_HEIGHT];
+    return from.some((ay) => !this.world.segmentBlocked3(a.x, ay, a.z, b.x, by, b.z));
   }
 
   /** 훈련장: 허수아비를 내 시작 위치 주변 정해진 거리쯤에 세우고, 나는 가장 가까운 허수아비를 바라본다 */
@@ -242,6 +265,9 @@ export class Game {
       generators: this.gens.map((g) => ({ id: g.id, x: g.x, z: g.z, rot: g.rot })),
       slimes: this.slimes.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z), born: r2(w.born), r0: w.r0 })),
       synergies: this.synergies,
+      mode: this.mode,
+      matchTime: this.matchTime,
+      ...(this.titan ? { guns: this.guns.map((g) => ({ id: g.id, x: g.x, y: g.y, z: g.z })) } : {}),
       ...(this.training ? { training: this.training } : {}),
       players: [...this.players.values()].map((p) => ({
         id: p.id,
@@ -334,7 +360,8 @@ export class Game {
       tz = p.z + dz * k;
       clamped = true;
     }
-    const res = worldFor(this, p).move(p.x, p.z, tx - p.x, tz - p.z, RULES.PLAYER_RADIUS);
+    const radius = p.role === ROLE.HUNTER ? this.hunterRadius : RULES.PLAYER_RADIUS;
+    const res = worldFor(this, p).move(p.x, p.z, tx - p.x, tz - p.z, radius);
     p.budget = Math.max(0, p.budget - Math.hypot(res.x - p.x, res.z - p.z));
     if (p.cls === HUNTER_CLASS.GHOST && ghostWallExit(p, this.ghostWallWorld, p.x, p.z, res.x, res.z)) {
       p.wallSlowUntil = this.time + GHOST.WALL_SLOW_TIME;
@@ -348,18 +375,31 @@ export class Game {
 
   correct(p) {
     p.corr++;
-    this.emit(p.id, { t: 'correct', x: r2(p.x), z: r2(p.z), corr: p.corr });
+    this.emit(p.id, { t: 'correct', x: r2(p.x), z: r2(p.z), corr: p.corr, ...(this.titan ? { y: r2(p.y || 0) } : {}) });
   }
 
   /** 공격 키: 미치광이는 방망이, 저격수는 저격총. msg.yaw/pitch는 누른 순간의 시점 */
   handleAttack(id, msg = {}) {
     const p = this.players.get(id);
-    if (!p || this.ended || p.role !== ROLE.HUNTER || p.status !== STATUS.ALIVE) return;
+    if (!p || this.ended || p.status !== STATUS.ALIVE) return;
+    // 입체기동 모드의 생존자: 지붕에서 주운 총 한 발
+    if (this.titan && p.role === ROLE.SURVIVOR && !isCarriedOrThrown(p)) {
+      titanShoot(this, p, msg);
+      return;
+    }
+    if (p.role !== ROLE.HUNTER) return;
     if (this.time < p.attackReadyAt || isForced(this, p) || this.isStunned(p)) return;
     if (p.carrying) return; // 팔척귀신: 생존자를 들고 있는 동안에는 주먹 불가
     if (p.cls === HUNTER_CLASS.FLESH) return; // 살덩이: 기본 공격 없음
     if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
     if (Number.isFinite(msg.pitch)) p.pitch = Math.max(-1.5, Math.min(1.5, msg.pitch));
+    if (this.titan) {
+      // 입체기동 모드의 거인: 기본 공격은 모두 잡기 (살가죽은 변장이 풀림)
+      if (p.disguiseAs) endDisguise(this, p);
+      if (this.isInvisible(p)) this.endInvis(p, 'hit');
+      titanGrab(this, p);
+      return;
+    }
     if (p.cls === HUNTER_CLASS.SNIPER) {
       this.fire(p);
       return;
@@ -433,13 +473,20 @@ export class Game {
   handleJump(id) {
     const p = this.players.get(id);
     if (!p || this.ended || p.status !== STATUS.ALIVE) return;
-    if (this.isAirborne(p) || this.isStunned(p) || this.isRepairing(p)) return; // 수리 중에도 못 뜀
+    if (this.isAirborne(p) || this.isStunned(p) || this.isRepairing(p) || isForced(this, p)) return; // 수리 중에도 못 뜀
     if (p.role === ROLE.SURVIVOR) {
       if (p.stamina < RULES.JUMP_STAMINA) return;
       p.stamina -= RULES.JUMP_STAMINA;
       p.regenWait = RULES.STAMINA_REGEN_DELAY;
     }
     p.jumpUntil = this.time + RULES.JUMP_TIME;
+  }
+
+  /** 입체기동 모드: 와이어 키 (생존자) */
+  handleWire(id, msg = {}) {
+    const p = this.players.get(id);
+    if (!p || this.ended) return;
+    handleWire(this, p, msg);
   }
 
   /** 스킬 키: 직업마다 다르다. msg.yaw는 누른 순간의 시점 */
@@ -473,8 +520,8 @@ export class Game {
   }
 
   /** 생존자에게 피해. 맞으면 1.5초 무적(invuln: false면 무적 없음), 체력이 다 닳으면 잡힘. 2인 규칙이면 모든 피해 절반 */
-  damage(s, byId, amount, extra = {}, { invuln = true } = {}) {
-    amount *= this.rules.damageFactor ?? 1;
+  damage(s, byId, amount, extra = {}, { invuln = true, raw = false } = {}) {
+    if (!raw) amount *= this.rules.damageFactor ?? 1; // raw: 술래가 준 피해가 아님 (입체기동 낙하 피해)
     // 0.2칸 같은 소수 피해가 쌓여도 오차가 남지 않도록
     s.hits = Math.min(s.maxHits, Math.round((s.hits + amount) * 1e6) / 1e6); // 광대 공은 0.75칸
     if (invuln) s.invulnUntil = this.time + RULES.HIT_INVULNERABLE;
@@ -655,6 +702,7 @@ export class Game {
         wallSlowed: this.time < p.wallSlowUntil,
         disguised: !!p.disguiseAs,
         rifleSlowed: p.role === ROLE.HUNTER && this.time < p.rifleSlowUntil,
+        titan: this.titan,
         slowFactor: slow.factor,
         noRun: slow.noRun,
       });
@@ -674,6 +722,7 @@ export class Game {
     stepRifles(this, dt);
     stepClones(this, dt);
     stepSlime(this, dt);
+    if (this.titan) stepTitan(this, dt);
     if (this.ended) return;
     stepHomingTraps(this, dt);
     stepThreads(this, dt);
@@ -688,8 +737,9 @@ export class Game {
     for (const s of this.players.values()) {
       if (s.role !== ROLE.SURVIVOR || s.status !== STATUS.ALIVE) continue;
       if (this.isAirborne(s) || isCarriedOrThrown(s)) continue; // 공중에서는 덫을 밟지 않는다 (팔척귀신에게 들림·던져짐도)
+      if (this.titan && (s.air || s.y > 0.5)) continue; // 입체기동: 공중·지붕 위
       const idx = this.traps.findIndex(
-        (t) => Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS,
+        (t) => Math.hypot(t.x - s.x, t.z - s.z) < RULES.TRAP_TRIGGER_RADIUS * this.S,
       );
       if (idx === -1) continue;
       const [trap] = this.traps.splice(idx, 1);
@@ -764,11 +814,15 @@ export class Game {
     }
 
     this.checkEnd();
-    if (!this.ended && !this.training && this.time >= RULES.MATCH_TIME) this.timeUp();
+    if (!this.ended && !this.training && this.time >= this.matchTime) this.timeUp();
   }
 
   /** 제한 시간 종료: 탈출한 생존자가 1명이라도 있으면 생존자 승리, 아무도 없으면 술래 승리 */
   timeUp() {
+    if (this.titan) {
+      this.finish('hunter', 'titanTimeUp'); // 입체기동: 시간이 다 지나면 술래 승리
+      return;
+    }
     const escaped = [...this.players.values()].filter(
       (p) => p.role === ROLE.SURVIVOR && p.status === STATUS.ESCAPED,
     ).length;
@@ -830,6 +884,7 @@ export class Game {
       reason,
       hunterClass: this.hunterClass,
       theme: this.map.theme,
+      mode: this.mode,
       hunterClasses: [...this.players.values()].filter((p) => p.role === ROLE.HUNTER).map((p) => p.cls),
       players: [...this.players.values()].map((p) => ({
         id: p.id,
@@ -839,6 +894,7 @@ export class Game {
         scls: p.scls,
         status: p.status,
         hits: p.hits,
+        ...(this.titan ? { x: r2(p.x), y: r2(p.y || 0), z: r2(p.z) } : {}),
       })),
     };
     this.emit(null, this.result);
@@ -882,12 +938,12 @@ export class Game {
     const spectator = !me || me.status !== STATUS.ALIVE;
     const seesAllTraps = spectator || me.role === ROLE.HUNTER;
     const traps = this.traps
-      .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE)
+      .filter((t) => seesAllTraps || Math.hypot(t.x - me.x, t.z - me.z) <= RULES.TRAP_VISIBLE_RANGE * this.S)
       .map((t) => ({ id: t.id, x: r2(t.x), z: r2(t.z) }));
     // 광대 실: 술래·관전자는 모두, 생존자는 0.5m 안의 실만 (정신병원 시너지면 생존자에게 아예 안 보임)
     const threadsHidden = this.synergies.includes('trapDuo');
     const threads = this.threads
-      .filter((t) => seesAllTraps || (!threadsHidden && distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE))
+      .filter((t) => seesAllTraps || (!threadsHidden && distToSegment(me.x, me.z, t.ax, t.az, t.bx, t.bz) <= CLOWN.THREAD_VISIBLE_RANGE * this.S))
       .map((t) => ({ id: t.id, ax: r2(t.ax), az: r2(t.az), bx: r2(t.bx), bz: r2(t.bz) }));
     // 살아 있는 생존자에게는 투명한 암살자의 위치를 아예 보내지 않는다
     const hideInvis = !spectator && me.role === ROLE.SURVIVOR;
@@ -921,10 +977,12 @@ export class Game {
           ...(p.carriedBy ? { carry: p.carriedBy } : {}), // 팔척귀신에게 들려 있음
           ...(p.thrown ? { thrown: 1 } : {}), // 팔척귀신이 던져 날아가는 중
           ...(this.isRevealed(p) ? { glow: 1 } : {}), // 광대 실에 걸려 빛나는 중 (벽 너머로 보임)
+          ...(this.titan ? titanSnapshot(p) : {}), // 입체기동: 높이·와이어·총
         };
       }),
       threads,
-      clones: this.clones.map((c) => ({ id: c.id, o: c.owner, x: r2(c.x), z: r2(c.z), yaw: r2(c.yaw) })),
+      clones: this.clones.map((c) => ({ id: c.id, o: c.owner, x: r2(c.x), z: r2(c.z), yaw: r2(c.yaw), ...(c.y ? { y: r2(c.y) } : {}) })),
+      ...(this.titan ? { guns: this.guns.map((g) => ({ id: g.id, x: g.x, y: g.y, z: g.z })) } : {}),
       robots: this.robots.map((r) => ({ id: r.id, g: r.genId })),
       anchors: this.anchors.map((a) => ({ id: a.id, x: r2(a.x), z: r2(a.z) })),
       wisps: this.wisps.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z) })),

@@ -6,6 +6,7 @@ const SIZE = 600; // 캔버스 해상도 (px)
 const THEMES = {
   village: { ground: '#4a5636', road: '#6b6762', house: '#3a3029', wall: '#cfc8b6', paddy: '#4f6d6a', dirt: '#7a6a4f', tree: '#2f4024', boundary: '#1e1a16' },
   mine: { ground: '#2c2520', road: '#5a4d40', house: '#7a4a2e', wall: '#a8998a', paddy: '#26383a', dirt: '#1b1916', tree: '#4a3a2a', boundary: '#0f0c0a' },
+  titan: { ground: '#8a7a5c', road: '#c7bba4', house: '#6b4a3a', wall: '#cfc8b6', paddy: '#8a7a5c', dirt: '#8a7a5c', tree: '#3a4a2a', boundary: '#4a4038' },
   backrooms: { ground: '#b7a65c', road: '#b7a65c', house: '#6d5f2c', wall: '#5a4e22', paddy: '#b7a65c', dirt: '#b7a65c', tree: '#5a4e22', boundary: '#3d3416' },
 };
 
@@ -62,7 +63,12 @@ export class MiniMap {
         case 'pillar':
           rect(b.x, b.z, b.w, b.d, T.wall);
           break;
+        case 'thouse':
+        case 'tower':
+          rect(b.x, b.z, b.w, b.d, T.house);
+          break;
         case 'boundary':
+        case 'titanWall':
           rect(b.x, b.z, b.w, b.d, T.boundary);
           break;
         case 'trunk':

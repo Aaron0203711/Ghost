@@ -2,7 +2,7 @@
 import { Net } from './net.js';
 import { settings, saveSettings, SENS_MIN, SENS_MAX } from './settings.js';
 import { setSoundEnabled, setBgmEnabled, unlockAudio } from './game/audio.js';
-import { matchRules, LARGE_MATCH, DUO_MATCH, DUEL_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats } from '@shared/constants.js';
+import { matchRules, LARGE_MATCH, DUO_MATCH, DUEL_MATCH, CLASS_INFO, SURVIVOR_CLASS_INFO, validSurvivorClass, survivorStats, TITAN } from '@shared/constants.js';
 import { Voice } from './game/voice.js';
 import { initPWA } from './pwa.js';
 import { isGyroDevice, gyroBlockedByInsecure, requestGyroPermission, gyroPermission } from './game/gyro.js';
@@ -386,6 +386,44 @@ $('lobby-maps').addEventListener('click', (e) => {
   net.send({ t: 'setMap', map: b.dataset.map });
 });
 
+// 게임 모드: 방장만 고른다. 입체기동(이벤트)은 전용 맵이라 맵 선택을 숨긴다
+function renderLobbyModes(isHost) {
+  const box = $('lobby-modes');
+  const modes = room.modes || [{ id: 'normal', name: '일반', icon: '🎮' }];
+  const current = room.mode || 'normal';
+  box.classList.toggle('readonly', !isHost);
+  box.innerHTML = '';
+  for (const m of modes) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'map-choice';
+    b.dataset.mode = m.id;
+    b.disabled = !isHost;
+    b.setAttribute('aria-pressed', String(m.id === current));
+    b.classList.toggle('on', m.id === current);
+    b.textContent = `${m.icon} ${m.name}`;
+    box.appendChild(b);
+  }
+  const titan = current === 'titan';
+  $('lobby-map-row').querySelector('.lobby-map-label').textContent = titan ? '전용 맵' : '맵';
+  $('lobby-maps').classList.toggle('hidden', titan);
+  let note = $('lobby-map-row').querySelector('.lobby-titan-note');
+  if (titan && !note) {
+    note = document.createElement('p');
+    note.className = 'lobby-titan-note';
+    $('lobby-map-row').appendChild(note);
+  }
+  if (note) {
+    note.classList.toggle('hidden', !titan);
+    note.textContent = titan ? `${room.titanMap?.icon ?? '🏰'} ${room.titanMap?.name ?? '거인의 성벽 도시'}` : '';
+  }
+}
+$('lobby-modes').addEventListener('click', (e) => {
+  const b = e.target.closest('.map-choice');
+  if (!b || b.disabled || !room || room.hostId !== myId || b.dataset.mode === room.mode) return;
+  net.send({ t: 'setMode', mode: b.dataset.mode });
+});
+
 function renderLobby() {
   if (!room) return;
   const isHost = room.hostId === myId;
@@ -397,13 +435,17 @@ function renderLobby() {
   $('lobby-private-tag').classList.toggle('hidden', isHost);
   $('lobby-private-tag').textContent = room.private ? '🔒 비공개 방' : '🔓 공개 방';
   renderLobbyMaps(isHost);
+  renderLobbyModes(isHost);
   const rules = matchRules(room.players.length);
   const n = room.players.length;
   const tag = n >= DUO_MATCH.PLAYERS ? ' (6인 이상 규칙)' : n === LARGE_MATCH.PLAYERS ? ' (5인 규칙)' : n === DUEL_MATCH.PLAYERS ? ' (2인 규칙)' : '';
   const ff = survivorStats('foodfighter', rules.hitsToCatch).maxHits;
   const dmg = rules.damageFactor < 1 ? ` · 술래 피해 ${Math.round((1 - rules.damageFactor) * 100)}% 감소` : '';
-  $('lobby-rules').textContent = `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${dmg}${tag}`;
-  $('lobby-rules').classList.toggle('large', !!tag);
+  $('lobby-rules').textContent =
+    room.mode === 'titan'
+      ? `🪝 입체기동 이벤트: 거인 술래 1명(체력 ${TITAN.HP}칸) · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${dmg} · 지붕 위 총으로 거인을 쓰러뜨리세요 · 10분`
+      : `이번 판: 술래 ${rules.hunters}명 · 발전기 ${rules.generators}개 · 생존자 체력 ${rules.hitsToCatch}칸(푸드파이터 ${ff}칸)${dmg}${tag}`;
+  $('lobby-rules').classList.toggle('large', !!tag || room.mode === 'titan');
   const list = $('lobby-players');
   list.innerHTML = '';
   for (const p of room.players) {
@@ -721,6 +763,8 @@ function showResult(msg) {
     survivorsLeft: '생존자가 모두 나갔습니다',
     timeUp: '7분 동안 아무도 탈출하지 못했습니다',
     timeUpEscaped: '시간 종료 · 탈출한 생존자가 있습니다',
+    titanDown: '거인이 쓰러졌습니다',
+    titanTimeUp: '10분 동안 거인을 쓰러뜨리지 못했습니다',
   };
   $('result-title').textContent = title;
   $('result-sub').textContent = `${reasons[msg.reason] || ''}${meEntry ? (iWon ? ' · 승리!' : ' · 패배') : ''}`;
@@ -834,10 +878,13 @@ function showClassSelect(m) {
   $('select-map').textContent = m.map ? `이번 맵: ${m.map.icon} ${m.map.name}` : '';
   $('select-map').classList.toggle('mine', m.map?.id === 'mine');
   $('select-map').classList.toggle('backrooms', m.map?.id === 'backrooms');
+  // 고를 수 있는 직업만 (입체기동 모드는 살덩이 금지)
   document.querySelectorAll('.class-card').forEach((c) => {
     c.disabled = false;
     c.classList.remove('picked');
+    c.classList.toggle('hidden', !!m.classes && !m.classes.includes(c.dataset.cls));
   });
+  $('select-map').textContent = m.mode === 'titan' ? `🪝 입체기동 이벤트 · ${m.map.icon} ${m.map.name} · 거인이 되어 생존자를 잡으세요 (살덩이 금지)` : $('select-map').textContent;
   const end = Date.now() + m.time * 1000;
   const ring = $('select-ring');
   const tick = () => {
@@ -909,12 +956,13 @@ net.on('state', (m) => voice.setGains(m.voice || {}));
 
 net.on('end', (m) => {
   voice.setGains(null); // 게임이 끝나면 다시 모두 같은 크기로
-  // 마지막 장면을 잠깐 보여준 뒤 결과 화면
+  // 마지막 장면을 잠깐 보여준 뒤 결과 화면 (입체기동 모드는 승리 장면)
   const s = session;
+  const scene = s?.playEnding?.(m) || 0;
   setTimeout(() => {
     if (session === s) endSession();
     showResult(m);
-  }, 1800);
+  }, scene || 1800);
 });
 
 // 모바일: 핀치 줌 방지 (더블탭 확대는 CSS touch-action: manipulation으로 막는다)

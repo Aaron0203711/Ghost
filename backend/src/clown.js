@@ -126,7 +126,7 @@ function sweepRange(game, th) {
 export function placeThread(game, p) {
   const rx = Math.cos(p.yaw);
   const rz = -Math.sin(p.yaw);
-  const span = spanAt(game, p.x, p.z, rx, rz, CLOWN.THREAD_MAX_LEN);
+  const span = spanAt(game, p.x, p.z, rx, rz, CLOWN.THREAD_MAX_LEN * game.S); // 입체기동 모드의 거인은 5배
   if (!span) {
     game.emit(p.id, { t: 'event', kind: 'threadFail' });
     return null;
@@ -172,8 +172,9 @@ export function stepThreads(game, dt) {
   }
   for (const s of survivors(game)) {
     if (game.isAirborne(s) || s.carriedBy || s.thrown) continue; // 점프로 피할 수 있다 (팔척귀신에게 들림·던져짐도)
+    if (game.titan && (s.air || s.y > 0.5)) continue; // 입체기동: 공중·지붕 위에서는 안 걸림
     const idx = game.threads.findIndex(
-      (th) => distToSegment(s.x, s.z, th.ax, th.az, th.bx, th.bz) <= RULES.PLAYER_RADIUS + CLOWN.THREAD_RADIUS,
+      (th) => distToSegment(s.x, s.z, th.ax, th.az, th.bx, th.bz) <= RULES.PLAYER_RADIUS + CLOWN.THREAD_RADIUS * game.S,
     );
     if (idx === -1) continue;
     const [th] = game.threads.splice(idx, 1);

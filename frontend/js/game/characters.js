@@ -330,7 +330,27 @@ const HUNTER_SPECS = {
   palcheok: { skin: '#e9e6e1', topColor: '#f2f0ea', pants: '#f2f0ea', shoes: '#e9e6e1', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
   // 살덩이: 껍질이 벗겨진 듯한 붉은 고깃덩이, 온몸에서 점액이 흘러내림
   flesh: { skin: '#b4474b', topColor: '#9a3439', pants: '#7c2a2f', shoes: '#5e2024', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
+  // 파묘자: 흙 묻은 낡은 작업복, 챙 넓은 모자, 창백한 얼굴, 허리춤의 등불
+  gravedigger: { skin: '#b9b2a2', topColor: '#3b352c', pants: '#2c2822', shoes: '#1d1914', hairStyle: 'none', top: 'jacket', eyes: '#111' },
+  // 무덤에서 나온 좀비: 썩은 초록빛 피부, 해진 수의
+  zombie: { skin: '#7f9468', topColor: '#8c8572', pants: '#5d5848', shoes: '#3a352c', hairStyle: 'none', top: 'tshirt', noFace: true, sleeves: 'short' },
 };
+
+/** 좀비 피부색 (생존자가 좀비가 되면 그 생존자의 옷 그대로 피부만 바뀜) */
+export const ZOMBIE_SKIN = '#7f9468';
+
+/** 좀비 얼굴: 퀭한 눈자위, 빛나는 붉은 눈, 벌어진 입. 옷에 흙 얼룩 */
+export function dressZombie(h) {
+  const { head } = h.parts;
+  const dark = solid('#2c2a1e', 0.8);
+  for (const s of [-1, 1]) head.add(mesh(new THREE.SphereGeometry(0.024, 8, 6), dark, 0.037 * s, 0.103, -0.094));
+  head.add(mesh(new THREE.BoxGeometry(0.05, 0.03, 0.02), solid('#3a1a14', 0.7), 0, 0.03, -0.1));
+  addGlowEyes(h, FACE_EYES, '#ff3b2a', 0.009);
+  const dirt = solid('#4a3f2c', 1);
+  for (let i = 0; i < 7; i++) {
+    h.root.add(mesh(new THREE.SphereGeometry(0.03 + (i % 3) * 0.01, 6, 4), dirt, (((i * 41) % 9) / 9 - 0.5) * 0.32, 0.9 + ((i * 29) % 9) * 0.06, i % 2 ? -0.12 : 0.12));
+  }
+}
 
 export function hunterSpec(cls) {
   return { sleeves: 'long', ...(HUNTER_SPECS[cls] || HUNTER_SPECS.maniac) };
@@ -603,6 +623,28 @@ export function dressHunter(cls, h) {
       ], '#e8e8ff', 0.007);
       break;
     }
+    case 'gravedigger': {
+      // 챙 넓은 검은 모자, 목도리, 허리에 매단 등불
+      const hat = mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.12, 14), solid('#1e1b17', 0.85), 0, 0.24, 0);
+      const brim = mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.012, 18), solid('#1e1b17', 0.85), 0, 0.185, 0);
+      head.add(hat, brim);
+      addGlowEyes(h, FACE_EYES, '#d8e86a', 0.008);
+      const scarf = mesh(new THREE.TorusGeometry(0.075, 0.025, 6, 16), cloth('#5b2a22'), 0, 1.5, 0);
+      scarf.rotation.x = Math.PI / 2;
+      root.add(scarf);
+      const lamp = new THREE.Group();
+      lamp.add(mesh(new THREE.BoxGeometry(0.07, 0.09, 0.07), solid('#3a3127', 0.5, 0.6)));
+      lamp.add(mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffcf6a' })));
+      lamp.position.set(-0.2, 0.88, -0.04);
+      root.add(lamp);
+      // 흙 얼룩
+      const dirt = solid('#4d3f2a', 1);
+      for (let i = 0; i < 6; i++) root.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), dirt, (((i * 37) % 9) / 9 - 0.5) * 0.3, 0.7 + i * 0.1, -0.12));
+      break;
+    }
+    case 'zombie':
+      dressZombie(h);
+      break;
     case 'flesh': {
       // 울퉁불퉁한 살덩이 혹, 갈라진 입, 노란 눈, 몸에서 뚝뚝 떨어지는 초록빛 점액
       const meat = solid('#b4474b', 0.45);
@@ -650,6 +692,7 @@ const SURVIVOR_CLASS_SPECS = {
   foodfighter: { top: 'tshirt', topColor: '#d8452f', pants: '#3a3a3a', shoes: '#f0f0f0' },
   ninja: { top: 'jacket', topColor: '#1b1b22', pants: '#1b1b22', shoes: '#111', hairStyle: 'none' },
   engineer: { top: 'jacket', topColor: '#e3802a', pants: '#c86a1e', shoes: '#4a3420', hairStyle: 'short' },
+  marathoner: { top: 'tshirt', topColor: '#1fa3c9', pants: '#1c2233', shoes: '#f45b2a' },
 };
 
 export function survivorSpec(scls, look) {
@@ -745,6 +788,16 @@ export function dressSurvivor(scls, h) {
       sword.position.set(0, 1.22, 0.14);
       sword.rotation.z = 0.7;
       root.add(sword);
+      break;
+    }
+    case 'marathoner': {
+      // 땀 흡수 머리띠, 가슴의 번호표, 손목 시계
+      const band = mesh(new THREE.TorusGeometry(0.108, 0.013, 6, 20), cloth('#f45b2a'), 0, 0.15, 0);
+      band.rotation.x = Math.PI / 2;
+      head.add(band);
+      root.add(mesh(new THREE.BoxGeometry(0.16, 0.12, 0.01), cloth('#f4f4f4'), 0, 1.22, -0.135));
+      for (const [x, w] of [[-0.035, 0.02], [0.03, 0.04]]) root.add(mesh(new THREE.BoxGeometry(w, 0.06, 0.012), solid('#222'), x, 1.22, -0.142));
+      h.parts.handL.add(mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), solid('#222', 0.4), 0, 0.03, 0));
       break;
     }
     case 'engineer': {

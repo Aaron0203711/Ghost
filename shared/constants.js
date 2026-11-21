@@ -85,7 +85,7 @@ export function stepStamina(s, wantsRun, moving, dt, max = RULES.STAMINA_MAX, re
  *         slowed(암살자 기습 후 → 절반), disguised(살가죽 변장 → 생존자 걷기 속도, 달리면 원래 술래 속도),
  *         scls(생존자 직업: 푸드파이터는 10% 느림),
  *         slowFactor(생존자 감속 배율: 덫이 풀린 뒤, 조준 저격, 실 함정), noRun(생존자 달리기 불가),
- *         rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐) }
+ *         rifleSlowed(군인 소총에 맞음 → 29.74% 감소, 곱해짐), boosted(마라토너 스킬 → 3% 증가) }
  * 질주자는 기본 10% 빠르고, 살덩이는 기본 5% 느리다.
  */
 export function speedFor(role, running, mods = {}) {
@@ -95,7 +95,8 @@ export function speedFor(role, running, mods = {}) {
   }
   const base = running && !mods.noRun ? RULES.SURVIVOR_RUN_SPEED : RULES.SURVIVOR_WALK_SPEED;
   const cls = mods.scls === SURVIVOR_CLASS.FOODFIGHTER ? FOODFIGHTER.SPEED_FACTOR : 1;
-  return base * cls * (mods.slowFactor ?? 1);
+  const boost = mods.boosted ? MARATHONER.SPEED_FACTOR : 1; // 마라토너 스킬: 걷기·달리기 모두 3% 증가
+  return base * cls * boost * (mods.slowFactor ?? 1);
 }
 
 function hunterBaseSpeed(mods) {
@@ -106,7 +107,7 @@ function hunterBaseSpeed(mods) {
   if (mods.disguised) return mods.running ? RULES.HUNTER_SPEED : RULES.SURVIVOR_WALK_SPEED; // 변장 중: 걷기 16km/h, 달리면 원래 술래 속도
   if (mods.cls === 'sprinter') return RULES.HUNTER_SPEED * SPRINTER.SPEED_FACTOR;
   if (mods.cls === 'flesh') return RULES.HUNTER_SPEED * FLESH.SPEED_FACTOR;
-  return RULES.HUNTER_SPEED;
+  return RULES.HUNTER_SPEED; // 파묘자도 20km/h
 }
 
 /** 딱 5명(술래 포함)이면 발전기 7개(모두 켜야 탈출구가 열림), 생존자 체력 2칸 */
@@ -146,6 +147,7 @@ export const HUNTER_CLASS = Object.freeze({
   DROWNED: 'drowned',
   PALCHEOK: 'palcheok',
   FLESH: 'flesh',
+  GRAVEDIGGER: 'gravedigger',
 });
 
 /** 근접 공격 (사거리 m, 쿨타임 초). 모두 1칸, 벽 너머로는 안 됨 */
@@ -158,6 +160,7 @@ export const MELEE = Object.freeze({
   sprinter: { range: 4.0, cooldown: 2.7 }, // 발차기
   drowned: { range: 3.0, cooldown: 1.5 }, // 작살 (미치광이와 같은 사거리)
   palcheok: { range: 3.0, cooldown: 1.3 }, // 주먹
+  gravedigger: { range: 2.3, cooldown: 2 }, // 삽
 });
 
 /** 직업별 설치형 스킬 개수와 충전 시간 (미치광이 덫, 광대 실) */
@@ -378,6 +381,31 @@ export function slimeRadius(born, now, r0 = FLESH.SLIME_RADIUS) {
   return r0 + FLESH.SLIME_GROWTH * Math.max(0, now - born);
 }
 
+/**
+ * 파묘자: 삽 근접 공격(2.3m, 쿨타임 2초, 1칸).
+ * 패시브: 12초마다 맵의 무작위 빈 곳에 무덤이 생긴다(최대 10개, 모두에게 보임).
+ * 스킬(쿨타임 10초): 파묘자에게서 30m 안의 가장 가까운 무덤 최대 2개를 파헤쳐 좀비를 꺼낸다(무덤은 사라짐).
+ *   30m 안에 무덤이 없으면 쓰이지 않고 쿨타임도 안 돈다.
+ * 좀비(AI, 영구, 수 제한 없음): 시속 10km로 맵을 돌아다니다 시야(20m, 정면 120°, 벽에 가리지 않음)에 생존자가 들어오면 쫓아간다.
+ *   놓치면 마지막으로 본 자리까지 간 뒤 다시 돌아다닌다. 공격은 1.5m, 쿨타임 1.5초, 1칸.
+ *   테이저건(4초 스턴)·군인 소총(2초 감속)은 술래와 똑같이 맞고, 닌자 분신도 쫓아가 때리면 분신이 사라진다.
+ * 좀비나 파묘자에게 잡힌 생존자는 그 자리에서 바로 좀비가 된다(플레이어는 관전).
+ */
+export const GRAVEDIGGER = Object.freeze({
+  GRAVE_INTERVAL: 12,
+  GRAVE_MAX: 10,
+  DIG_RANGE: 30,
+  DIG_COUNT: 2,
+  SKILL_COOLDOWN: 10,
+  ZOMBIE_SPEED: kmh(10),
+  ZOMBIE_SIGHT: 20,
+  ZOMBIE_HALF_ANGLE: (60 * Math.PI) / 180, // 정면 120°
+  ZOMBIE_ATTACK_RANGE: 1.5,
+  ZOMBIE_ATTACK_COOLDOWN: 1.5,
+  ZOMBIE_DAMAGE: 1,
+  GRAVE_MIN_GAP: 3, // 무덤끼리 최소 거리
+});
+
 /** 시작 시 술래가 직업을 고르는 시간(초). 못 고르면 무작위 */
 export const CLASS_PICK_TIME = 15;
 
@@ -418,6 +446,7 @@ export const CLASS_INFO = Object.freeze({
   clown: { name: '광대', icon: '🤡', desc: '공 던지기 0.75칸 (쿨타임 0.5초, 11m) · 벽 사이 실 함정 4개 (23초마다 충전)' },
   drowned: { name: '익사자', icon: '🤿', desc: '작살 3m (쿨타임 1.5초) · 다이빙: 25m 안 원하는 곳으로 잠수해 튀어나와 지름 4m 안 생존자를 튕기고 감속 (쿨타임 20초)' },
   flesh: { name: '살덩이', icon: '🫀', desc: '기본 공격 없음 · 움직이면 매초 점액 웅덩이(반경 2m, 계속 커짐), 안의 생존자 매초 0.07칸(무적 무시) · 스킬: 발밑에 반경 6m 점액 뿌리기 (쿨타임 20초) · 이동 속도 5% 느림' },
+  gravedigger: { name: '파묘자', icon: '⚰️', desc: '삽 2.3m (쿨타임 2초) · 12초마다 맵에 무덤이 생김(최대 10개) · 스킬: 30m 안 가장 가까운 무덤 2개에서 좀비를 꺼냄 (쿨타임 10초) · 좀비·파묘자에게 잡힌 생존자는 좀비가 됨' },
   palcheok: { name: '팔척귀신', icon: '👒', desc: '키가 커서 담장 너머가 보임 · 주먹 3m (쿨타임 1.3초) · 생존자를 5초까지 들고 다니다 15m 던짐, 다른 생존자를 맞히면 둘 다 1칸 (쿨타임 9초)' },
 });
 
@@ -430,6 +459,7 @@ export const SURVIVOR_CLASS = Object.freeze({
   FOODFIGHTER: 'foodfighter',
   NINJA: 'ninja',
   ENGINEER: 'engineer',
+  MARATHONER: 'marathoner',
 });
 
 /** 의사: 5m 안에서 바라본 다친 생존자(없으면 자신)를 한 칸 회복. 다친 사람이 없으면 안 쓰임 */
@@ -460,6 +490,9 @@ export const NINJA = Object.freeze({ COOLDOWN: 13, LIFE: 5, HIT_RADIUS: 0.45 });
 /** 엔지니어: 지름 3m 안의 발전기에 소형 로봇 부착, 5초 동안 매초 4% (총 20%) */
 export const ENGINEER = Object.freeze({ COOLDOWN: 13, DURATION: 5, RATE: 0.04, RANGE: 1.5 });
 
+/** 마라토너: 5초 동안 스태미나 무제한(달리기·점프에 쓰지 않음) + 이동 속도 3% 증가(걷기·달리기 모두). 쿨타임 20초(끝난 뒤부터) */
+export const MARATHONER = Object.freeze({ DURATION: 5, COOLDOWN: 20, SPEED_FACTOR: 1.03 });
+
 export const SURVIVOR_CLASS_INFO = Object.freeze({
   doctor: { name: '의사', icon: '🩺', skill: '회복', desc: '5m 안의 생존자(없으면 자신)를 한 칸 회복 · 쿨타임 23초' },
   police: { name: '경찰', icon: '👮', skill: '테이저건', desc: '테이저건 10m · 맞은 술래 4초 스턴 · 쿨타임 24.5초' },
@@ -467,6 +500,7 @@ export const SURVIVOR_CLASS_INFO = Object.freeze({
   foodfighter: { name: '푸드파이터', icon: '🍔', skill: null, desc: '체력 +4칸 (보통 7칸) · 대신 스태미나 10초 · 이동 속도 -10%' },
   ninja: { name: '닌자', icon: '🌀', skill: '분신', desc: '5초 동안 앞으로 걸어가는 분신 소환 · 쿨타임 13초' },
   engineer: { name: '엔지니어', icon: '🔧', skill: '로봇', desc: '발전기에 로봇 부착, 5초간 20% 수리 · 쿨타임 13초' },
+  marathoner: { name: '마라토너', icon: '🏃', skill: '스퍼트', desc: '5초 동안 스태미나 무제한 · 이동 속도 +3% · 쿨타임 20초(끝난 뒤부터)' },
 });
 
 export const DEFAULT_SURVIVOR_CLASS = SURVIVOR_CLASS.DOCTOR;
@@ -475,9 +509,9 @@ export function validSurvivorClass(c) {
   return Object.values(SURVIVOR_CLASS).includes(c) ? c : DEFAULT_SURVIVOR_CLASS;
 }
 
-/** 생존자 직업 스킬 쿨타임 (푸드파이터는 패시브) */
+/** 생존자 직업 스킬 쿨타임 (푸드파이터는 패시브). 마라토너는 쓴 순간부터 다시 쓸 수 있을 때까지(효과 5초 + 쿨타임 20초) */
 export function survivorSkillCooldown(cls) {
-  return { doctor: DOCTOR.COOLDOWN, police: POLICE.COOLDOWN, soldier: SOLDIER.FIRE_INTERVAL, ninja: NINJA.COOLDOWN, engineer: ENGINEER.COOLDOWN }[cls] ?? 0;
+  return { doctor: DOCTOR.COOLDOWN, police: POLICE.COOLDOWN, soldier: SOLDIER.FIRE_INTERVAL, ninja: NINJA.COOLDOWN, engineer: ENGINEER.COOLDOWN, marathoner: MARATHONER.DURATION + MARATHONER.COOLDOWN }[cls] ?? 0;
 }
 
 /** 생존자 최대 체력(칸)과 스태미나(초) */

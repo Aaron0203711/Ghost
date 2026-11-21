@@ -621,7 +621,7 @@ export const TITAN = Object.freeze({
 /** 게임 모드 */
 export const GAME_MODES = Object.freeze({
   normal: { id: 'normal', name: '일반', icon: '🎮' },
-  titan: { id: 'titan', name: '입체기동 (이벤트)', icon: '🪝' },
+  titan: { id: 'titan', name: '이벤트', icon: '🪝' },
 });
 
 /** 입체기동 모드에서 고를 수 있는 술래 직업 (살덩이 금지) */

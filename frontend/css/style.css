@@ -2706,3 +2706,17 @@ body:not(.touch) #titan-gun .mo {
   font-size: 13px;
   color: #ffd9a8;
 }
+
+/* 방 목록: 일반 / 이벤트 탭 */
+.room-tabs {
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
+.room-tabs .n {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  font-size: 11px;
+}

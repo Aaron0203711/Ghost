@@ -214,7 +214,7 @@ export class RoomManager {
     for (const room of this.rooms.values()) {
       if (room.private || room.state !== 'lobby') continue;
       const host = room.members.find((m) => m.id === room.hostId);
-      list.push({ code: room.code, host: host?.name ?? '', count: room.members.length, max: RULES.MAX_PLAYERS });
+      list.push({ code: room.code, host: host?.name ?? '', count: room.members.length, max: RULES.MAX_PLAYERS, mode: room.mode || 'normal' });
     }
     return list;
   }

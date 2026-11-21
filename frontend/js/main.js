@@ -182,11 +182,27 @@ tap($('btn-create'), () => {
 });
 
 // 방 목록 (대기 중인 공개 방)
+// 방 목록: 일반 방과 이벤트(입체기동) 방을 탭으로 나눈다
+let roomTab = 'normal';
+let lastRooms = [];
 function renderRoomList(rooms) {
+  lastRooms = rooms;
   const list = $('room-list');
   list.innerHTML = '';
-  $('rooms-empty').classList.toggle('hidden', rooms.length > 0);
-  for (const r of rooms) {
+  const modeOf = (r) => (r.mode === 'titan' ? 'titan' : 'normal');
+  for (const b of document.querySelectorAll('#room-tabs .map-choice')) {
+    const on = b.dataset.mode === roomTab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    b.querySelector('.n').textContent = String(rooms.filter((r) => modeOf(r) === b.dataset.mode).length);
+  }
+  const shown = rooms.filter((r) => modeOf(r) === roomTab);
+  $('rooms-empty').innerHTML =
+    roomTab === 'titan'
+      ? '지금 열려 있는 입체기동(이벤트) 방이 없어요.<br />방을 만든 뒤 대기실에서 모드를 바꿔 보세요!'
+      : '지금 열려 있는 공개 방이 없어요.<br />방을 직접 만들어 보세요!';
+  $('rooms-empty').classList.toggle('hidden', shown.length > 0);
+  for (const r of shown) {
     const li = document.createElement('li');
     const name = document.createElement('span');
     name.className = 'n';
@@ -207,6 +223,13 @@ function renderRoomList(rooms) {
     list.appendChild(li);
   }
 }
+
+$('room-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('.map-choice');
+  if (!b || b.dataset.mode === roomTab) return;
+  roomTab = b.dataset.mode;
+  renderRoomList(lastRooms);
+});
 
 tap($('btn-rooms-open'), () => {
   renderRoomList([]);

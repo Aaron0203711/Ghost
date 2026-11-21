@@ -322,7 +322,7 @@ test('방 목록: 대기 중인 공개 방만 보이고, 바뀌면 보고 있는
   mgr.handle(a, { t: 'create' });
   const code = a.last('room').code;
   assert.equal(a.last('room').private, false, '새 방은 기본 공개');
-  assert.deepEqual(viewer.last('roomList').rooms, [{ code, host: '철수', count: 1, max: 8 }]);
+  assert.deepEqual(viewer.last('roomList').rooms, [{ code, host: '철수', count: 1, max: 8, mode: 'normal' }]);
   mgr.handle(b, { t: 'join', code });
   assert.equal(viewer.last('roomList').rooms[0].count, 2);
   // 게임이 시작되면 목록에서 빠지고, 끝나면 다시 보인다

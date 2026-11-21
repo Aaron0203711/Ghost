@@ -324,3 +324,16 @@ test('광대 실: 조준한 벽 높이에서 맞은편 집까지 공중 실, 붙
   game.handleTrap('p1', { yaw: 0, pitch: 1.3 });
   assert.equal(ev('threadFail').length, 1);
 });
+
+test('방 목록: 방마다 모드가 함께 오고, 모드를 바꾸면 목록도 바뀐다', () => {
+  const sent = [];
+  const rm = new RoomManager({ autoTick: false, rand: mulberry32(4) });
+  const viewer = rm.connect((m) => sent.push(m));
+  const host = rm.connect(() => {});
+  rm.handle(viewer, { t: 'rooms' });
+  rm.handle(host, { t: 'create' });
+  const last = () => sent.filter((m) => m.t === 'roomList').at(-1).rooms;
+  assert.equal(last()[0].mode, 'normal');
+  rm.handle(host, { t: 'setMode', mode: 'titan' });
+  assert.equal(last()[0].mode, 'titan');
+});

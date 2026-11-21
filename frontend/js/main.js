@@ -199,7 +199,7 @@ function renderRoomList(rooms) {
   const shown = rooms.filter((r) => modeOf(r) === roomTab);
   $('rooms-empty').innerHTML =
     roomTab === 'titan'
-      ? '지금 열려 있는 입체기동(이벤트) 방이 없어요.<br />방을 만든 뒤 대기실에서 모드를 바꿔 보세요!'
+      ? '지금 열려 있는 이벤트 방이 없어요.<br />방을 만든 뒤 대기실에서 모드를 바꿔 보세요!'
       : '지금 열려 있는 공개 방이 없어요.<br />방을 직접 만들어 보세요!';
   $('rooms-empty').classList.toggle('hidden', shown.length > 0);
   for (const r of shown) {

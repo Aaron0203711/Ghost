@@ -478,6 +478,11 @@ export class Avatar {
     this.recoil = 1;
   }
 
+  /** 입체기동: 거인에게 잡혀 땅에 쳐박히는 연출 */
+  playSlam() {
+    this.slamT = 0;
+  }
+
   /** 투명화된 암살자를 같은 편/관전자 화면에서 반투명하게 (1 = 보통) */
   setGhost(alpha) {
     if (this.ghost === alpha) return;
@@ -591,6 +596,35 @@ export class Avatar {
       this.kneeL.rotation.x = -0.5;
       this.kneeR.rotation.x = -0.5;
       this.body.position.y = -0.08;
+    } else if (this.giant && this.swing > 0) {
+      // 입체기동 거인: 두 손을 앞으로 뻗어 움켜쥐고 → 들어 올렸다가 → 땅에 내리꽂는다
+      this.swing = Math.max(0, this.swing - dt * 1.7);
+      const t = 1 - this.swing;
+      let arm;
+      let bend;
+      if (t < 0.3) {
+        const k = t / 0.3;
+        arm = 1.25 * k; // 앞으로 뻗기
+        bend = 0.35 * k;
+      } else if (t < 0.6) {
+        const k = (t - 0.3) / 0.3;
+        arm = 1.25 - 3.85 * k; // 머리 위로
+        bend = 0.35 - 0.5 * k;
+      } else {
+        const k = Math.min(1, (t - 0.6) / 0.15);
+        arm = -2.6 + 4.2 * k; // 쾅
+        bend = -0.15 + 0.7 * k;
+      }
+      if (t > 0.85) {
+        const k = (t - 0.85) / 0.15;
+        arm *= 1 - k;
+        bend *= 1 - k;
+      }
+      this.armL.rotation.set(arm, 0, -0.12);
+      this.armR.rotation.set(arm, 0, 0.12);
+      this.elbowL.rotation.x = 0.25;
+      this.elbowR.rotation.x = 0.25;
+      this.body.rotation.x = bend;
     } else if (this.cls === 'sprinter' && this.swing > 0) {
       // 오른발 앞차기
       this.swing = Math.max(0, this.swing - dt * 4);
@@ -697,6 +731,19 @@ export class Avatar {
       this.group.rotation.x = 0;
     }
 
+    // 입체기동: 거인에게 잡혀 들렸다가 땅에 쳐박힘 (서버 위치는 이미 땅, 화면 연출만)
+    if (this.slamT != null) {
+      this.slamT += dt;
+      const t = this.slamT;
+      let lift = 0;
+      if (t < 0.3) lift = Math.sin((t / 0.3) * (Math.PI / 2)) * 4;
+      else if (t < 0.45) lift = 4 * (1 - ((t - 0.3) / 0.15) ** 2);
+      this.group.position.y += lift;
+      this.group.rotation.z = t < 0.45 ? Math.sin(t * 40) * 0.25 : 0;
+      this.group.rotation.x = t < 0.3 ? 0 : -Math.PI / 2 * Math.min(1, (t - 0.3) / 0.12); // 엎어져 쳐박힘
+      this.body.position.y = 0;
+      if (t >= 0.75) this.slamT = null;
+    }
     if (this.revealed && this.revealMat) this.revealMat.opacity = 0.45 + Math.sin(now / 90) * 0.2;
     if (this.flash > 0) {
       this.flash -= dt;

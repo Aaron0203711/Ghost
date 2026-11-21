@@ -591,14 +591,18 @@ export const TITAN = Object.freeze({
   HEIGHT: 25,
   RADIUS: 3, // 거인 몸통 반경 (집 사이 큰길로 다닌다)
   EYE_HEIGHT: 23.5,
-  SPEED_FACTOR: 1.75, // 20km/h → 35km/h (다른 속도 변화도 같은 배율)
-  GRAB_RANGE: 8, // 몸 바깥에서 8m
+  SPEED_FACTOR: 3.5, // 20km/h → 70km/h (다른 속도 변화도 같은 배율)
+  GRAB_RANGE: 10, // 몸 바깥에서 10m, 정면 110° 부채꼴 안의 생존자 모두
+  GRAB_STUN: 0.25, // 잡혀서 땅에 쳐박힌 생존자 스턴
+  TASER_HITS: 2, // 거인은 테이저건을 두 번 맞아야 스턴 (맞은 횟수는 스턴될 때까지 누적)
   GRAB_COOLDOWN: 1.5,
   GRAB_DAMAGE: 1,
   SKILL_SCALE: 5, // 직업 스킬 사거리·크기 5배
   WIRE_RANGE: 60,
   WIRE_SPEED: kmh(80),
   STICK_TIME: 0.5,
+  STICK_RADIUS: 5, // 와이어가 박힌 지점에서 5m 안의 벽에만 붙는다 (와이어를 끊고 떨어지는 중에도)
+  CLIMB_REACH: 2, // 벽에 붙은 채 점프: 지붕이 머리(몸 꼭대기)에서 2m 안이면 지붕 위로 올라선다
   GRAVITY: 9.8,
   MAX_FALL_SPEED: 40,
   FALL_DAMAGE_HEIGHT: 10,

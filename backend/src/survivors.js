@@ -17,6 +17,7 @@ import {
 import { endDash, worldFor } from './abilities.js';
 import { dropCarried } from './palcheok.js';
 import { zombieAt } from './gravedigger.js';
+import { titanTaserHit } from './titan.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -118,7 +119,8 @@ export function stepTasers(game, dt) {
         if (h.role !== ROLE.HUNTER || !alive(h) || h.dive) continue; // 땅속의 익사자는 안 맞음
         if (Math.hypot(h.x - t.x, h.z - t.z) > POLICE.RADIUS + game.hunterRadius) continue;
         if (game.titan && t.y > 25) continue; // 거인 키보다 높이 날아감
-        stunHunter(game, h);
+        // 입체기동 거인은 두 번 맞아야 스턴
+        if (!game.titan || titanTaserHit(game, h)) stunHunter(game, h);
         end = { hit: h.id };
         break;
       }

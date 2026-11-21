@@ -259,7 +259,7 @@ export class TitanFx {
         this.dropWire(e.id);
         break;
       case 'stick':
-        if (e.id === s.myId) s.centerMsg('🪝 벽에 붙었다! 0.5초 안에 다시 쏘세요', 0.9);
+        if (e.id === s.myId) s.centerMsg('🪝 벽에 붙었다! 0.5초 안에 다시 쏘거나 점프로 지붕에 오르세요', 0.9);
         break;
       case 'land':
         this.dropWire(e.id);
@@ -306,8 +306,32 @@ export class TitanFx {
           s.centerMsg(`총에 맞았다! 체력 ${e.max - e.hits}/${e.max}`, 1.5);
         } else s.feed(`🎯 ${e.byName}이(가) 거인을 맞혔다 (${e.hits}/${e.max})`, 'good');
         break;
-      case 'titanGrab':
-        s.avatars.get(e.id)?.playSwing();
+      case 'titanGrab': {
+        // 부채꼴 안 생존자를 모두 움켜쥐어 땅에 쳐박는다 (거인 팔 동작은 'swing'에서 시작)
+        const me = (e.targets || []).some((t) => t.id === s.myId);
+        for (const t of e.targets || []) {
+          if (t.id === s.myId) continue;
+          s.avatars.get(t.id)?.playSlam();
+          s.effects.push(makeImpact(this.scene, new THREE.Vector3(t.x, t.y + 0.2, t.z), '#c9b49a'));
+        }
+        if (me) {
+          s.shake = Math.max(s.shake || 0, 0.6);
+          s.flash('hit');
+          s.controls.releaseAll();
+          s.centerMsg('💥 거인에게 잡혀 땅에 쳐박혔다! 바로 도망쳐!', 1.2);
+          this.dropWire(s.myId);
+        } else if (e.id === s.myId) {
+          s.shake = Math.max(s.shake || 0, 0.35);
+          s.feed(`✊ ${e.targets.length}명을 잡아 땅에 쳐박았다!`, 'good');
+        } else if ((e.targets || []).length) s.shake = Math.max(s.shake || 0, 0.15);
+        for (const t of e.targets || []) this.dropWire(t.id);
+        break;
+      }
+      case 'taserCount':
+        s.taserCount = { id: e.id, n: e.n, need: e.need }; // 바로 뒤 'taserEnd'에서 알림
+        break;
+      case 'climb':
+        if (e.id === s.myId) s.centerMsg('🧗 지붕 위로 올라섰다!', 0.9);
         break;
       default:
         break;
@@ -370,6 +394,7 @@ export class TitanFx {
     s.controls.releaseAll();
     if (document.pointerLockElement) document.exitPointerLock?.();
     $('screen-game').classList.add('cinematic');
+    if (s.viewBat) s.viewBat.root.visible = false; // 1인칭 손은 장면에서 숨김
     for (const w of this.wires.values()) w.line.visible = false;
     for (const id of [...this.wires.keys()]) this.dropWire(id);
     const survivorsWin = msg.winner === 'survivors';
@@ -384,18 +409,20 @@ export class TitanFx {
     }
     const gx = hunterEntry?.x ?? s.pos.x;
     const gz = hunterEntry?.z ?? s.pos.z;
+    // 거인이 보는 방향: 서버가 보낸 값 (술래 본인 화면도 같은 장면이 되도록)
+    const gyaw = Number.isFinite(hunterEntry?.yaw) ? hunterEntry.yaw : giant?.yaw || 0;
     if (giant) {
-      giant.setTarget(gx, gz, giant.yaw || 0, true);
+      giant.setTarget(gx, gz, gyaw, true);
       giant.group.visible = true;
       giant.group.position.set(gx, 0, gz);
       giant.group.rotation.order = 'YXZ'; // 바라보는 방향(yaw) 기준으로 뒤로 쓰러지게
-      giant.group.rotation.set(0, giant.yaw || 0, 0);
+      giant.group.rotation.set(0, gyaw, 0);
       giant.body.position.y = 0;
       giant.body.rotation.set(0, 0, 0);
       giant.setGhost(1);
       giant.setReveal?.(false);
     }
-    const yaw = giant?.yaw ?? 0;
+    const yaw = gyaw;
     const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     // 장면에 나올 생존자: 모든 생존자 (나도 포함)
@@ -437,6 +464,22 @@ export class TitanFx {
       temps.push({ group: mouthMesh, dispose: () => mouthMesh.geometry.dispose() });
     }
     let bodyTop = null;
+    let lift = 0;
+    const blocked = (a, b) => s.collision.segmentBlocked3(a.x, a.y, a.z, b.x, b.y, b.z) || !!s.wallWorld?.segmentBlocked3(a.x, a.y, a.z, b.x, b.y, b.z);
+    const probe = new THREE.Vector3();
+    const clearLift = (pos, target) => {
+      let need = 0;
+      for (let h = 0; h <= 60; h += 3) {
+        probe.set(pos.x, pos.y + h, pos.z);
+        if (!blocked(probe, target)) {
+          need = h;
+          break;
+        }
+        need = h;
+      }
+      lift += (need - lift) * (need > lift ? 0.35 : 0.04); // 올라갈 때는 빨리, 내려올 때는 천천히
+      return lift;
+    };
     s.cinemaUpdate = () => {
       const t = (performance.now() - t0) / 1000;
       if (survivorsWin) {
@@ -541,6 +584,8 @@ export class TitanFx {
         cam.position.x += (Math.random() - 0.5) * s.shake * 0.6;
         cam.position.y += (Math.random() - 0.5) * s.shake * 0.6;
       }
+      // 집에 가려 장면이 안 보이면 카메라를 가리지 않는 높이까지 올린다 (부드럽게)
+      cam.position.y += clearLift(cam.position, look);
       cam.lookAt(look);
       if (cam.fov !== 60) {
         cam.fov = 60;

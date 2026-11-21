@@ -26,6 +26,9 @@ export function initTitan(game) {
     p.vz = 0;
     p.peakY = 0;
     p.wire = null; // 와이어가 박힌 곳 { x, y, z }
+    p.lastWire = null; // 마지막으로 와이어가 박혔던 곳: 이 근처(5m) 벽에만 붙는다. 땅·지붕에 내려서면 지움
+    p.stickDir = null; // 붙은 벽 쪽 수평 방향 (지붕 오르기용)
+    p.taserHits = 0; // 거인: 테이저건 맞은 횟수 (두 번이면 스턴)
     p.dest = null;
     p.stickUntil = 0;
     p.gun = false;
@@ -80,6 +83,8 @@ export function handleWire(game, p, msg = {}) {
   }
   p.air = 'fly';
   p.wire = { x: r2(hit.x), y: r2(hit.y), z: r2(hit.z) };
+  p.lastWire = { x: hit.x, y: hit.y, z: hit.z };
+  if (!dest.top) dest.dir = { x: -hit.nx, z: -hit.nz };
   p.dest = dest;
   p.budget = 0;
   p.interact = false;
@@ -94,15 +99,25 @@ function land(game, p, y) {
   p.air = null;
   p.vx = p.vy = p.vz = 0;
   p.wire = null;
+  p.lastWire = null;
   p.dest = null;
+  p.stickDir = null;
   p.budget = 0;
   game.correct(p);
   game.emit(null, { t: 'event', kind: 'land', id: p.id, drop: r2(drop) });
   if (drop >= TITAN.FALL_DAMAGE_HEIGHT - 1e-6) game.damage(p, null, TITAN.FALL_DAMAGE, { fall: 1, drop: r2(drop) }, { invuln: false, raw: true });
 }
 
-function stick(game, p) {
+/** 지금 자리가 마지막 와이어 박힌 곳에서 5m 안인지 (몸 가운데 기준, 몸 반경만큼 여유) */
+function nearWire(p) {
+  const w = p.lastWire;
+  if (!w) return false;
+  return Math.hypot(p.x - w.x, p.y + 1.1 - w.y, p.z - w.z) <= TITAN.STICK_RADIUS + R + 0.1;
+}
+
+function stick(game, p, dir) {
   p.air = 'stick';
+  p.stickDir = dir ? { ...dir } : null;
   p.stickUntil = game.time + TITAN.STICK_TIME;
   p.vx = p.vy = p.vz = 0;
   p.dest = null;
@@ -111,6 +126,7 @@ function stick(game, p) {
 
 function startFall(game, p, vx = 0, vy = 0, vz = 0) {
   p.air = 'fall';
+  p.stickDir = null;
   p.vx = vx;
   p.vy = vy;
   p.vz = vz;
@@ -153,7 +169,14 @@ function stepFly(game, p, dt) {
         land(game, p, 0);
         return;
       }
-      stick(game, p);
+      // 와이어가 박힌 벽(5m 안)에만 붙는다. 다른 벽에 부딪히면 와이어가 풀려 떨어진다
+      const hd = Math.hypot(ux, uz);
+      const dir = hd > 1e-6 ? { x: ux / hd, z: uz / hd } : d.dir;
+      if (nearWire(p)) stick(game, p, dir);
+      else {
+        startFall(game, p);
+        game.emit(null, { t: 'event', kind: 'wireOff', id: p.id });
+      }
       return;
     }
     p.x = nx;
@@ -162,7 +185,7 @@ function stepFly(game, p, dt) {
     if (dist - s <= 1e-4) {
       if (d.top) land(game, p, game.world.supportAt(p.x, p.z, p.y + 0.3) || d.y);
       else if (p.y <= 0.05) land(game, p, 0);
-      else stick(game, p);
+      else stick(game, p, d.dir);
       return;
     }
   }
@@ -175,12 +198,19 @@ function stepFall(game, p, dt) {
     const res = game.world.at(p.y).move(p.x, p.z, p.vx * dt, p.vz * dt, R);
     const want = Math.hypot(p.vx * dt, p.vz * dt);
     const got = Math.hypot(res.x - p.x, res.z - p.z);
+    const hv = Math.hypot(p.vx, p.vz);
+    const dir = { x: p.vx / hv, z: p.vz / hv };
+    p.x = res.x;
+    p.z = res.z;
     if (got < want * 0.5) {
       p.vx = 0;
       p.vz = 0;
+      // 와이어를 끊고 날아가다 박혔던 곳 근처(5m) 벽에 닿으면 다시 붙는다
+      if (p.y > 0.05 && nearWire(p)) {
+        stick(game, p, dir);
+        return;
+      }
     }
-    p.x = res.x;
-    p.z = res.z;
   }
   const ny = p.y + p.vy * dt;
   if (ny > p.peakY) p.peakY = ny;
@@ -192,16 +222,50 @@ function stepFall(game, p, dt) {
   p.y = ny;
 }
 
+/** 벽에 붙은 채 점프: 붙은 벽의 지붕이 머리(몸 꼭대기)에서 2m 안이면 지붕 위로 올라선다. 처리했으면 true */
+export function titanClimb(game, p) {
+  if (!game.titan || p.role !== ROLE.SURVIVOR || p.air !== 'stick' || game.isStunned(p)) return false;
+  const dir = p.stickDir;
+  if (!dir) return true;
+  const head = p.y + BODY;
+  for (const k of [R + 0.3, R + 0.8, R + 1.4]) {
+    const x = p.x + dir.x * k;
+    const z = p.z + dir.z * k;
+    const top = game.world.supportAt(x, z, head + TITAN.CLIMB_REACH, R * 0.5);
+    if (top <= p.y + 0.05 || top - head > TITAN.CLIMB_REACH + 1e-6) continue;
+    if (bodyBlocked(game, x, top, z)) continue;
+    p.x = x;
+    p.z = z;
+    game.emit(null, { t: 'event', kind: 'climb', id: p.id });
+    land(game, p, top);
+    return true;
+  }
+  return true; // 지붕이 멀면 아무 일도 없음 (붙은 채로)
+}
+
+/** 테이저건에 맞은 거인: 두 번째 맞을 때 스턴. 스턴되면 true */
+export function titanTaserHit(game, h) {
+  h.taserHits = (h.taserHits || 0) + 1;
+  if (h.taserHits < TITAN.TASER_HITS) {
+    game.emit(null, { t: 'event', kind: 'taserCount', id: h.id, n: h.taserHits, need: TITAN.TASER_HITS });
+    return false;
+  }
+  h.taserHits = 0;
+  return true;
+}
+
 // ───────────── 거인: 잡기 ─────────────
 
-/** 거인 잡기: 정면 부채꼴, 몸 바깥 8m 안, 높이 25m까지의 가장 가까운 생존자(닌자 분신 포함) 1칸. 벽 너머는 안 됨 */
+/**
+ * 거인 잡기: 정면 110° 부채꼴, 몸 바깥 10m 안, 높이 25m까지의 생존자(닌자 분신 포함) 모두를 잡아 땅에 쳐박는다.
+ * 각자 1칸 피해 + 0.25초 스턴. 공중(와이어·붙음·떨어짐)이면 그 자리 발밑(땅·지붕)에 내리꽂힌다. 벽 너머는 안 됨
+ */
 export function titanGrab(game, p) {
   p.attackReadyAt = game.time + TITAN.GRAB_COOLDOWN;
   game.emit(null, { t: 'event', kind: 'swing', id: p.id });
   const fx = -Math.sin(p.yaw);
   const fz = -Math.cos(p.yaw);
-  let best = null;
-  let bestD = Infinity;
+  const hits = [];
   const list = [...game.players.values(), ...game.clones.map((c) => ({ ...c, clone: c, role: ROLE.SURVIVOR, status: STATUS.ALIVE }))];
   for (const s of list) {
     if (s.role !== ROLE.SURVIVOR || !alive(s)) continue;
@@ -213,21 +277,38 @@ export function titanGrab(game, p) {
     if (d > TITAN.GRAB_RANGE + TITAN.RADIUS + R) continue;
     if (d > TITAN.RADIUS && (dx * fx + dz * fz) / d < Math.cos(RULES.ATTACK_HALF_ANGLE)) continue;
     if (!grabReach(game, p, s.x, y + 0.9, s.z)) continue;
-    if (d < bestD) {
-      best = s;
-      bestD = d;
+    hits.push(s);
+  }
+  const slammed = [];
+  for (const s of hits) {
+    if (s.clone) {
+      game.hitCloneNear(s.x, s.z, 0.05, p.id);
+      continue;
     }
+    if (game.time < s.invulnUntil || isCarriedOrThrown(s)) continue;
+    // 땅에 쳐박기: 와이어가 풀리고 발밑으로 내리꽂힘 (낙하 피해 없음)
+    const ground = game.world.supportAt(s.x, s.z, s.y || 0, R * 0.5);
+    s.y = ground;
+    s.air = null;
+    s.vx = s.vy = s.vz = 0;
+    s.wire = null;
+    s.lastWire = null;
+    s.dest = null;
+    s.stickDir = null;
+    s.budget = 0;
+    s.jumpUntil = 0;
+    s.interact = false;
+    s.stunUntil = Math.max(s.stunUntil || 0, game.time + TITAN.GRAB_STUN);
+    game.correct(s);
+    slammed.push({ id: s.id, x: r2(s.x), y: r2(s.y), z: r2(s.z) });
   }
-  if (!best) return;
-  if (best.clone) {
-    game.hitCloneNear(best.x, best.z, 0.05, p.id);
-    return;
+  if (!slammed.length) return;
+  game.emit(null, { t: 'event', kind: 'titanGrab', id: p.id, targets: slammed, stun: TITAN.GRAB_STUN });
+  for (const t of slammed) {
+    const s = game.players.get(t.id);
+    if (alive(s)) game.damage(s, p.id, TITAN.GRAB_DAMAGE, { grab: 1 });
+    if (game.ended) return;
   }
-  if (game.time < best.invulnUntil) return;
-  game.emit(null, { t: 'event', kind: 'titanGrab', id: p.id, target: best.id });
-  // 잡혔다 놓이면 와이어가 풀려 그 자리에서 떨어진다
-  if (best.air === 'fly' || best.air === 'stick') startFall(game, best);
-  game.damage(best, p.id, TITAN.GRAB_DAMAGE, { grab: 1 });
 }
 
 /** 거인 손이 닿는지: 머리·가슴·발 높이 중 한 곳에서라도 가리지 않으면 */

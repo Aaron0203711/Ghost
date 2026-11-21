@@ -676,6 +676,11 @@ export class GameSession {
 
   /** 점프: 땅에 있을 때만, 생존자는 스태미나 1초분 필요. 덫에 걸리면 못 뜀 */
   tryJump() {
+    if (this.titan && this.air) {
+      // 입체기동: 벽에 붙은 채 점프하면 지붕 위로 (판정은 서버, 스태미나 안 씀)
+      if (this.air === 'stick' && this.status === STATUS.ALIVE && this.stunLeft <= 0) this.net.send({ t: 'jump' });
+      return;
+    }
     if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0 || this.isRepairing() || this.forced) return;
     if (!this.isHunter && this.boostLeft <= 0) {
       // 마라토너 스퍼트 중에는 스태미나를 쓰지 않는다
@@ -881,6 +886,7 @@ export class GameSession {
 
   handle(msg) {
     if (this.disposed) return;
+    if (this.cinematic) return; // 승리 장면 중에는 마지막 상태(잡힘 등) 알림이 장면을 덮지 않게
     if (msg.t === 'state') this.onState(msg);
     else if (msg.t === 'event') this.onEvent(msg);
     else if (msg.t === 'correct') {
@@ -1592,7 +1598,12 @@ export class GameSession {
         if (e.hit) {
           sfx.zap();
           this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.2, e.z), '#7ad7ff'));
-          if (e.hit === this.myId) {
+          const count = this.taserCount; // 입체기동 거인: 첫 번째로 맞음 (아직 스턴 아님)
+          this.taserCount = null;
+          if (count && count.id === e.hit) {
+            if (e.hit === this.myId) this.centerMsg(`⚡ 테이저건에 맞았다 (${count.n}/${count.need}) · 한 번 더 맞으면 스턴`, 2);
+            else this.feed(`⚡ ${name(e.id)}의 테이저건이 거인을 맞혔다 (${count.n}/${count.need})`, this.isHunter ? 'bad' : 'good');
+          } else if (e.hit === this.myId) {
             this.stunLeft = POLICE.STUN;
             this.flash('stun');
             this.controls.releaseAll();

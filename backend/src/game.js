@@ -35,7 +35,7 @@ import {
   TITAN,
   SURVIVOR_CLASS,
 } from '../../shared/constants.js';
-import { initTitan, handleWire, titanGrab, titanShoot, stepTitan, titanSnapshot } from './titan.js';
+import { initTitan, handleWire, titanGrab, titanShoot, stepTitan, titanSnapshot, titanClimb } from './titan.js';
 import { planTitanMatch } from './titanmap.js';
 import { titanTrapSpot, titanThreadSpan } from '../../shared/titanplace.js';
 import { stepGravedigger, zombifies, spawnZombie } from './gravedigger.js';
@@ -487,6 +487,10 @@ export class Game {
   handleJump(id) {
     const p = this.players.get(id);
     if (!p || this.ended || p.status !== STATUS.ALIVE) return;
+    if (this.titan && p.air) {
+      titanClimb(this, p); // 입체기동: 벽에 붙은 채 점프하면 지붕으로 (공중에서는 점프 없음)
+      return;
+    }
     if (this.isAirborne(p) || this.isStunned(p) || this.isRepairing(p) || isForced(this, p)) return; // 수리 중에도 못 뜀
     if (p.role === ROLE.SURVIVOR && !this.isBoosted(p)) {
       // 마라토너 스퍼트 중에는 스태미나를 쓰지 않는다
@@ -954,7 +958,7 @@ export class Game {
         scls: p.scls,
         status: p.status,
         hits: p.hits,
-        ...(this.titan ? { x: r2(p.x), y: r2(p.y || 0), z: r2(p.z) } : {}),
+        ...(this.titan ? { x: r2(p.x), y: r2(p.y || 0), z: r2(p.z), yaw: r2(p.yaw || 0) } : {}),
       })),
     };
     this.emit(null, this.result);

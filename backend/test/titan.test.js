@@ -9,6 +9,7 @@ import { CollisionWorld } from '../../shared/collision.js';
 import { TITAN, RULES, speedFor, ROLE, eyeHeightFor, titanClasses, CAPTAIN } from '../../shared/constants.js';
 
 const DT = 1 / 20;
+const R0 = RULES.PLAYER_RADIUS;
 const run = (game, seconds) => {
   for (let i = 0; i < Math.round(seconds / DT); i++) game.tick(DT);
 };
@@ -58,14 +59,14 @@ test('전용 맵: 400m, 둘레 50m 벽, 집 12~20m, 시계탑', () => {
   assert.equal(world.supportAt(spot.x, spot.z), spot.y, '총은 지붕 위');
 });
 
-test('모드 규칙: 술래 1명(체력 20칸), 발전기 없음, 10분, 거인 속도 35km/h, 눈높이 23.5m', () => {
+test('모드 규칙: 술래 1명(체력 20칸), 발전기 없음, 10분, 거인 속도 70km/h, 눈높이 23.5m', () => {
   const { game, p } = makeGame({ n: 7 });
   const hunters = [...game.players.values()].filter((q) => q.role === ROLE.HUNTER);
   assert.equal(hunters.length, 1);
   assert.equal(p('p1').maxHits, 20);
   assert.equal(game.gens.length, 0);
   assert.equal(game.matchTime, 600);
-  assert.ok(Math.abs(speedFor(ROLE.HUNTER, false, { titan: true }) * 3.6 - 35) < 1e-6);
+  assert.ok(Math.abs(speedFor(ROLE.HUNTER, false, { titan: true }) * 3.6 - 70) < 1e-6);
   assert.equal(eyeHeightFor('maniac', true), 23.5);
   assert.ok(!titanClasses().includes('flesh'), '살덩이 금지');
   const sp = game.startPayload('p2');
@@ -157,27 +158,121 @@ test('와이어: 60m 밖이나 하늘에 쏘면 빗나감', () => {
   assert.equal(ev('wireMiss').length, 1);
 });
 
-test('거인 잡기: 8m 안(높이 25m까지) 생존자 1칸, 쿨타임 1.5초, 붙어 있던 생존자는 떨어진다', () => {
-  const { game, p, ev } = makeGame();
+test('거인 잡기: 10m 안(높이 25m까지) 부채꼴 안 생존자 모두 1칸, 땅에 쳐박혀 0.25초 스턴, 쿨타임 1.5초', () => {
+  const { game, p, ev } = makeGame({ n: 4 });
   const h = p('p1');
-  const s = p('p2');
-  p('p3').x = -150;
+  const [a, b, c] = [p('p2'), p('p3'), p('p4')];
   Object.assign(h, { yaw: 0 });
-  Object.assign(s, { x: h.x, z: h.z - (TITAN.RADIUS + 7), y: 0 });
+  Object.assign(a, { x: h.x, z: h.z - (TITAN.RADIUS + 9), y: 0 });
+  Object.assign(b, { x: h.x + 3, z: h.z - (TITAN.RADIUS + 5), y: 0 });
+  Object.assign(c, { x: h.x, z: h.z + (TITAN.RADIUS + 5), y: 0 }); // 등 뒤
   game.handleAttack('p1', { yaw: 0 });
-  assert.equal(s.hits, 1);
+  assert.equal(a.hits, 1);
+  assert.equal(b.hits, 1, '부채꼴 안이면 여러 명');
+  assert.equal(c.hits, 0, '등 뒤는 안 잡힘');
   assert.equal(ev('titanGrab').length, 1);
-  run(game, 1.6);
-  // 공중(높이 15m)에 붙어 있는 생존자도 잡힌다 → 떨어짐
-  Object.assign(s, { y: 15, air: 'stick', stickUntil: game.time + 5 });
+  assert.deepEqual(ev('titanGrab')[0].msg.targets.map((t) => t.id).sort(), ['p2', 'p3']);
+  assert.ok(game.isStunned(a));
+  run(game, TITAN.GRAB_STUN + 0.05);
+  assert.ok(!game.isStunned(a), '0.25초 뒤 바로 도망칠 수 있다');
+  // 쿨타임 1.5초
+  Object.assign(a, { invulnUntil: 0 });
   game.handleAttack('p1', { yaw: 0 });
-  assert.equal(s.hits, 2);
-  assert.equal(s.air, 'fall');
+  assert.equal(a.hits, 1);
+  run(game, 1.5);
+  // 공중(높이 15m)에 붙어 있는 생존자도 잡혀 발밑 땅에 쳐박힌다 (낙하 피해 없음)
+  Object.assign(a, { y: 15, air: 'stick', stickUntil: game.time + 5, invulnUntil: 0 });
+  Object.assign(b, { x: -150 });
+  game.handleAttack('p1', { yaw: 0 });
+  assert.equal(a.hits, 2);
+  assert.equal(a.air, null);
+  assert.equal(a.y, 0);
+  run(game, 3);
+  assert.equal(a.hits, 2);
   // 너무 멀면 안 잡힘
-  run(game, 1.6);
-  Object.assign(s, { x: h.x, z: h.z - (TITAN.RADIUS + 10), y: 0, air: null, invulnUntil: 0 });
+  Object.assign(a, { x: h.x, z: h.z - (TITAN.RADIUS + 12), y: 0, air: null, invulnUntil: 0 });
   game.handleAttack('p1', { yaw: 0 });
-  assert.equal(s.hits, 2);
+  assert.equal(a.hits, 2);
+});
+
+test('와이어: 다른 집 벽에 부딪히면 붙지 않고 떨어진다, 끊어도 박힌 곳 5m 안 벽에는 붙는다', () => {
+  const { game, p, ev } = makeGame();
+  const s = p('p2');
+  const { b, x, z } = houseAndSpot(game, 12);
+  p('p1').x = 150;
+  p('p1').z = 150;
+  // 와이어를 쏘고 날아가다 끊어도, 날아가던 속도로 박힌 벽(5m 안)에 닿으면 붙는다
+  Object.assign(s, { x, z, y: 0 });
+  const target = { x: b.x, y: 8, z: b.z + b.d / 2 };
+  game.handleWire('p2', toward({ x, y: RULES.EYE_HEIGHT, z }, target));
+  run(game, 0.2);
+  game.handleWire('p2', {});
+  assert.equal(s.air, 'fall');
+  let stuck = false;
+  for (let i = 0; i < 40 && !stuck; i++) {
+    game.tick(DT);
+    if (s.air === 'stick') stuck = true;
+  }
+  assert.ok(stuck, '끊은 뒤에도 박혔던 벽에 붙음');
+  run(game, 4);
+  // 와이어가 박힌 곳에서 5m 넘게 떨어진 벽: 날아가다 부딪혀도 안 붙고 떨어진다
+  Object.assign(s, { x, z: b.z + b.d / 2 + R0 + 0.3, y: 8, air: 'fall', vx: 0, vy: 0, vz: -10, peakY: 8 });
+  s.lastWire = { x: b.x + 50, y: 8, z: b.z + b.d / 2 };
+  run(game, 0.3);
+  assert.notEqual(s.air, 'stick');
+  // 날아가는 중 와이어 박힌 곳에서 먼 벽에 부딪혀도 안 붙는다
+  run(game, 4);
+  Object.assign(s, { x, z: b.z + b.d / 2 + 1.5, y: 8, air: 'fly', dest: { x, y: 8, z: b.z - 50, top: false }, lastWire: { x, y: 9, z: b.z - 50 } });
+  game.tick(DT);
+  game.tick(DT);
+  assert.equal(s.air, 'fall', '다른 벽에 부딪혀 떨어짐');
+  assert.ok(ev('wireOff').length >= 2);
+});
+
+test('벽에 붙은 채 점프: 지붕이 머리에서 2m 안이면 지붕 위로 올라선다', () => {
+  const { game, p, ev } = makeGame();
+  const s = p('p2');
+  const { b } = houseAndSpot(game, 12);
+  p('p1').x = 150;
+  const wallZ = b.z + b.d / 2 + R0 + 0.05;
+  // 머리(발 + 1.7m)에서 지붕까지 3m: 못 올라감
+  Object.assign(s, { x: b.x, z: wallZ, y: b.h - 1.7 - 3, air: 'stick', stickUntil: game.time + 5, stickDir: { x: 0, z: -1 } });
+  game.handleJump('p2');
+  assert.equal(s.air, 'stick');
+  // 머리에서 지붕까지 1.5m: 올라감
+  Object.assign(s, { y: b.h - 1.7 - 1.5 });
+  game.handleJump('p2');
+  assert.equal(s.air, null);
+  assert.equal(s.y, b.h);
+  assert.equal(ev('climb').length, 1);
+  assert.equal(s.hits, 0);
+});
+
+test('거인은 테이저건을 두 번 맞아야 스턴된다 (맞은 횟수는 누적)', () => {
+  const { game, p, ev } = makeGame({ n: 2, scls: ['police'] });
+  const h = p('p1');
+  const c = p('p2');
+  // 거인과 경찰 사이가 트인 곳 (큰길)
+  let spot = null;
+  for (let gx = -180; gx <= 180 && !spot; gx += 2) {
+    for (let gz = -180; gz <= 180 && !spot; gz += 2) {
+      if (game.world.isFree(gx, gz, TITAN.RADIUS + 0.5) && game.world.isFree(gx, gz + 10, 1) && !game.world.segmentBlocked(gx, gz, gx, gz + 10)) spot = { x: gx, z: gz };
+    }
+  }
+  const { x, z } = spot;
+  Object.assign(c, { x, z: z + 10, y: 0, yaw: 0 });
+  Object.assign(h, { x, z, y: 0 });
+  game.handleSkill('p2', { yaw: 0, pitch: 0 });
+  run(game, 0.5);
+  assert.equal(ev('taserEnd')[0].msg.hit, 'p1');
+  assert.ok(!game.isStunned(h), '한 번은 스턴 안 됨');
+  assert.equal(ev('taserCount').length, 1);
+  run(game, 60);
+  game.handleSkill('p2', { yaw: 0, pitch: 0 });
+  run(game, 0.5);
+  assert.equal(ev('taserEnd')[1].msg.hit, 'p1');
+  assert.ok(game.isStunned(h), '두 번째에 스턴');
+  assert.equal(h.taserHits, 0);
 });
 
 test('지붕 위 총: 10~20초마다 생김(최대 6개), 주워서 거인을 맞히면 1칸, 한 발뿐', () => {

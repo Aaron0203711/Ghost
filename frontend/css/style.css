@@ -2435,6 +2435,16 @@ body.touch #cd-sskill,
   filter: grayscale(1) brightness(0.7);
 }
 
+/* 마라토너 스퍼트: 스태미나 무제한 (막대가 금빛으로 빛남) */
+#screen-game.boosted #stamina {
+  outline: 2px solid rgba(255, 200, 60, 0.95);
+  box-shadow: 0 0 12px rgba(255, 190, 40, 0.8);
+}
+
+#screen-game.boosted #stamina-fill {
+  filter: saturate(1.6) hue-rotate(-40deg) brightness(1.2);
+}
+
 /* 직업 스킬 쿨타임 중: 이름 대신 남은 초를 가운데 크게 */
 .ctl-btn.sskill.cooling .lbl {
   display: none;

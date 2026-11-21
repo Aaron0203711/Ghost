@@ -36,6 +36,8 @@ import {
   aimDirection,
   FLESH,
   slimeRadius,
+  GRAVEDIGGER,
+  MARATHONER,
 } from '@shared/constants.js';
 import { makeDiveRing, disposeRing, makeDiveWarning, makeSplash, makeCrack } from './dive.js';
 import { buildWorld, buildSky } from './world.js';
@@ -55,6 +57,7 @@ import {
   makeSlime,
   makeHitBurst,
   makeTaserBolt,
+  makeGrave,
 } from './models.js';
 import { Controls } from './input.js';
 import { MINE_FOG, Dust, makeMineExit } from './mine.js';
@@ -104,6 +107,10 @@ export class GameSession {
     this.isDrowned = this.isHunter && this.hunterClass === HUNTER_CLASS.DROWNED;
     this.isPalcheok = this.isHunter && this.hunterClass === HUNTER_CLASS.PALCHEOK;
     this.isFlesh = this.isHunter && this.hunterClass === HUNTER_CLASS.FLESH;
+    this.isGravedigger = this.isHunter && this.hunterClass === HUNTER_CLASS.GRAVEDIGGER;
+    this.graveMeshes = new Map(); // 파묘자 무덤 id → 모델
+    this.zombieAvatars = new Map(); // 좀비 id → 아바타
+    this.groanT = 0;
     this.rifleSlowLeft = 0; // 술래: 군인 소총에 맞아 느려진 남은 시간
     this.carrying = null; // 팔척귀신: 들고 있는 생존자 id
     this.carryLeft = 0;
@@ -127,6 +134,8 @@ export class GameSession {
     this.hasSSkill = this.sskillCooldown > 0;
     this.sskillLeft = 0;
     this.isSoldier = this.scls === 'soldier';
+    this.isMarathoner = this.scls === 'marathoner';
+    this.boostLeft = 0; // 마라토너 스퍼트 남은 시간
     this.ammo = SOLDIER.MAG; // 군인 소총 남은 탄
     this.reloadLeft = 0;
     this.slowFactor = 1; // 생존자 감속 배율 (서버가 알려 줌)
@@ -139,7 +148,7 @@ export class GameSession {
     this.balls = new Map(); // 날아가는 광대 공 (서버 id → 화면 모델)
     this.bolts = new Map(); // 날아가는 테이저건 탄
     // 선장·유령·살가죽·질주자: 스킬 키 한 번 누르기 + 쿨타임
-    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned || this.isPalcheok || this.isFlesh;
+    this.hasClassSkill = this.isCaptain || this.isGhost || this.isSkin || this.isSprinter || this.isDrowned || this.isPalcheok || this.isFlesh || this.isGravedigger;
     this.skillCooldown = {
       assassin: ASSASSIN.SKILL_COOLDOWN,
       captain: CAPTAIN.SKILL_COOLDOWN,
@@ -149,6 +158,7 @@ export class GameSession {
       drowned: DROWNED.SKILL_COOLDOWN,
       palcheok: PALCHEOK.SKILL_COOLDOWN,
       flesh: FLESH.SKILL_COOLDOWN,
+      gravedigger: GRAVEDIGGER.SKILL_COOLDOWN,
     }[this.hunterClass] || 1;
     this.attackCooldown = this.titan
       ? TITAN.GRAB_COOLDOWN
@@ -424,6 +434,7 @@ export class GameSession {
       drowned: { main: ['🔱', '작살'], action: ['🌊', '다이빙'] },
       palcheok: { main: ['👊', '주먹'], action: ['🫳', '납치'] },
       flesh: { main: ['🚫', '없음'], action: ['🟢', '점액'] },
+      gravedigger: { main: ['⛏️', '삽'], action: ['⚰️', '파묘'] },
     };
     if (this.isClown) classLabels.clown = { main: ['🤹', '공'], action: ['🧵', '실'] };
     const labels = this.hasClassSkill || this.isClown
@@ -452,7 +463,7 @@ export class GameSession {
     $('cd-main').querySelector('.ico').textContent = labels.main[0];
     $('cd-action').querySelector('.ico').textContent = labels.action[0];
     // 생존자 직업 스킬 버튼 (수리 왼쪽, PC는 Q)
-    const sk = { doctor: '💉', police: '⚡', soldier: '🔫', ninja: '👥', engineer: '🤖' }[this.scls] || '';
+    const sk = { doctor: '💉', police: '⚡', soldier: '🔫', ninja: '👥', engineer: '🤖', marathoner: '🏃' }[this.scls] || '';
     $('btn-sskill').querySelector('.ico').textContent = sk;
     $('btn-sskill').querySelector('.lbl').textContent = sinfo?.skill || '';
     $('btn-sskill').classList.toggle('passive', !this.hasSSkill);
@@ -467,6 +478,8 @@ export class GameSession {
           ? '좌클릭 주먹 · E 납치, 들고 있을 때 E 던지기'
           : this.isFlesh
             ? '기본 공격 없음 · E 발밑에 반경 6m 점액 뿌리기'
+            : this.isGravedigger
+              ? '좌클릭 삽 · E 30m 안 무덤 2개에서 좀비 꺼내기'
             : this.isSkin
               ? '좌클릭 공격 · E 변장 · 변장 중 Shift 달리기'
               : '좌클릭 공격 · E 스킬';
@@ -522,6 +535,7 @@ export class GameSession {
         drowned: '익사자: 스킬 키를 누르고 조준한 뒤 떼면 그곳으로 다이빙!',
         palcheok: '팔척귀신: 담장 너머를 내려다보세요. 생존자를 붙잡아 다른 생존자에게 던지세요!',
         flesh: '살덩이: 움직이면 점액이 퍼져요. 골목을 점액으로 뒤덮으세요!',
+        gravedigger: '파묘자: 무덤이 12초마다 생겨요. 생존자 근처 무덤을 파헤쳐 좀비를 풀어놓으세요!',
       }[this.isHunter ? this.hunterClass : ''] ||
       (this.isSniper
         ? '저격수: 조준해서 멀리서 맞히면 2칸!'
@@ -663,7 +677,8 @@ export class GameSession {
   /** 점프: 땅에 있을 때만, 생존자는 스태미나 1초분 필요. 덫에 걸리면 못 뜀 */
   tryJump() {
     if (this.status !== STATUS.ALIVE || this.jumpT !== null || this.stunLeft > 0 || this.isRepairing() || this.forced) return;
-    if (!this.isHunter) {
+    if (!this.isHunter && this.boostLeft <= 0) {
+      // 마라토너 스퍼트 중에는 스태미나를 쓰지 않는다
       if (this.stam.stamina < RULES.JUMP_STAMINA) {
         this.centerMsg('스태미나가 부족해 점프할 수 없어요', 1);
         return;
@@ -693,6 +708,10 @@ export class GameSession {
       sfx.gunshot(0.55);
       this.shake = Math.max(this.shake, 0.08);
     }
+    if (this.isMarathoner) {
+      this.boostLeft = MARATHONER.DURATION;
+      sfx.sprint();
+    }
     this.lastSSkillAt = performance.now();
     this.sskillLeft = this.isSoldier && this.reloadLeft > 0 ? this.reloadLeft : this.sskillCooldown; // 대상이 없어 실패하면 서버가 알려 주고 되돌린다
     this.net.send({ t: 'skill', yaw: this.yaw, pitch: this.pitch });
@@ -711,6 +730,11 @@ export class GameSession {
     else if (this.isSkin) this.setDisguised(true);
     else if (this.isSprinter) sfx.dashCharge();
     else if (this.isFlesh) this.skillLeft = this.skillCooldown;
+    else if (this.isGravedigger) {
+      // 30m 안에 무덤이 없으면 서버가 알려 주고 쿨타임을 되돌린다
+      this.skillLeft = this.skillCooldown;
+      this.viewBat?.playSwing();
+    }
     else if (this.isPalcheok && this.carrying) {
       // 던지기: 그때부터 쿨타임
       this.carrying = null;
@@ -943,6 +967,8 @@ export class GameSession {
     this.syncThreads(s.threads || []);
     this.syncClones(s.clones || []);
     this.syncRobots(s.robots || []);
+    this.syncGraves(s.graves || []);
+    this.syncZombies(s.zombies || []);
     if (s.me) {
       this.forced = !!s.me.forced;
       if (Math.abs(s.me.stamina - this.stam.stamina) > 0.6) this.stam.stamina = s.me.stamina;
@@ -959,7 +985,10 @@ export class GameSession {
         if (this.isSkin && !!s.me.disguised !== this.disguised) this.setDisguised(!!s.me.disguised);
       }
       if (!this.isHunter) {
-        if (!fresh(this.lastSSkillAt)) this.sskillLeft = s.me.sskillLeft ?? 0;
+        if (!fresh(this.lastSSkillAt)) {
+          this.sskillLeft = s.me.sskillLeft ?? 0;
+          this.boostLeft = s.me.boost ?? 0;
+        }
         this.slowFactor = s.me.slow ?? 1;
         this.noRun = !!s.me.noRun;
       }
@@ -1065,6 +1094,61 @@ export class GameSession {
       }
       a.setTarget(c.x, c.z, c.yaw, false, c.y ?? 0);
     }
+  }
+
+  /** 파묘자 무덤 (모두에게 보임) */
+  syncGraves(list) {
+    const ids = new Set(list.map((g) => g.id));
+    for (const [id, m] of this.graveMeshes) {
+      if (!ids.has(id)) {
+        this.scene.remove(m);
+        m.traverse((o) => o.geometry?.dispose());
+        this.graveMeshes.delete(id);
+      }
+    }
+    for (const g of list) {
+      if (this.graveMeshes.has(g.id)) continue;
+      const m = makeGrave(g.r);
+      m.position.set(g.x, 0, g.z);
+      if (this.castShadows) enableShadows(m);
+      this.scene.add(m);
+      this.graveMeshes.set(g.id, m);
+    }
+  }
+
+  /** 좀비: 무덤에서 나온 좀비는 좀비 모습, 좀비가 된 생존자는 그 생존자의 옷 그대로 */
+  syncZombies(list) {
+    const ids = new Set(list.map((z) => z.id));
+    for (const [id, a] of this.zombieAvatars) {
+      if (!ids.has(id)) {
+        this.scene.remove(a.group);
+        a.dispose();
+        this.zombieAvatars.delete(id);
+      }
+    }
+    for (const z of list) {
+      let a = this.zombieAvatars.get(z.id);
+      if (!a) {
+        const from = z.f ? this.info.get(z.f) : null;
+        a = from ? new Avatar(ROLE.SURVIVOR, from.index, from.name, false, z.lk, { zombie: true }) : new Avatar(ROLE.HUNTER, 0, '', false, 'zombie');
+        a.setTarget(z.x, z.z, z.yaw, true);
+        if (!from) a.rise = 1; // 무덤에서 기어 나온다
+        if (this.castShadows) enableShadows(a.group);
+        this.scene.add(a.group);
+        this.zombieAvatars.set(z.id, a);
+        if (from) from.zombie = true;
+      }
+      a.setTarget(z.x, z.z, z.yaw);
+      a.stunned = !!z.stun;
+      a.chasing = !!z.ch;
+    }
+  }
+
+  /** 가장 가까운 좀비까지 거리 */
+  nearestZombie() {
+    let d = Infinity;
+    for (const a of this.zombieAvatars.values()) d = Math.min(d, Math.hypot(a.pos.x - this.pos.x, a.pos.z - this.pos.z));
+    return d;
   }
 
   /** 살덩이 점액 웅덩이: 서버가 생길 때 알려 주고, 반경은 생긴 시각부터 매초 커진다 */
@@ -1207,6 +1291,8 @@ export class GameSession {
             ? ` · 유도탄 ${dmg}`
             : e.slime
               ? ` · 점액 ${dmg}`
+            : e.zombie
+              ? ` · 좀비 ${dmg}`
             : e.dash
               ? ` · 질주 ${dmg}`
               : e.crack
@@ -1236,7 +1322,7 @@ export class GameSession {
               ? `쿵! ${Math.round(e.drop)}m에서 떨어졌다 ${hp} ${dmg}`
               : e.grab
                 ? `✊ 거인에게 잡혔다! ${hp}`
-                : `맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
+                : `${e.zombie ? '🧟 좀비에게 ' : ''}맞았다! ${hp}${e.far ? ` 원거리 저격 ${dmg}` : e.ball ? ` 공 ${dmg}` : e.dmg !== 1 ? ` ${dmg}` : ''}${e.aimed ? ' · 조준 저격에 느려졌다' : ''}`,
             1.5,
           );
         } else if (e.slime) {
@@ -1257,6 +1343,17 @@ export class GameSession {
         if (this.info.get(e.id)?.dummy) {
           this.hpBars.get(e.id)?.set(Infinity);
           this.feed(`💀 ${name(e.id)} 쓰러짐 · ${TRAINING.REVIVE_TIME}초 뒤 다시 일어나요`, 'warn');
+          break;
+        }
+        if (e.zombified) {
+          const info = this.info.get(e.id);
+          if (info) info.zombie = true;
+          sfx.zombieRise(me ? 1 : 0.6);
+          this.feed(`🧟 ${name(e.id)}이(가) 잡혀 좀비가 되었다`, 'bad');
+          if (me) {
+            this.flash('hit');
+            this.centerMsg('🧟 좀비가 되었다… 이제 관전합니다', 2.5);
+          }
           break;
         }
         this.feed(`💀 ${name(e.id)}이(가) 잡혔다${e.fall ? ' (낙하)' : ''}${e.slime ? ' (점액)' : ''}${e.spyKill ? ` (${e.dist}m 저격 즉사 · 최고의 스파이들)` : e.far ? ` (${e.dist}m 저격)` : ''}`, 'bad');
@@ -1501,6 +1598,10 @@ export class GameSession {
             this.controls.releaseAll();
             this.centerMsg(`⚡ 테이저건에 맞았다! ${POLICE.STUN}초 동안 움직일 수 없다`, 2);
           } else this.feed(`⚡ ${name(e.id)}의 테이저건이 술래를 맞혔다! (${POLICE.STUN}초 스턴)`, this.isHunter ? 'bad' : 'good');
+        } else if (e.zombie) {
+          sfx.zap(0.7);
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.2, e.z), '#7ad7ff'));
+          if (e.id === this.myId) this.feed(`⚡ 좀비를 ${POLICE.STUN}초 동안 멈췄다`, 'good');
         }
         break;
       }
@@ -1524,6 +1625,12 @@ export class GameSession {
             this.hitMarker();
             sfx.hit(0.35);
           }
+        } else if (e.zombie) {
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(e.x, 1.2, e.z), '#ffb347'));
+          if (e.id === this.myId) {
+            this.hitMarker();
+            sfx.hit(0.35);
+          }
         }
         break;
       }
@@ -1533,6 +1640,47 @@ export class GameSession {
           this.reloadLeft = 0;
           this.sskillLeft = 0;
           this.centerMsg('🔫 장전 완료', 0.8);
+        }
+        break;
+      // ───── 파묘자 ─────
+      case 'grave':
+        if (this.isGravedigger && this.status === STATUS.ALIVE) this.feed('⚰️ 어딘가에 무덤이 생겼다');
+        break;
+      case 'dig': {
+        let near = Infinity;
+        for (const g of e.graves) {
+          near = Math.min(near, Math.hypot(g.x - this.pos.x, g.z - this.pos.z));
+          this.effects.push(makeImpact(this.scene, new THREE.Vector3(g.x, 0.3, g.z), '#6b5636'));
+        }
+        if (me) {
+          sfx.dig();
+          this.feed(`⚰️ 무덤 ${e.graves.length}개를 파헤쳤다! 좀비 ${e.zombies.length}마리`, 'good');
+        } else {
+          if (near < 35) sfx.zombieRise(Math.max(0.25, 1 - near / 35));
+          if (!this.isHunter && this.status === STATUS.ALIVE) this.feed(`🧟 무덤에서 좀비 ${e.zombies.length}마리가 기어 나왔다!`, 'bad');
+          else this.avatars.get(e.id)?.playSwing();
+        }
+        break;
+      }
+      case 'digFail':
+        this.skillLeft = 0;
+        this.lastSkillAt = 0;
+        this.centerMsg(`⚰️ ${GRAVEDIGGER.DIG_RANGE}m 안에 무덤이 없어요`, 1.5);
+        break;
+      case 'zswing': {
+        const a = this.zombieAvatars.get(e.zid);
+        if (a) {
+          a.playSwing();
+          const d = Math.hypot(a.pos.x - this.pos.x, a.pos.z - this.pos.z);
+          if (d < 12) sfx.groan(Math.max(0.3, 1 - d / 12));
+        }
+        break;
+      }
+      // ───── 마라토너 ─────
+      case 'sprint':
+        if (me) {
+          this.boostLeft = e.time;
+          this.centerMsg(`🏃 스퍼트! ${e.time}초 동안 스태미나 무제한`, 1.5);
         }
         break;
       case 'slime':
@@ -1772,7 +1920,12 @@ export class GameSession {
     const wantsRun = this.isHunter ? this.isSkin && c.isHeld('hrun') : c.isHeld('action');
     this.wantsRun = wantsRun;
     // 감속(덫이 풀린 뒤·조준 저격·광대 실)과 달리기 불가는 서버가 알려 준 값으로 예측
-    if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned && !this.noRun, this.moving, dt, this.staminaMax);
+    const boosted = this.boostLeft > 0 && alive; // 마라토너 스퍼트: 스태미나 무제한
+    this.boostLeft = Math.max(0, this.boostLeft - dt);
+    if (!this.isHunter && boosted) {
+      this.running = wantsRun && !stunned && !this.noRun && this.moving;
+      stepStamina(this.stam, false, false, dt, this.staminaMax);
+    } else if (!this.isHunter) this.running = stepStamina(this.stam, wantsRun && !stunned && !this.noRun, this.moving, dt, this.staminaMax);
     else if (this.isSkin) this.running = stepStamina(this.stam, wantsRun && this.disguised && !stunned, this.moving, dt, this.staminaMax, SKINWALKER_STAMINA_REGEN);
     if (alive && this.moving) {
       const speed = speedFor(this.role, this.running, {
@@ -1785,6 +1938,7 @@ export class GameSession {
         disguised: this.disguised,
         rifleSlowed: this.isHunter && this.rifleSlowLeft > 0,
         titan: this.titan,
+        boosted,
         slowFactor: this.isHunter ? 1 : this.slowFactor,
         noRun: this.noRun,
       });
@@ -1851,6 +2005,7 @@ export class GameSession {
     this.liveTracers = this.liveTracers.filter((t) => t.update(dt));
     for (const d of this.disguiseAvatars.values()) d.avatar.update(dt);
     for (const a of this.cloneAvatars.values()) a.update(dt);
+    for (const a of this.zombieAvatars.values()) a.update(dt);
     this.updateNewProjectiles(dt);
     this.updateProjectiles(dt);
     this.effects = this.effects.filter((fx) => fx(dt));
@@ -2029,12 +2184,23 @@ export class GameSession {
       // 배경음악: 24m부터 먹먹해지기 시작해서 8m 안이면 거의 심장 소리만
       this.danger = Math.max(0, Math.min(1, (24 - d) / 16));
     }
+    // 좀비 신음: 12m 안에 좀비가 있으면 가끔, 가까울수록 크고 자주
+    if (this.zombieAvatars.size) {
+      const zd = this.nearestZombie();
+      this.groanT -= dt;
+      if (zd < 12 && this.groanT <= 0) {
+        const k = 1 - zd / 12;
+        sfx.groan(0.3 + k * 0.7);
+        this.groanT = 3.2 - k * 1.8 + Math.random();
+      }
+    }
     if (this.isHunter) this.updateHunterHud();
     const screen = $('screen-game');
     screen.classList.toggle('h-slowed', this.isHunter && alive && this.rifleSlowLeft > 0);
     screen.classList.toggle('in-slime', !this.isHunter && alive && this.slimeMeshes.size > 0 && this.inSlime());
     screen.classList.toggle('s-slowed', !this.isHunter && alive && this.slowFactor < 1);
     screen.classList.toggle('no-run', !this.isHunter && alive && this.noRun);
+    screen.classList.toggle('boosted', !this.isHunter && alive && this.boostLeft > 0);
     if (this.isHunter || !alive) this.danger = 0; // 술래와 관전자는 늘 보통 배경음악
     this.bgm.update(dt, this.danger);
 
@@ -2220,7 +2386,7 @@ export class GameSession {
       const st = p.status ?? STATUS.ALIVE;
       let tag;
       if (p.role === ROLE.HUNTER) tag = CLASS_INFO[p.cls ?? HUNTER_CLASS.MANIAC].icon;
-      else if (st === STATUS.CAUGHT) tag = '💀';
+      else if (st === STATUS.CAUGHT) tag = p.zombie ? '🧟' : '💀';
       else if (st === STATUS.ESCAPED) tag = '🏁';
       else if (st === 'left') tag = '🚪';
       else {
@@ -2276,6 +2442,11 @@ export class GameSession {
     if (!this.hasSSkill) return;
     let frac = Math.min(1, this.sskillLeft / this.sskillCooldown);
     let text = this.sskillLeft > 0 ? `${Math.ceil(this.sskillLeft)}s` : '';
+    if (this.isMarathoner && this.boostLeft > 0) {
+      // 스퍼트 중: 남은 시간 (쿨타임 20초는 끝난 뒤부터)
+      frac = 0;
+      text = `${this.boostLeft.toFixed(1)}s`;
+    }
     if (this.isSoldier) {
       // 소총: 남은 탄 / 장전 남은 시간
       frac = this.reloadLeft > 0 ? this.reloadLeft / SOLDIER.RELOAD : 0;
@@ -2283,7 +2454,7 @@ export class GameSession {
     }
     const btn = $('btn-sskill');
     btn.style.setProperty('--cd', String(frac));
-    btn.classList.toggle('cooling', this.sskillLeft > 0);
+    btn.classList.toggle('cooling', this.sskillLeft > 0 && !(this.isMarathoner && this.boostLeft > 0));
     btn.querySelector('.timer').textContent = text;
     const slot = $('cd-sskill');
     slot.style.setProperty('--cd', String(frac));
@@ -2444,7 +2615,7 @@ export class GameSession {
     this.renderer.domElement.remove();
     this.clock.disconnect();
     clearTimeout(this.gfxToastTimer);
-    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'cls-noattack');
+    $('screen-game').classList.remove('danger', 'spectating', 'role-hunter', 'role-survivor', 's-slowed', 'no-run', 'cls-clown', 'diving', 'h-slowed', 'in-slime', 'cls-noattack', 'boosted');
   }
 }
 

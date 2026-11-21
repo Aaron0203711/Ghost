@@ -216,4 +216,25 @@ export const sfx = {
     noiseBurst(0.6, 0.6 * vol, 700);
     tone({ freq: 70, to: 260, dur: 0.35, type: 'sine', vol: 0.22 * vol });
   },
+  // 5차 업데이트: 파묘자·좀비, 마라토너
+  dig: (vol = 1) => {
+    noiseBurst(0.25, 0.4 * vol, 350);
+    noiseBurst(0.3, 0.3 * vol, 250);
+    tone({ freq: 90, to: 45, dur: 0.6, type: 'sawtooth', vol: 0.14 * vol });
+  },
+  // 좀비 신음: 낮게 떨리는 '으어어'
+  groan: (vol = 1) => {
+    const f = 85 + Math.random() * 30;
+    tone({ freq: f, to: f * 0.7, dur: 0.9, type: 'sawtooth', vol: 0.1 * vol });
+    tone({ freq: f * 1.5, to: f, dur: 0.8, type: 'triangle', vol: 0.06 * vol, delay: 0.05 });
+    noiseBurst(0.7, 0.08 * vol, 300);
+  },
+  zombieRise: (vol = 1) => {
+    tone({ freq: 60, to: 140, dur: 0.7, type: 'sawtooth', vol: 0.16 * vol });
+    noiseBurst(0.5, 0.3 * vol, 280);
+  },
+  sprint: () => {
+    tone({ freq: 400, to: 900, dur: 0.25, type: 'triangle', vol: 0.12 });
+    noiseBurst(0.3, 0.15, 1800);
+  },
 };

@@ -1,4 +1,4 @@
-// 생존자 직업 스킬: 의사(회복), 경찰(테이저건), 군인(소총), 닌자(분신), 엔지니어(로봇).
+// 생존자 직업 스킬: 의사(회복), 경찰(테이저건), 군인(소총), 닌자(분신), 엔지니어(로봇), 마라토너(스퍼트).
 // 푸드파이터는 패시브(체력 +4칸, 스태미나 8초)라 스킬이 없다. 판정은 모두 서버가 한다.
 
 import {
@@ -11,10 +11,12 @@ import {
   SOLDIER,
   NINJA,
   ENGINEER,
+  MARATHONER,
   survivorSkillCooldown,
 } from '../../shared/constants.js';
 import { endDash, worldFor } from './abilities.js';
 import { dropCarried } from './palcheok.js';
+import { zombieAt } from './gravedigger.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const alive = (p) => p && p.status === STATUS.ALIVE;
@@ -47,6 +49,9 @@ export function useSurvivorSkill(game, p, msg = {}) {
       break;
     case SURVIVOR_CLASS.ENGINEER:
       ok = attachRobot(game, p);
+      break;
+    case SURVIVOR_CLASS.MARATHONER:
+      ok = sprint(game, p);
       break;
     default:
       return false; // 푸드파이터: 패시브
@@ -117,12 +122,18 @@ export function stepTasers(game, dt) {
         end = { hit: h.id };
         break;
       }
+      // 좀비도 술래처럼 4초 스턴
+      const zb = !end && zombieAt(game, t.x, t.z, POLICE.RADIUS);
+      if (zb) {
+        zb.stunUntil = Math.max(zb.stunUntil, game.time + POLICE.STUN);
+        end = { hit: null, zombie: zb.id };
+      }
       if (!end && game.world.pointBlocked(t.x, t.y, t.z)) end = { hit: null };
       if (!end && t.traveled >= POLICE.RANGE) end = { hit: null };
     }
     if (end) {
       game.tasers.splice(game.tasers.indexOf(t), 1);
-      game.emit(null, { t: 'event', kind: 'taserEnd', tid: t.id, id: t.owner, x: r2(t.x), z: r2(t.z), hit: end.hit });
+      game.emit(null, { t: 'event', kind: 'taserEnd', tid: t.id, id: t.owner, x: r2(t.x), z: r2(t.z), hit: end.hit, ...(end.zombie ? { zombie: end.zombie } : {}) });
     }
   }
 }
@@ -177,12 +188,18 @@ export function stepRifles(game, dt) {
         end = { hit: h.id };
         break;
       }
+      // 좀비도 술래처럼 2초 감속
+      const zb = !end && zombieAt(game, b.x, b.z, SOLDIER.RADIUS);
+      if (zb) {
+        zb.rifleSlowUntil = game.time + SOLDIER.SLOW_TIME;
+        end = { hit: null, zombie: zb.id };
+      }
       if (!end && game.world.pointBlocked(b.x, b.y, b.z)) end = { hit: null };
       if (!end && b.traveled >= SOLDIER.RANGE) end = { hit: null };
     }
     if (end) {
       game.rifleShots.splice(game.rifleShots.indexOf(b), 1);
-      game.emit(null, { t: 'event', kind: 'rifleEnd', rid: b.id, id: b.owner, x: r2(b.x), z: r2(b.z), hit: end.hit });
+      game.emit(null, { t: 'event', kind: 'rifleEnd', rid: b.id, id: b.owner, x: r2(b.x), z: r2(b.z), hit: end.hit, ...(end.zombie ? { zombie: end.zombie } : {}) });
     }
   }
 }
@@ -249,4 +266,13 @@ export function stepRobots(game, dt) {
     return game.time < r.until;
   });
   return add;
+}
+
+// ───────────── 마라토너 ─────────────
+
+/** 스퍼트: 5초 동안 스태미나 무제한 + 이동 속도 3% 증가. 쿨타임 20초는 끝난 뒤부터 (survivorSkillCooldown에 5초가 더해져 있음) */
+function sprint(game, p) {
+  p.boostUntil = game.time + MARATHONER.DURATION;
+  game.emit(null, { t: 'event', kind: 'sprint', id: p.id, time: MARATHONER.DURATION });
+  return true;
 }

@@ -33,10 +33,12 @@ import {
   MAP_SIGHT,
   SOLDIER,
   TITAN,
+  SURVIVOR_CLASS,
 } from '../../shared/constants.js';
 import { initTitan, handleWire, titanGrab, titanShoot, stepTitan, titanSnapshot } from './titan.js';
 import { planTitanMatch } from './titanmap.js';
 import { titanTrapSpot, titanThreadSpan } from '../../shared/titanplace.js';
+import { stepGravedigger, zombifies, spawnZombie } from './gravedigger.js';
 import { stepSlime } from './flesh.js';
 import { stepDives } from './drowned.js';
 import { stepPalcheok, isCarriedOrThrown } from './palcheok.js';
@@ -181,6 +183,8 @@ export class Game {
         slimeNextAt: 0, // 생존자: 다음 점액 피해를 받을 수 있는 시각
         ammo: scls === 'soldier' ? SOLDIER.MAG : 0, // 군인 소총 남은 탄
         reloadUntil: 0, // 군인: 장전이 끝나는 시각
+        boostUntil: 0, // 마라토너: 스퍼트(스태미나 무제한 + 3% 빠름)가 끝나는 시각
+        graveTimer: 0, // 파묘자: 12초마다 무덤
         cls,
         scls,
         dummy: !!p.dummy, // 훈련장 허수아비 (움직이지 않고 공격하지 않음)
@@ -213,6 +217,10 @@ export class Game {
     this.cloneSeq = 0;
     this.robots = [];
     this.robotSeq = 0;
+    this.graves = []; // 파묘자 무덤 { id, owner, x, z, rot }
+    this.graveSeq = 0;
+    this.zombies = []; // 좀비 (AI)
+    this.zombieSeq = 0;
     this.synergies = synergiesFor(hunters.map((h) => h.cls)); // 술래 2명의 직업 조합 (함정 듀오)
     // 생존자 지도: 생존자가 다가가 찾은 발전기(모두 공유), 생존자가 잡힌 자리
     this.foundGens = new Set();
@@ -466,6 +474,11 @@ export class Game {
     }
   }
 
+  /** 마라토너 스퍼트 중: 스태미나 무제한 + 이동 속도 3% 증가 */
+  isBoosted(p) {
+    return p.scls === SURVIVOR_CLASS.MARATHONER && this.time < p.boostUntil;
+  }
+
   isAirborne(p) {
     return this.time < p.jumpUntil;
   }
@@ -475,7 +488,8 @@ export class Game {
     const p = this.players.get(id);
     if (!p || this.ended || p.status !== STATUS.ALIVE) return;
     if (this.isAirborne(p) || this.isStunned(p) || this.isRepairing(p) || isForced(this, p)) return; // 수리 중에도 못 뜀
-    if (p.role === ROLE.SURVIVOR) {
+    if (p.role === ROLE.SURVIVOR && !this.isBoosted(p)) {
+      // 마라토너 스퍼트 중에는 스태미나를 쓰지 않는다
       if (p.stamina < RULES.JUMP_STAMINA) return;
       p.stamina -= RULES.JUMP_STAMINA;
       p.regenWait = RULES.STAMINA_REGEN_DELAY;
@@ -531,7 +545,9 @@ export class Game {
       if (s.dummy) s.reviveAt = this.time + TRAINING.REVIVE_TIME;
       else this.deaths.push({ x: r2(s.x), z: r2(s.z), id: s.id });
       s.repairing = false;
-      this.emit(null, { t: 'event', kind: 'caught', id: s.id, by: byId, name: s.name, dmg: amount, ...extra });
+      // 좀비나 파묘자에게 잡힌 생존자는 그 자리에서 바로 좀비가 된다 (훈련장 허수아비는 다시 일어나므로 제외)
+      const zombie = !s.dummy && zombifies(this, byId, extra) ? spawnZombie(this, byId, s.x, s.z, s) : null;
+      this.emit(null, { t: 'event', kind: 'caught', id: s.id, by: byId, name: s.name, dmg: amount, ...extra, ...(zombie ? { zombified: zombie.id } : {}) });
       this.checkEnd();
     } else {
       this.emit(null, {
@@ -708,7 +724,11 @@ export class Game {
       const slow = p.role === ROLE.SURVIVOR ? this.slowState(p) : { factor: 1, noRun: false };
       if (p.role === ROLE.SURVIVOR) {
         p.slows = p.slows.filter((sl) => this.time < sl.until);
-        p.running = stepStamina(p, p.wantsRun && !stunned && !slow.noRun, p.moving && !stunned, dt, p.staminaMax);
+        if (this.isBoosted(p)) {
+          // 마라토너 스퍼트: 달려도 스태미나가 줄지 않는다 (회복은 그대로)
+          p.running = p.wantsRun && !stunned && !slow.noRun && p.moving;
+          stepStamina(p, false, false, dt, p.staminaMax);
+        } else p.running = stepStamina(p, p.wantsRun && !stunned && !slow.noRun, p.moving && !stunned, dt, p.staminaMax);
       } else {
         // 살가죽: 변장 중에만 달릴 수 있음 (변장이 아니면 회복만)
         p.running =
@@ -727,7 +747,7 @@ export class Game {
         if (p.charges >= ch.max) p.chargeTimer = 0;
       }
       // 이동 허용량(속도 × 시간, 네트워크 지연을 위해 약간의 여유)
-      const speed = speedFor(p.role, p.running || (p.wantsRun && p.stamina > 0), {
+      const speed = speedFor(p.role, p.running || (p.wantsRun && (p.stamina > 0 || this.isBoosted(p))), {
         cls: p.cls,
         scls: p.scls,
         aiming: p.aiming,
@@ -737,6 +757,7 @@ export class Game {
         disguised: !!p.disguiseAs,
         rifleSlowed: p.role === ROLE.HUNTER && this.time < p.rifleSlowUntil,
         titan: this.titan,
+        boosted: this.isBoosted(p),
         slowFactor: slow.factor,
         noRun: slow.noRun,
       });
@@ -757,6 +778,8 @@ export class Game {
     stepClones(this, dt);
     stepSlime(this, dt);
     if (this.titan) stepTitan(this, dt);
+    if (this.ended) return;
+    stepGravedigger(this, dt);
     if (this.ended) return;
     stepHomingTraps(this, dt);
     stepThreads(this, dt);
@@ -1021,6 +1044,17 @@ export class Game {
       clones: this.clones.map((c) => ({ id: c.id, o: c.owner, x: r2(c.x), z: r2(c.z), yaw: r2(c.yaw), ...(c.y ? { y: r2(c.y) } : {}) })),
       ...(this.titan ? { guns: this.guns.map((g) => ({ id: g.id, x: g.x, y: g.y, z: g.z })) } : {}),
       robots: this.robots.map((r) => ({ id: r.id, g: r.genId })),
+      graves: this.graves.map((g) => ({ id: g.id, x: r2(g.x), z: r2(g.z), r: r2(g.rot) })),
+      // 좀비: 모두에게 보임. ch=쫓는 중, lk=좀비가 된 생존자의 직업 모습, f=그 생존자
+      zombies: this.zombies.map((zb) => ({
+        id: zb.id,
+        x: r2(zb.x),
+        z: r2(zb.z),
+        yaw: r2(zb.yaw),
+        ...(zb.mode === 'chase' ? { ch: 1 } : {}),
+        ...(this.time < zb.stunUntil ? { stun: 1 } : {}),
+        ...(zb.from ? { f: zb.from, lk: zb.look } : {}),
+      })),
       anchors: this.anchors.map((a) => ({ id: a.id, x: r2(a.x), z: r2(a.z) })),
       wisps: this.wisps.map((w) => ({ id: w.id, x: r2(w.x), z: r2(w.z) })),
       gens: this.gens.map((g) => ({ id: g.id, p: r2(g.progress), done: g.done ? 1 : 0, ...(g.active ? { rep: 1 } : {}) })),
@@ -1041,6 +1075,7 @@ export class Game {
         disguised: me.disguiseAs ? 1 : 0,
         sskillLeft: r2(Math.max(0, me.sskillReadyAt - this.time)), // 생존자 직업 스킬 쿨타임
         rifleSlow: r2(Math.max(0, me.rifleSlowUntil - this.time)), // 술래: 군인 소총에 맞아 느려진 남은 시간
+        ...(this.isBoosted(me) ? { boost: r2(me.boostUntil - this.time) } : {}), // 마라토너 스퍼트 남은 시간
         ...(me.scls === 'soldier' ? { ammo: me.ammo, reloadLeft: r2(Math.max(0, me.reloadUntil - this.time)) } : {}),
         ...(me.carrying ? { carrying: me.carrying, carryLeft: r2(Math.max(0, me.carryUntil - this.time)) } : {}), // 팔척귀신
       };

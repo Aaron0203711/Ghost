@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { labelTexture, generatorPanel } from './textures.js';
 import { RULES, jumpHeight } from '@shared/constants.js';
-import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS, survivorSpec, dressSurvivor } from './characters.js';
+import { buildHumanoid, dressHunter, hunterSpec, SURVIVOR_LOOKS, survivorSpec, dressSurvivor, dressZombie, ZOMBIE_SKIN } from './characters.js';
 import { reflect } from './reflect.js';
 
 const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
@@ -33,6 +33,44 @@ export function makeBat() {
     g.add(nail);
   }
   g.add(grip, body, knob);
+  return g;
+}
+
+/** 파묘자 삽: 손잡이가 원점, +y 방향으로 자루가 뻗고 끝에 넓적한 날 */
+export function makeShovel() {
+  const g = new THREE.Group();
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.03), woody('#6b4a2a'));
+  grip.position.y = -0.04;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.9, 8), woody('#8a6038'));
+  shaft.position.y = 0.42;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.03, 0.08, 8), rusty('#5a5048'));
+  neck.position.y = 0.9;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.012), rusty('#7d7468'));
+  blade.position.y = 1.06;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.08, 4), rusty('#7d7468'));
+  tip.position.y = 1.22;
+  tip.rotation.y = Math.PI / 4;
+  tip.scale.z = 0.08;
+  g.add(grip, shaft, neck, blade, tip);
+  return g;
+}
+
+/** 파묘자 무덤: 흙무더기와 기울어진 나무 묘비 (rot은 서버가 정한 방향) */
+export function makeGrave(rot = 0) {
+  const g = new THREE.Group();
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(0.6, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat('#4a3a28'));
+  mound.scale.set(0.8, 0.35, 1.4);
+  const cross = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.05), woody('#5c4630'));
+  post.position.y = 0.4;
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.07, 0.05), woody('#5c4630'));
+  bar.position.y = 0.58;
+  cross.add(post, bar);
+  cross.position.set(0, 0, -0.85);
+  cross.rotation.z = 0.12;
+  cross.rotation.x = -0.08;
+  g.add(mound, cross);
+  g.rotation.y = rot;
   return g;
 }
 
@@ -337,24 +375,29 @@ export function makeTaserBolt() {
 
 /** 다른 플레이어 모델. yaw=0에서 -z를 바라본다. cls: 술래 직업 또는 생존자 직업 */
 export class Avatar {
-  constructor(role, colorIndex, name, showLabel, cls = 'maniac') {
+  /** opts.zombie: 생존자가 좀비가 된 모습 (옷은 그대로, 피부와 눈만 좀비) */
+  constructor(role, colorIndex, name, showLabel, cls = 'maniac', opts = {}) {
     this.role = role;
     this.cls = role === 'hunter' ? cls : null;
     this.scls = role === 'hunter' ? null : cls;
     this.group = new THREE.Group();
     const isHunter = role === 'hunter';
+    // 좀비: 무덤에서 나온 좀비(술래 쪽 'zombie') 또는 좀비가 된 생존자. 팔을 앞으로 뻗고 비틀거린다
+    this.zombie = this.cls === 'zombie' || !!opts.zombie;
     // 사람 모델: 생존자는 5가지 외형 + 직업 의상, 술래는 직업별 의상
     const look = SURVIVOR_LOOKS[colorIndex % SURVIVOR_LOOKS.length];
     const spec = isHunter ? hunterSpec(this.cls) : survivorSpec(this.scls, look);
+    if (opts.zombie) Object.assign(spec, { skin: ZOMBIE_SKIN, noFace: true });
     const h = buildHumanoid(spec);
     if (isHunter) dressHunter(this.cls, h);
     else dressSurvivor(this.scls, h);
+    if (opts.zombie) dressZombie(h);
     this.body = h.root;
     this.glowEyes = h.glow || []; // 술래 눈빛
     this.eyesLit = true;
     // 팔척귀신은 눈높이 2.3m가 되도록 크게 (담장 1.9m 위로 머리가 보임)
     this.tall = this.cls === 'palcheok';
-    this.body.scale.setScalar(this.tall ? 1.39 : isHunter ? 1.08 : 1);
+    this.body.scale.setScalar(this.tall ? 1.39 : isHunter && !this.zombie ? 1.08 : 1);
     this.group.add(this.body);
     const P = h.parts;
     this.parts = P;
@@ -386,6 +429,8 @@ export class Avatar {
       this.rifle = hold(makeRifle(), -Math.PI / 2); // 총구가 팔 방향
     } else if (this.cls === 'maniac') {
       this.bat = hold(makeBat(), -Math.PI / 2.2);
+    } else if (this.cls === 'gravedigger') {
+      this.weapon = hold(makeShovel(), -Math.PI / 2.2);
     } else if (this.cls === 'clown') {
       this.weapon = hold(makeBall(), 0);
       this.weapon.position.set(0, -0.14, 0);
@@ -515,7 +560,28 @@ export class Avatar {
     this.body.rotation.x = moving ? -Math.min(0.12, this.speed * 0.015) : 0;
     this.head.rotation.x = Math.max(-0.6, Math.min(0.6, (this.pitch || 0) * 0.6)); // 보는 방향으로 고개
 
-    if (this.repairing) {
+    if (this.zombie) {
+      // 좀비: 두 팔을 앞으로 뻗고 고개를 떨군 채 비틀거린다. 공격하면 두 팔로 덮친다
+      const sway = Math.sin(now / 350 + this.walk) * 0.12;
+      let lunge = 0;
+      if (this.swing > 0) {
+        this.swing = Math.max(0, this.swing - dt * 3.5);
+        const t = 1 - this.swing;
+        lunge = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+      }
+      this.armL.rotation.set(1.35 + sway - lunge * 0.5, 0, -0.08);
+      this.armR.rotation.set(1.35 - sway - lunge * 0.5, 0, 0.08);
+      this.elbowL.rotation.x = 0.15;
+      this.elbowR.rotation.x = 0.15;
+      this.body.rotation.z = sway * 0.5;
+      this.body.rotation.x = 0.08 + lunge * 0.25;
+      this.head.rotation.set(0.35 + Math.sin(now / 600) * 0.1, 0, sway);
+      // 땅에서 기어 나옴 (rise: 1 → 0)
+      if (this.rise > 0) {
+        this.rise = Math.max(0, this.rise - dt * 1.4);
+        this.body.position.y = -this.rise * 1.6;
+      }
+    } else if (this.repairing) {
       // 앞으로 팔을 뻗어 손을 바삐 움직이며 수리
       const w = Math.sin(now / 120) * 0.15;
       this.armL.rotation.x = 0.9 + w;
@@ -567,6 +633,7 @@ export class Avatar {
       this.body.rotation.y = 0;
     }
     if (this.swing <= 0) this.body.rotation.y = 0;
+    if (!this.zombie) this.body.rotation.z = 0;
     if (this.stunned) {
       // 덫에 걸려 한쪽 무릎이 꺾임
       this.legL.rotation.x = 0.3;
@@ -1016,6 +1083,8 @@ export function makeViewModel(camera, cls) {
       return new BatViewModel(camera, { weapon: new THREE.Group(), arm: '#e9e6e1', fist: '#e9e6e1', speed: 4.5, scale: 0.6 });
     case 'flesh':
       return new BatViewModel(camera, { weapon: new THREE.Group(), arm: '#9a3439', fist: '#b4474b', speed: 4, scale: 0.6 });
+    case 'gravedigger':
+      return new BatViewModel(camera, { weapon: makeShovel(), arm: '#3b352c', fist: '#b9b2a2', speed: 2.6, scale: 0.36 });
     case 'assassin':
       return new KunaiViewModel(camera);
     default:
